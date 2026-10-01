@@ -1,0 +1,60 @@
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import { VitePWA } from 'vite-plugin-pwa'
+import { fileURLToPath, URL } from 'node:url'
+
+export default defineConfig({
+  plugins: [
+    vue(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.svg', 'icons/*.png'],
+      manifest: {
+        name: '記帳本',
+        short_name: '記帳本',
+        description: '極速記帳、離線收據辨識、清楚掌握收支趨勢',
+        lang: 'zh-Hant',
+        dir: 'ltr',
+        start_url: './',
+        scope: './',
+        display: 'standalone',
+        orientation: 'any',
+        background_color: '#f6f5f2',
+        theme_color: '#f6f5f2',
+        categories: ['finance', 'productivity'],
+        icons: [
+          { src: './icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: './icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: './icons/icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: './icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+        ],
+      },
+      workbox: {
+        // 語言包與 wasm 核心也一併預快取，確保離線可 OCR
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,json,gz,wasm}'],
+        maximumFileSizeToCacheInBytes: 32 * 1024 * 1024,
+        navigateFallback: 'index.html',
+        cleanupOutdatedCaches: true,
+        navigateFallbackDenylist: [/^\/tessdata\//, /^\/tesseract-core\//],
+      },
+      devOptions: { enabled: false },
+    }),
+  ],
+  resolve: {
+    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+  },
+  build: {
+    target: 'es2022',
+    chunkSizeWarningLimit: 1400,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('tesseract.js')) return 'ocr'
+          if (id.includes('chart.js')) return 'chart'
+          if (id.includes('node_modules/vue')) return 'vue'
+        },
+      },
+    },
+  },
+  optimizeDeps: { exclude: ['tesseract.js'] },
+})
