@@ -111,10 +111,6 @@ export function currenciesOf(list: AmountCandidate[]): string[] {
 
 /* ── 日期 ────────────────────────────────────────────────── */
 
-function pad(n: number): string {
-  return String(n).padStart(2, '0')
-}
-
 function build(y: number, mo: number, d: number, h = 12, mi = 0, s = 0): string | null {
   if (y < 2000 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) return null
   const dt = new Date(y, mo - 1, d, h, mi, s)

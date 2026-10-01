@@ -24,6 +24,8 @@ export interface OcrResult {
 let worker: TesseractWorker | null = null
 let workerLangs = ''
 let creating: Promise<TesseractWorker> | null = null
+/** 目前這張圖的進度回呼（worker 會被多張圖依序共用） */
+let progressCb: ((p: OcrProgress) => void) | null = null
 
 async function getWorker(langs: string[]): Promise<TesseractWorker> {
   const key = langs.slice().sort().join('+')
@@ -45,7 +47,9 @@ async function getWorker(langs: string[]): Promise<TesseractWorker> {
       corePath: CORE_PATH,
       langPath: LANG_PATH,
       gzip: true,
-      logger: () => {},
+      logger: (m: { status?: string; progress?: number }) => {
+        progressCb?.({ status: m.status ?? '', progress: m.progress ?? 0 })
+      },
     })
     workerLangs = key
     worker = w
@@ -62,8 +66,10 @@ export async function recognize(
   langs: string[],
   onProgress?: (p: OcrProgress) => void,
 ): Promise<OcrResult> {
+  progressCb = onProgress ?? null
   const w = await getWorker(langs.length ? langs : ['eng'])
   const { data } = await w.recognize(image, {}, { text: true })
+  progressCb = null
   const text = (data?.text ?? '').trim()
   return {
     text,

@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
 import { fmtMoney } from '@/lib/currency'
+import ToastHost from '@/components/ToastHost.vue'
 
 const route = useRoute()
 const records = useRecordsStore()
@@ -75,6 +76,8 @@ const base = computed(() => settings.baseCurrency)
         <span>{{ n.label }}</span>
       </RouterLink>
     </nav>
+
+    <ToastHost />
   </div>
 </template>
 
