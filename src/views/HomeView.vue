@@ -64,6 +64,35 @@ function press(k: string) {
   calc.value = k === '=' ? equals(calc.value) : input(calc.value, k)
 }
 
+/** 常用金額（歷史出現次數最多的幾個整數） */
+const quickAmounts = computed(() => {
+  const m = new Map<number, number>()
+  for (const r of records.records) {
+    if (r.type !== type.value) continue
+    const v = Math.round(r.amount)
+    if (v > 0) m.set(v, (m.get(v) ?? 0) + 1)
+  }
+  return [...m.entries()]
+    .sort((a, b) => b[1] - a[1] || b[0] - a[0])
+    .slice(0, 4)
+    .map(([v]) => v)
+})
+
+function setAmount(v: number) {
+  calc.value = { tokens: [{ t: 'num', v: String(v) }], done: true }
+}
+
+/** 一鍵帶入上一筆的金額與分類 */
+const lastRecord = computed(() => records.byNewest[0])
+function repeatLast() {
+  const r = lastRecord.value
+  if (!r) return
+  setAmount(r.amount)
+  type.value = r.type
+  categoryId.value = r.categoryId
+  curCode.value = r.currency
+}
+
 function onKey(e: KeyboardEvent) {
   const t = e.target as HTMLElement | null
   if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return
@@ -224,6 +253,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <em class="tiny muted">可一次選多張</em>
         </button>
 
+        <div v-if="quickAmounts.length" class="quick">
+          <button
+            v-for="v in quickAmounts"
+            :key="v"
+            class="quick__btn num"
+            @click="setAmount(v)"
+          >
+            {{ v }}
+          </button>
+        </div>
+
         <div class="amount">
           <div class="amount__expr num">{{ expr || '0' }}</div>
           <div class="amount__main">
@@ -242,6 +282,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <input v-model="note" class="field" placeholder="備註（可留空）" maxlength="80" />
           <div class="pad__row">
             <input v-model="occurredAt" class="field" type="datetime-local" />
+            <button
+              v-if="lastRecord"
+              class="btn btn--sm btn--repeat"
+              title="帶入上一筆金額與分類"
+              @click="repeatLast"
+            >
+              同上筆
+            </button>
             <button class="btn btn--primary btn--save" @click="submit">記錄</button>
           </div>
           <p class="tiny muted hint">支援 + − × ÷ 連續運算；Enter 送出、Esc 清空</p>
@@ -426,8 +474,34 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 .pad__row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   gap: 9px;
+}
+.btn--repeat {
+  align-self: stretch;
+}
+.quick {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.quick__btn {
+  flex: none;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-2);
+}
+.quick__btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .btn--save {
   min-width: 96px;

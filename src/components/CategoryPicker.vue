@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Category, TxType } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
+import { useRecordsStore } from '@/stores/records'
 import { computed } from 'vue'
 
 const props = withDefaults(
@@ -9,15 +10,28 @@ const props = withDefaults(
     modelValue: string
     /** 只顯示常用的前 N 個（0 = 全部） */
     limit?: number
+    /** 依使用頻率排序（記帳更快） */
+    usageOrder?: boolean
   }>(),
-  { limit: 0 },
+  { limit: 0, usageOrder: true },
 )
 const emit = defineEmits<{ 'update:modelValue': [id: string] }>()
 
 const settings = useSettingsStore()
+const records = useRecordsStore()
+
+const usage = computed(() => {
+  const m = new Map<string, number>()
+  for (const r of records.records) m.set(r.categoryId, (m.get(r.categoryId) ?? 0) + 1)
+  return m
+})
+
 const list = computed<Category[]>(() => {
   const all = settings.categoriesByType(props.type)
-  return props.limit > 0 ? all.slice(0, props.limit) : all
+  const sorted = props.usageOrder
+    ? [...all].sort((a, b) => (usage.value.get(b.id) ?? 0) - (usage.value.get(a.id) ?? 0))
+    : all
+  return props.limit > 0 ? sorted.slice(0, props.limit) : sorted
 })
 </script>
 
