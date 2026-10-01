@@ -15,3 +15,5 @@ public/tesseract-core/
 .env
 .env.*
 !.env.example
+
+.smoke/

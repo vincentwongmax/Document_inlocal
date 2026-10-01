@@ -481,8 +481,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 .pad__row {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 9px;
+}
+.pad__row .field {
+  min-width: 0;
+}
+/* 窄螢幕：時間獨佔一行，按鈕並排 */
+@media (max-width: 639px) {
+  .pad__row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .pad__row .field {
+    grid-column: 1 / -1;
+  }
 }
 .btn--repeat {
   align-self: stretch;

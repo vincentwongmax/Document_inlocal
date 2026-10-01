@@ -46,6 +46,7 @@ export default defineConfig({
   build: {
     target: 'es2022',
     chunkSizeWarningLimit: 1400,
+    emptyOutDir: false, // 由 scripts/clean.mjs 負責清理
     rollupOptions: {
       output: {
         manualChunks(id) {

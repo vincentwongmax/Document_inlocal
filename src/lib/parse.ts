@@ -63,6 +63,37 @@ function currencyNear(text: string, index: number): string | null {
   return null
 }
 
+/** 該列中屬於「日期／時間」的區間，這些數字不是金額 */
+function dateTimeSpans(line: string): Array<[number, number]> {
+  const spans: Array<[number, number]> = []
+  const patterns: Array<{ re: RegExp; check?: (m: RegExpExecArray) => boolean }> = [
+    // 2026年10月2日 / 2026-10-02 / 2026/10/02
+    { re: /(20\d{2})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?/g },
+    // 2026年
+    { re: /(20\d{2})\s*年/g },
+    // 14:30 / 14時30分
+    { re: /(\d{1,2})\s*[:時]\s*(\d{2})(?!\d)/g },
+    // 10月2日 / 10-02（需通過月份合理性檢查，避免誤判小數）
+    {
+      re: /(?<![\d.])(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?(?![\d.])/g,
+      check: (m) => +m[1] >= 1 && +m[1] <= 12 && +m[2] >= 1 && +m[2] <= 31,
+    },
+  ]
+  for (const p of patterns) {
+    const re = new RegExp(p.re.source, p.re.flags)
+    let m: RegExpExecArray | null
+    while ((m = re.exec(line))) {
+      if (p.check && !p.check(m)) continue
+      spans.push([m.index, m.index + m[0].length])
+    }
+  }
+  return spans
+}
+
+function inSpans(spans: Array<[number, number]>, start: number, end: number): boolean {
+  return spans.some(([s, e]) => start < e && s < end)
+}
+
 /** 從 OCR 文字抽出金額候選 */
 export function extractAmounts(text: string): AmountCandidate[] {
   const lines = text.split(/\r?\n/)
@@ -75,9 +106,18 @@ export function extractAmounts(text: string): AmountCandidate[] {
     if (SKIP_RE.test(raw) && !TOTAL_RE.test(raw)) return
 
     const isTotal = TOTAL_RE.test(raw)
+    const spans = dateTimeSpans(raw)
     const re = new RegExp(NUM, 'g')
     let m: RegExpExecArray | null
     while ((m = re.exec(raw))) {
+      const start = m.index
+      const end = m.index + m[0].length
+      // 日期與時間不是金額
+      if (inSpans(spans, start, end)) continue
+      // 金額後面直接接年月日時分也略過
+      const after = raw.slice(end, end + 1)
+      if (/^[年月日時分秒]$/.test(after)) continue
+
       const fixed = fixDigits(m[0])
       const value = toNumber(fixed)
       if (value === null) continue
