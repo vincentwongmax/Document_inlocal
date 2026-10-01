@@ -1,8 +1,386 @@
+<script setup lang="ts">
+import { computed, ref } from 'vue'
+import { useSettingsStore } from '@/stores/settings'
+import { useStats } from '@/composables/useStats'
+import { fmtMoney } from '@/lib/currency'
+import { monthKey, monthLabel } from '@/lib/date'
+import DonutChart from '@/components/charts/DonutChart.vue'
+import TrendChart from '@/components/charts/TrendChart.vue'
+import DailyChart from '@/components/charts/DailyChart.vue'
+
+const settings = useSettingsStore()
+const month = ref(monthKey(new Date().toISOString()))
+const st = useStats(month)
+const base = computed(() => settings.baseCurrency)
+
+const months = computed(() => st.monthList(24))
+const monthIndex = computed(() => months.value.indexOf(month.value))
+function shift(delta: number) {
+  const i = monthIndex.value
+  if (i < 0) return
+  const next = months.value[i + delta]
+  if (next) month.value = next
+}
+
+const donutType = ref<'expense' | 'income'>('expense')
+const donutItems = computed(() =>
+  donutType.value === 'expense' ? st.expenseByCat.value : st.incomeByCat.value,
+)
+const donutTotal = computed(() => donutItems.value.reduce((s, i) => s + i.total, 0))
+
+const dailyPoints = computed(() =>
+  st.daily.value.map(([day, v]) => ({ day, expense: v.expense, income: v.income })),
+)
+
+const mom = computed(() => st.momChange.value)
+</script>
+
 <template>
-  <div class="page">
+  <div class="page stats">
     <div class="page-head">
-      <h1 class="page-title">統計</h1>
+      <div>
+        <h1 class="page-title">統計</h1>
+        <p class="page-sub">
+          共 {{ st.allTime.value.count }} 筆記錄 · 累計結餘
+          {{ fmtMoney(st.allTime.value.income - st.allTime.value.expense, base) }}
+        </p>
+      </div>
     </div>
-    <p class="muted">統計頁建置中</p>
+
+    <!-- 月份切換 -->
+    <div class="monthbar">
+      <button class="btn btn--ghost btn--sm" :disabled="monthIndex <= 0" @click="shift(-1)">‹</button>
+      <select v-model="month" class="field monthbar__sel">
+        <option v-for="m in months" :key="m" :value="m">{{ monthLabel(m) }}</option>
+      </select>
+      <button
+        class="btn btn--ghost btn--sm"
+        :disabled="monthIndex >= months.length - 1"
+        @click="shift(1)"
+      >
+        ›
+      </button>
+    </div>
+
+    <!-- 摘要 -->
+    <div class="sums">
+      <div class="card sum">
+        <span class="tiny muted">支出</span>
+        <strong class="num sum__exp">{{ fmtMoney(st.expense.value, base) }}</strong>
+        <span v-if="mom !== null" class="tiny" :class="mom > 0 ? 'up' : 'down'">
+          較上月 {{ mom > 0 ? '+' : '' }}{{ (mom * 100).toFixed(0) }}%
+        </span>
+      </div>
+      <div class="card sum">
+        <span class="tiny muted">收入</span>
+        <strong class="num sum__inc">{{ fmtMoney(st.income.value, base) }}</strong>
+        <span class="tiny muted">{{ st.incomeByCat.value.length }} 個來源</span>
+      </div>
+      <div class="card sum">
+        <span class="tiny muted">結餘</span>
+        <strong class="num" :class="st.balance.value < 0 ? 'sum__exp' : 'sum__inc'">
+          {{ fmtMoney(st.balance.value, base) }}
+        </strong>
+        <span class="tiny muted">{{ st.inMonth.value.length }} 筆</span>
+      </div>
+    </div>
+
+    <div v-if="!st.inMonth.value.length" class="empty card">
+      <p class="muted">{{ monthLabel(month) }} 沒有記錄</p>
+    </div>
+
+    <template v-else>
+      <!-- 分類佔比 -->
+      <section class="card block">
+        <header class="block__hd">
+          <h2>分類佔比</h2>
+          <div class="seg2">
+            <button :class="{ 'is-on': donutType === 'expense' }" @click="donutType = 'expense'">
+              支出
+            </button>
+            <button :class="{ 'is-on': donutType === 'income' }" @click="donutType = 'income'">
+              收入
+            </button>
+          </div>
+        </header>
+
+        <div class="donutwrap">
+          <div class="donut">
+            <DonutChart :items="donutItems" :currency="base" />
+            <div class="donut__center">
+              <span class="tiny muted">{{ donutType === 'expense' ? '總支出' : '總收入' }}</span>
+              <strong class="num">{{ fmtMoney(donutTotal, base) }}</strong>
+            </div>
+          </div>
+
+          <ul class="cats">
+            <li v-for="c in donutItems" :key="c.id" class="cat">
+              <span class="cat__dot" :style="{ background: c.color }" />
+              <span class="cat__name">{{ c.name }}</span>
+              <span class="cat__bar">
+                <span class="cat__fill" :style="{ width: `${Math.max(2, c.ratio * 100)}%`, background: c.color }" />
+              </span>
+              <span class="cat__val num">{{ fmtMoney(c.total, base) }}</span>
+              <span class="cat__pct num tiny muted">{{ (c.ratio * 100).toFixed(0) }}%</span>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- 每日 -->
+      <section class="card block">
+        <header class="block__hd"><h2>每日收支</h2></header>
+        <div class="chartbox chartbox--tall">
+          <DailyChart :points="dailyPoints" :currency="base" />
+        </div>
+      </section>
+
+      <!-- 趨勢 -->
+      <section class="card block">
+        <header class="block__hd"><h2>近六個月趨勢</h2></header>
+        <div class="chartbox">
+          <TrendChart :points="st.trend.value" :currency="base" />
+        </div>
+      </section>
+
+      <!-- 前幾大支出 -->
+      <section class="card block">
+        <header class="block__hd"><h2>本月最大支出</h2></header>
+        <ul class="tops">
+          <li v-for="(r, i) in st.topRecords.value" :key="r.id" class="top">
+            <span class="top__rank num">{{ i + 1 }}</span>
+            <span class="top__cat">{{ settings.category(r.categoryId)?.name ?? '未分類' }}</span>
+            <span class="top__note tiny muted">{{ r.note }}</span>
+            <span class="top__amt num">{{ fmtMoney(r.baseAmount, r.baseCurrency) }}</span>
+          </li>
+        </ul>
+        <p v-if="!st.topRecords.value.length" class="muted tiny">沒有支出記錄</p>
+      </section>
+    </template>
   </div>
 </template>
+
+<style scoped>
+.monthbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.monthbar__sel {
+  height: 38px;
+  max-width: 180px;
+  font-weight: 600;
+}
+
+.sums {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.sum {
+  padding: 13px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sum strong {
+  font-size: 19px;
+}
+.sum__exp {
+  color: var(--expense);
+}
+.sum__inc {
+  color: var(--income);
+}
+.up {
+  color: var(--expense);
+}
+.down {
+  color: var(--income);
+}
+
+.block {
+  padding: 16px;
+  margin-bottom: 14px;
+}
+.block__hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.block__hd h2 {
+  font-size: 15.5px;
+}
+.seg2 {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  background: var(--surface-3);
+  border-radius: 10px;
+}
+.seg2 button {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.seg2 button.is-on {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-1);
+}
+
+.donutwrap {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.donut {
+  position: relative;
+  width: 190px;
+  height: 190px;
+  margin: 0 auto;
+}
+.donut__center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  pointer-events: none;
+}
+.donut__center strong {
+  font-size: 16px;
+}
+
+.cats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.cat {
+  display: grid;
+  grid-template-columns: 9px 84px 1fr auto 34px;
+  align-items: center;
+  gap: 9px;
+}
+.cat__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.cat__name {
+  font-size: 13.5px;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cat__bar {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.cat__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  opacity: 0.85;
+}
+.cat__val {
+  font-size: 13.5px;
+}
+.cat__pct {
+  text-align: right;
+}
+
+.chartbox {
+  position: relative;
+  height: 210px;
+}
+.chartbox--tall {
+  height: 240px;
+}
+
+.tops {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.top {
+  display: grid;
+  grid-template-columns: 22px 74px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+.top:last-child {
+  border-bottom: 0;
+}
+.top__rank {
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.top__cat {
+  font-weight: 550;
+  font-size: 14px;
+}
+.top__note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.top__amt {
+  font-size: 14px;
+}
+.empty {
+  padding: 32px;
+  text-align: center;
+}
+
+@media (min-width: 768px) {
+  .donutwrap {
+    flex-direction: row;
+    align-items: center;
+    gap: 28px;
+  }
+  .donut {
+    width: 210px;
+    height: 210px;
+    flex: none;
+  }
+  .cats {
+    flex: 1;
+  }
+  .cat {
+    grid-template-columns: 9px 100px 1fr auto 40px;
+  }
+  .sums {
+    gap: 14px;
+  }
+  .sum strong {
+    font-size: 22px;
+  }
+}
+@media (min-width: 1024px) {
+  .stats__two {
+    display: grid;
+  }
+  .chartbox {
+    height: 250px;
+  }
+}
+</style>
