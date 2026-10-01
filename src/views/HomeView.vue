@@ -7,6 +7,8 @@ import Keypad from '@/components/Keypad.vue'
 import CategoryPicker from '@/components/CategoryPicker.vue'
 import RecordRow from '@/components/RecordRow.vue'
 import EditSheet from '@/components/EditSheet.vue'
+import ReviewSheet from '@/components/ReviewSheet.vue'
+import { useUpload } from '@/composables/useUpload'
 import { calcText, calcValue, currentNumber, initCalc, input, equals, type CalcState } from '@/lib/calc'
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { fromLocalInput, nowLocalInput, dayKey, formatDay } from '@/lib/date'
@@ -16,6 +18,7 @@ import { readJSON, writeJSON } from '@/lib/storage'
 const records = useRecordsStore()
 const settings = useSettingsStore()
 const toast = useToast()
+const up = useUpload()
 
 /* ── 表單狀態 ───────────────────────────────────────────── */
 const calc = ref<CalcState>(initCalc())
@@ -163,12 +166,36 @@ function removeEditing(id: string) {
   toast.push('已刪除', 'info')
 }
 
+/* ── 圖片上傳（可多張、可拖曳） ─────────────────────────── */
+const dragOver = ref(false)
+
+function onDragOver(e: DragEvent) {
+  e.preventDefault()
+  dragOver.value = true
+}
+function onDragLeave() {
+  dragOver.value = false
+}
+async function onDrop(e: DragEvent) {
+  e.preventDefault()
+  dragOver.value = false
+  const files = Array.from(e.dataTransfer?.files ?? [])
+  if (files.length) await up.addFiles(files)
+}
+
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
-  <div class="page home">
+  <div
+    class="page home"
+    :class="{ 'is-drag': dragOver }"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDrop"
+  >
+    <div v-if="dragOver" class="dropzone">放開即可上傳收據</div>
     <div class="home__grid">
       <!-- 輸入區 -->
       <section class="card pad">
@@ -187,6 +214,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             </select>
           </div>
         </div>
+
+        <button class="upload" type="button" @click="up.pick()">
+          <svg class="uic" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 16V5m0 0 4 4m-4-4L8 9" />
+            <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+          </svg>
+          <span>上傳收據圖片</span>
+          <em class="tiny muted">可一次選多張</em>
+        </button>
 
         <div class="amount">
           <div class="amount__expr num">{{ expr || '0' }}</div>
@@ -249,6 +285,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       @save="saveEdit"
       @remove="removeEditing"
     />
+    <ReviewSheet />
   </div>
 </template>
 
@@ -259,6 +296,56 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 .pad {
   padding: 16px;
+}
+.upload {
+  width: 100%;
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 13px;
+  border-radius: 12px;
+  border: 1px dashed var(--line-strong);
+  background: var(--surface-2);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.upload:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.upload em {
+  margin-left: auto;
+  font-style: normal;
+  font-weight: 500;
+}
+.uic {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+.dropzone {
+  position: fixed;
+  inset: 12px;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: var(--r-xl);
+  background: rgba(231, 240, 236, 0.9);
+  color: var(--accent);
+  font-weight: 650;
+  pointer-events: none;
 }
 .seg {
   display: flex;

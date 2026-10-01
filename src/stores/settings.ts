@@ -31,6 +31,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const baseCurrency = computed(() => state.value.baseCurrency)
   const inputCurrency = computed(() => state.value.inputCurrency)
   const categories = computed(() => state.value.categories.filter((c) => !c.archived))
+  const preferredCurrency = computed(() => state.value.preferredCurrency)
   const categoriesByType = computed(() => (type: TxType) =>
     state.value.categories.filter((c) => !c.archived && c.type === type),
   )
@@ -53,6 +54,10 @@ export const useSettingsStore = defineStore('settings', () => {
 
   function setInputCurrency(code: string) {
     state.value.inputCurrency = code
+  }
+
+  function setPreferredCurrency(code: string) {
+    state.value.preferredCurrency = code
   }
 
   function setRate(code: string, value: number) {
@@ -108,6 +113,8 @@ export const useSettingsStore = defineStore('settings', () => {
     categoriesByType,
     category,
     rate,
+    preferredCurrency,
+    setPreferredCurrency,
     setBaseCurrency,
     setInputCurrency,
     setRate,
