@@ -175,18 +175,27 @@ const mom = computed(() => st.momChange.value)
 
 .sums {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
   margin-bottom: 18px;
 }
 .sum {
-  padding: 13px 14px;
+  padding: 12px 12px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 .sum strong {
-  font-size: 19px;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sum .tiny {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sum__exp {
   color: var(--expense);
@@ -351,6 +360,17 @@ const mom = computed(() => st.momChange.value)
   text-align: center;
 }
 
+@media (min-width: 420px) {
+  .sum {
+    padding: 13px 14px;
+  }
+  .sum strong {
+    font-size: 18px;
+  }
+  .sums {
+    gap: 12px;
+  }
+}
 @media (min-width: 768px) {
   .donutwrap {
     flex-direction: row;
@@ -373,6 +393,9 @@ const mom = computed(() => st.momChange.value)
   }
   .sum strong {
     font-size: 22px;
+  }
+  .top {
+    grid-template-columns: 22px 92px 1fr auto;
   }
 }
 @media (min-width: 1024px) {

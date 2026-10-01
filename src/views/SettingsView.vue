@@ -381,6 +381,7 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
 }
 .row--col {
   flex-direction: column;
@@ -397,7 +398,14 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
   font-weight: 500;
 }
 .row__ctl {
+  width: 100%;
   max-width: 190px;
+}
+@media (min-width: 480px) {
+  .row__ctl {
+    width: auto;
+    min-width: 170px;
+  }
 }
 .rates {
   margin-top: 14px;

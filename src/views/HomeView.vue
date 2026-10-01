@@ -307,6 +307,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </div>
 
         <div v-if="!groups.length" class="empty card">
+          <svg class="empty__art" viewBox="0 0 120 76" aria-hidden="true">
+            <rect x="26" y="8" width="68" height="60" rx="5" fill="#f1efe9" />
+            <rect x="38" y="22" width="44" height="3" rx="1.5" fill="#dcd8cf" />
+            <rect x="38" y="32" width="32" height="3" rx="1.5" fill="#dcd8cf" />
+            <rect x="38" y="42" width="24" height="3" rx="1.5" fill="#dcd8cf" />
+            <rect x="38" y="52" width="44" height="5" rx="2.5" fill="#cfded8" />
+          </svg>
           <p class="muted">還沒有任何記錄</p>
           <p class="tiny muted">輸入金額、選分類，三秒完成一筆</p>
         </div>
@@ -533,8 +540,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   overflow: hidden;
 }
 .empty {
-  padding: 28px 18px;
+  padding: 30px 18px;
   text-align: center;
+}
+.empty__art {
+  width: 118px;
+  height: 75px;
+  margin-bottom: 8px;
+  opacity: 0.9;
 }
 .empty p {
   margin: 2px 0;
@@ -543,6 +556,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   margin-bottom: 12px;
 }
 
+@media (min-width: 620px) and (max-width: 1023px) {
+  .home__grid {
+    max-width: 580px;
+    margin: 0 auto;
+  }
+}
 @media (min-width: 1024px) {
   .home__grid {
     grid-template-columns: minmax(380px, 440px) 1fr;
