@@ -3,8 +3,7 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import './style.css'
-import { registerSW } from 'virtual:pwa-register'
+// 註冊 Service Worker（副作用）
+import './lib/pwa'
 
 createApp(App).use(createPinia()).use(router).mount('#app')
-
-registerSW({ immediate: true })

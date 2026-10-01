@@ -8,6 +8,7 @@ import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { buildExport, downloadJson, parseImport, restoreImages } from '@/lib/exportImport'
 import { usageBytes } from '@/lib/storage'
 import { clearImages, listImageIds } from '@/lib/imageDb'
+import { offlineReady, updateSW } from '@/lib/pwa'
 import type { Category, Settings, TxType } from '@/types'
 
 const settings = useSettingsStore()
@@ -317,6 +318,38 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
       <input ref="importInput" class="hidden" type="file" accept="application/json,.json" @change="onImportFile" />
     </section>
 
+    <!-- 離線與版本 -->
+    <section class="card sec">
+      <h2 class="sec__title">離線使用</h2>
+      <div class="rows">
+        <div class="row">
+          <span>
+            離線狀態
+            <small class="tiny muted">
+              {{
+                offlineReady
+                  ? '已快取完成，沒有網路也能記帳與辨識收據'
+                  : '首次開啟後會自動快取，稍後即可離線使用'
+              }}
+            </small>
+          </span>
+          <span class="tag" :class="offlineReady ? 'tag--ok' : ''">
+            {{ offlineReady ? '已就緒' : '快取中' }}
+          </span>
+        </div>
+        <div class="row">
+          <span>
+            版本
+            <small class="tiny muted">收到更新提示時可立即套用</small>
+          </span>
+          <button class="btn btn--sm" @click="updateSW(true)">檢查更新</button>
+        </div>
+      </div>
+      <p class="tiny muted sec__hint">
+        iPhone：Safari 分享 → 「加入主畫面」；Android：瀏覽器選單 → 「安裝應用程式」。
+      </p>
+    </section>
+
     <p class="foot tiny muted">
       資料全部存放在這台裝置上，不會上傳任何伺服器。主幣別 {{ currency(settings.baseCurrency).name }}
       · 1 {{ settings.inputCurrency }} ≈
@@ -525,6 +558,10 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+.tag--ok {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .hidden {
   display: none;
