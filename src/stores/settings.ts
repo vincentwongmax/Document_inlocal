@@ -14,6 +14,13 @@ function merge(base: Settings, saved: Partial<Settings>): Settings {
     categories:
       saved.categories && saved.categories.length ? saved.categories : base.categories,
     quickItems: Array.isArray(saved.quickItems) ? saved.quickItems : base.quickItems,
+    favoriteCategories: Array.isArray(saved.favoriteCategories)
+      ? saved.favoriteCategories
+      : base.favoriteCategories,
+    homeCategoryLimit:
+      typeof saved.homeCategoryLimit === 'number' && saved.homeCategoryLimit > 0
+        ? saved.homeCategoryLimit
+        : base.homeCategoryLimit,
   }
 }
 
@@ -102,6 +109,25 @@ export const useSettingsStore = defineStore('settings', () => {
     return true
   }
 
+  /* ── 主頁常用分類 ─────────────────────────────────────── */
+  const favoriteCategories = computed(() => state.value.favoriteCategories)
+
+  function isFavorite(id: string): boolean {
+    return state.value.favoriteCategories.includes(id)
+  }
+
+  function toggleFavorite(id: string) {
+    const i = state.value.favoriteCategories.indexOf(id)
+    if (i >= 0) state.value.favoriteCategories.splice(i, 1)
+    else state.value.favoriteCategories.push(id)
+  }
+
+  function setHomeCategoryLimit(n: number) {
+    const v = Math.round(n)
+    if (!isFinite(v)) return
+    state.value.homeCategoryLimit = Math.min(24, Math.max(1, v))
+  }
+
   /* ── 快速記帳常用清單 ─────────────────────────────────── */
   function addQuickItem(item: Omit<QuickItem, 'id'>): QuickItem {
     const q: QuickItem = { ...item, id: uid('q') }
@@ -141,6 +167,10 @@ export const useSettingsStore = defineStore('settings', () => {
     addCategory,
     updateCategory,
     removeCategory,
+    favoriteCategories,
+    isFavorite,
+    toggleFavorite,
+    setHomeCategoryLimit,
     addQuickItem,
     updateQuickItem,
     removeQuickItem,

@@ -292,7 +292,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <Keypad class="pad__keypad" @press="press" />
 
         <div class="pad__meta">
-          <CategoryPicker v-model="categoryId" :type="type" />
+          <CategoryPicker v-model="categoryId" :type="type" collapsed />
           <input v-model="note" class="field" placeholder="備註（可留空）" maxlength="80" />
           <div class="pad__row">
             <input v-model="occurredAt" class="field" type="datetime-local" />

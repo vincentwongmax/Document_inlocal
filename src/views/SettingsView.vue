@@ -296,6 +296,42 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
         <input v-model="newColor" class="addcat__color" type="color" />
         <button class="btn btn--primary" :disabled="!newName.trim()" @click="addCat">新增</button>
       </div>
+
+      <!-- 主頁常用分類 -->
+      <div class="favs">
+        <div class="favs__hd">
+          <span class="tiny muted">主頁常用分類</span>
+          <label class="favs__limit">
+            <span class="tiny muted">自動顯示</span>
+            <select
+              class="field"
+              :value="settings.state.homeCategoryLimit"
+              @change="settings.setHomeCategoryLimit(Number(($event.target as HTMLSelectElement).value))"
+            >
+              <option v-for="n in [4, 6, 8, 12]" :key="n" :value="n">{{ n }} 個</option>
+            </select>
+          </label>
+        </div>
+        <p class="tiny muted sec__hint">
+          勾選的分類會直接顯示在主頁其餘收進「更多」；沒勾選任何一個時，自動顯示最常用的前
+          {{ settings.state.homeCategoryLimit }} 個。
+        </p>
+        <div v-for="g in grouped" :key="'fav-' + g.type" class="catgroup">
+          <span class="tiny muted catgroup__label">{{ g.label }}</span>
+          <div class="chips">
+            <button
+              v-for="c in g.list"
+              :key="c.id"
+              class="catchip catchip--pick"
+              :class="{ 'is-on': settings.isFavorite(c.id), 'is-off': c.archived }"
+              @click="settings.toggleFavorite(c.id)"
+            >
+              <span class="catchip__dot" :style="{ background: c.color }" />
+              <span class="catchip__name">{{ c.name }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- 資料 -->
@@ -518,6 +554,47 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
 }
 .catchip.is-off {
   opacity: 0.45;
+}
+.favs {
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+.favs__hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.favs__hd > span {
+  font-weight: 650;
+  color: var(--text-2);
+}
+.favs__limit {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.favs__limit .field {
+  height: 32px;
+  padding: 0 8px;
+  font-size: 13px;
+}
+.favs .sec__hint {
+  margin: 6px 0 10px;
+}
+.catchip--pick {
+  padding: 0 12px;
+  color: var(--text-2);
+}
+.catchip--pick:hover {
+  border-color: var(--accent);
+}
+.catchip--pick.is-on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .catchip__dot {
   width: 8px;
