@@ -2,7 +2,7 @@
 import type { Category, TxType } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
-import { iconForCategory } from '@/lib/icons'
+import { iconForCategory, DEFAULT_ICON } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
 import CategoryIcon from './CategoryIcon.vue'
 import { computed, ref, watch } from 'vue'
@@ -82,6 +82,11 @@ const selected = computed<Category | undefined>(() =>
   all.value.find((c) => c.id === props.modelValue),
 )
 
+/** 下拉欄位一律顯示圖示；尚未選到分類時用中性佔位圖示 */
+const selectedIcon = computed(() =>
+  selected.value ? iconForCategory(selected.value) : DEFAULT_ICON,
+)
+
 function onSelect(e: Event) {
   const id = (e.target as HTMLSelectElement).value
   if (id) pick(id)
@@ -102,12 +107,14 @@ watch(
     <template v-if="variant === 'select'">
       <div class="selwrap">
         <span
-          v-if="selected"
           class="selwrap__ic"
-          :style="{ '--c': selected.color, '--bg': withAlpha(selected.color, 0.14) }"
+          :class="{ 'is-empty': !selected }"
+          :style="
+            selected ? { '--c': selected.color, '--bg': withAlpha(selected.color, 0.14) } : undefined
+          "
           aria-hidden="true"
         >
-          <CategoryIcon :name="iconForCategory(selected)" :size="14" :stroke="1.9" />
+          <CategoryIcon :name="selectedIcon" :size="14" :stroke="1.9" />
         </span>
         <select class="field selwrap__sel" :value="modelValue" @change="onSelect">
           <option v-if="!list.length" value="" disabled>尚無分類，請到設定頁新增</option>
@@ -178,6 +185,11 @@ watch(
   background: var(--bg);
   pointer-events: none;
   z-index: 1;
+}
+/* 尚未選到分類：中性佔位圖示，避免欄位看起來空空的 */
+.selwrap__ic.is-empty {
+  color: var(--text-3);
+  background: var(--surface-3);
 }
 .selwrap__sel {
   width: 100%;

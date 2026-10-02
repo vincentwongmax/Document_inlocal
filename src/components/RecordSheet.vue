@@ -245,10 +245,12 @@ function save() {
           <label class="flat">
             <span class="flat__label">金額</span>
             <div class="amt">
-              <div class="amt__in">
-                <span class="amt__sym">{{ currency(currencyCode).symbol }}</span>
-                <input v-model="amount" class="field amt__input num" inputmode="decimal" placeholder="0" />
-              </div>
+              <input
+                v-model="amount"
+                class="field amt__input num"
+                inputmode="decimal"
+                :placeholder="`${currency(currencyCode).symbol} 0`"
+              />
               <select v-model="currencyCode" class="field sel2">
                 <option v-for="c in CURRENCIES" :key="c.code" :value="c.code">{{ c.code }}</option>
               </select>
@@ -614,21 +616,8 @@ function save() {
   gap: 8px;
   align-items: center;
 }
-.amt__in {
-  position: relative;
-  display: flex;
-  align-items: center;
-  min-width: 0;
-}
-.amt__sym {
-  position: absolute;
-  left: 13px;
-  font-size: 14px;
-  color: var(--text-3);
-  pointer-events: none;
-}
+/* 幣別符號只在「尚未輸入」時透過 placeholder 提示，輸入後不留痕跡 */
 .amt__input {
-  padding-left: 32px;
   font-weight: 600;
 }
 .sel2 {
