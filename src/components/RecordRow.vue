@@ -27,9 +27,6 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
           class="row__time tiny muted num"
           :title="formatFull(record.occurredAt)"
         >{{ relativeTime(record.occurredAt) }}</span>
-      </span>
-      <span v-if="record.note" class="row__note tiny muted">{{ record.note }}</span>
-      <span v-if="imgCount || record.source === 'image'" class="row__meta">
         <span v-if="imgCount" class="imtag">
           <svg class="imtag__ic" viewBox="0 0 16 16" aria-hidden="true">
             <rect x="2.2" y="3.2" width="11.6" height="9.6" rx="2.4" />
@@ -39,8 +36,9 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
           <span>有圖片</span>
           <span v-if="imgCount > 1" class="imtag__n">· {{ imgCount }}</span>
         </span>
-        <span v-else class="imtag imtag--plain">收據</span>
+        <span v-else-if="record.source === 'image'" class="imtag imtag--plain">收據</span>
       </span>
+      <span v-if="record.note" class="row__note tiny muted">{{ record.note }}</span>
     </button>
     <div class="row__amt">
       <strong class="num" :class="isExpense ? 'is-exp' : 'is-inc'">
@@ -81,8 +79,10 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
 }
 .row__top {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
+  max-width: 100%;
+  min-width: 0;
 }
 .row__cat {
   font-weight: 600;
@@ -95,34 +95,29 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.row__meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 3px;
-}
 .imtag {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 8px;
+  gap: 3px;
+  height: 19px;
+  padding: 0 7px;
+  flex: none;
   border-radius: 999px;
   border: 1px solid var(--line-strong);
   background: var(--surface-2);
   color: var(--text-2);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
 .imtag__ic {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
   flex: none;
   fill: none;
   stroke: var(--accent);
-  stroke-width: 1.3;
+  stroke-width: 1.35;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
