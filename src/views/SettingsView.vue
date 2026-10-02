@@ -4,6 +4,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
 import { useToast } from '@/composables/useToast'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import CategoryAddModal from '@/components/CategoryAddModal.vue'
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { buildExport, downloadJson, parseImport, restoreImages } from '@/lib/exportImport'
 import { usageBytes } from '@/lib/storage'
@@ -86,6 +87,14 @@ const grouped = computed(() => [
   { type: 'expense' as TxType, label: '支出分類', list: settings.state.categories.filter((c) => c.type === 'expense') },
   { type: 'income' as TxType, label: '收入分類', list: settings.state.categories.filter((c) => c.type === 'income') },
 ])
+
+/** 主頁常用分類：右側「＋ 新增」開啟新增分類彈窗 */
+const showAddCat = ref(false)
+function onAddCat(p: { name: string; color: string; type: TxType }) {
+  settings.addCategory(p.name, p.type, p.color)
+  showAddCat.value = false
+  toast.push('已新增分類', 'ok')
+}
 
 /* ── 資料管理 ───────────────────────────────────────────── */
 const imageCount = ref(0)
@@ -374,6 +383,7 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
         <div class="panel__hd">
           <span class="panel__label">主頁常用分類</span>
           <span class="tiny muted panel__meta">已選 {{ settings.favoriteCategories.length }} 個</span>
+          <button class="btn btn--sm" type="button" @click="showAddCat = true">＋ 新增</button>
         </div>
         <p class="tiny muted favs__hint">
           勾選幾個，主頁就只顯示那幾個，其餘收進「更多」；沒有勾選任何一個時，主頁顯示全部分類。
@@ -528,6 +538,8 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
       @confirm="doReset"
       @cancel="askReset = false"
     />
+
+    <CategoryAddModal :open="showAddCat" @close="showAddCat = false" @create="onAddCat" />
   </div>
 </template>
 

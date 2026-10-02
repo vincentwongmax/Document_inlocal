@@ -2,12 +2,18 @@
 import { ref, watch } from 'vue'
 import type { TxType } from '@/types'
 
-const props = defineProps<{ open: boolean; type: TxType }>()
-const emit = defineEmits<{ close: []; create: [payload: { name: string; color: string }] }>()
+const props = withDefaults(defineProps<{ open: boolean; defaultType?: TxType }>(), {
+  defaultType: 'expense',
+})
+const emit = defineEmits<{
+  close: []
+  create: [payload: { name: string; color: string; type: TxType }]
+}>()
 
 const PRESETS = ['#e0795b', '#3f9b6e', '#4a8fd4', '#d4a13f', '#9b6bd4', '#d45b8c', '#5bb0c4']
 const name = ref('')
 const color = ref(PRESETS[0])
+const catType = ref<TxType>('expense')
 const custom = ref(false)
 
 function pick(c: string) {
@@ -25,6 +31,7 @@ watch(
     if (v) {
       name.value = ''
       color.value = PRESETS[0]
+      catType.value = props.defaultType
       custom.value = false
     }
   },
@@ -32,7 +39,7 @@ watch(
 
 function create() {
   if (!name.value.trim()) return
-  emit('create', { name: name.value.trim(), color: color.value })
+  emit('create', { name: name.value.trim(), color: color.value, type: catType.value })
 }
 </script>
 
@@ -40,7 +47,29 @@ function create() {
   <Transition name="fade">
     <div v-if="open" class="mask" @click.self="emit('close')">
       <div class="card box">
-        <h3>{{ type === 'expense' ? '新增支出分類' : '新增收入分類' }}</h3>
+        <h3>新增分類</h3>
+
+        <div class="lb">
+          <span>類型</span>
+          <div class="seg">
+            <button
+              type="button"
+              class="seg__btn"
+              :class="{ 'is-on': catType === 'expense' }"
+              @click="catType = 'expense'"
+            >
+              支出
+            </button>
+            <button
+              type="button"
+              class="seg__btn"
+              :class="{ 'is-on': catType === 'income' }"
+              @click="catType = 'income'"
+            >
+              收入
+            </button>
+          </div>
+        </div>
 
         <label class="lb">
           <span>名稱</span>
@@ -117,6 +146,26 @@ function create() {
   font-size: 12.5px;
   font-weight: 650;
   color: var(--text-2);
+}
+.seg {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  background: var(--surface-3);
+  border-radius: 12px;
+}
+.seg__btn {
+  flex: 1;
+  height: 32px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.seg__btn.is-on {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-1);
 }
 .swatches {
   display: flex;
