@@ -128,14 +128,13 @@ watch(
       <button
         v-if="collapsed && all.length > list.length"
         type="button"
-        class="cat cat--more"
-        :title="expanded ? '收起全部分類' : `顯示全部 ${all.length} 個分類`"
+        class="cat-more"
+        :title="expanded ? '收起全部分類' : `更多分類（隱藏 ${hiddenCount} 個）`"
+        :aria-expanded="expanded"
         @click="expanded = !expanded"
       >
-        <span v-if="expanded">收起</span>
-        <span v-else>更多 {{ hiddenCount }}</span>
-        <svg class="caret" :class="{ 'is-up': expanded }" viewBox="0 0 12 12" aria-hidden="true">
-          <path d="M2.5 4.5 6 8l3.5-3.5" />
+        <svg class="cat-more__icon" :class="{ 'is-up': expanded }" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" />
         </svg>
       </button>
 
@@ -206,26 +205,35 @@ watch(
   border-radius: 50%;
   flex: none;
 }
-.cat--more {
-  border-style: dashed;
+.cat-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
   color: var(--text-3);
+  flex: none;
 }
-.cat--more:hover {
+.cat-more:hover {
   color: var(--accent);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
-.caret {
-  width: 12px;
-  height: 12px;
+.cat-more__icon {
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.6;
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
   transition: transform 0.15s;
 }
-.caret.is-up {
+.cat-more__icon.is-up {
   transform: rotate(180deg);
 }
 </style>
