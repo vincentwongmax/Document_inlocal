@@ -76,13 +76,6 @@ async function refresh() {
   toast.push(ok ? '匯率已更新' : '無法連上匯率服務，沿用既有匯率', ok ? 'ok' : 'warn')
 }
 
-const updatedText = computed(() => {
-  const t = settings.state.ratesUpdatedAt
-  if (!t) return '尚未更新（使用預設值）'
-  const d = new Date(t)
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-})
-
 async function changeBase(code: string) {
   await settings.setBaseCurrency(code)
   toast.push(`主幣別已改為 ${code}`, 'ok')
@@ -257,11 +250,19 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
       </div>
 
       <div class="panel">
-        <div class="panel__hd">
+        <div class="panel__hd panel__hd--rate">
           <span class="panel__label">匯率</span>
-          <span class="tiny muted panel__meta">
-            1 外幣 = ? {{ settings.baseCurrency }} · {{ updatedText }}
-          </span>
+          <select
+            v-if="addableRates.length"
+            class="field rates__addsel"
+            :value="''"
+            @change="addRate($event)"
+          >
+            <option value="" disabled>新增</option>
+            <option v-for="c in addableRates" :key="c.code" :value="c.code">
+              {{ c.code }} · {{ c.name }}
+            </option>
+          </select>
           <button class="btn btn--sm" :disabled="refreshing" @click="refresh">
             {{ refreshing ? '更新中…' : '更新匯率' }}
           </button>
@@ -287,14 +288,6 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
               @keyup.enter="commitRate(r.code)"
             />
           </div>
-        </div>
-        <div v-if="addableRates.length" class="rates__add">
-          <select class="field rates__addsel" :value="''" @change="addRate($event)">
-            <option value="" disabled>＋ 新增幣別到匯率表…</option>
-            <option v-for="c in addableRates" :key="c.code" :value="c.code">
-              {{ c.code }} · {{ c.name }}
-            </option>
-          </select>
         </div>
       </div>
 
@@ -664,6 +657,10 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
   flex-wrap: wrap;
   margin-bottom: 10px;
 }
+.panel__hd--rate {
+  align-items: center;
+  gap: 8px;
+}
 .panel__label {
   font-size: 13px;
   font-weight: 700;
@@ -763,14 +760,19 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
   background: var(--expense-soft);
   color: var(--expense);
 }
-.rates__add {
-  margin-top: 10px;
-}
 .rates__addsel {
-  max-width: 260px;
-  height: 36px;
+  margin-left: auto;
+  width: auto;
+  max-width: 220px;
+  height: 34px;
+  padding: 0 12px;
   font-size: 13px;
+  font-weight: 550;
   background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  color: var(--text);
+  cursor: pointer;
 }
 .currow {
   display: flex;
