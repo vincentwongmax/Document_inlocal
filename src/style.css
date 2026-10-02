@@ -35,8 +35,10 @@
   --nav-h: 60px;
   --safe-b: env(safe-area-inset-bottom, 0px);
 
-  --font: system-ui, -apple-system, 'Segoe UI', 'Noto Sans TC', 'PingFang TC',
+  --font: 'Noto Sans TC', system-ui, -apple-system, 'Segoe UI', 'PingFang TC',
     'Microsoft JhengHei', 'Hiragino Sans GB', sans-serif;
+  --font-display: 'Noto Serif TC', 'Songti TC', 'Noto Serif CJK TC', 'Source Han Serif TC',
+    'Songti SC', 'SimSun', serif;
   --font-num: 'SF Mono', ui-monospace, 'Cascadia Mono', 'Roboto Mono', Menlo, Consolas, monospace;
 }
 

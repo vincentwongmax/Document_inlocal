@@ -8,7 +8,7 @@ import { getImage, putImage, deleteImage } from '@/lib/imageDb'
 import { compressImage, makeThumb } from '@/lib/imaging'
 import { md5OfFile } from '@/lib/md5'
 import { uid } from '@/lib/id'
-import { CURRENCIES, fmtMoney } from '@/lib/currency'
+import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { formatFull, fromLocalInput, toLocalInput } from '@/lib/date'
 import CategoryPicker from './CategoryPicker.vue'
 
@@ -38,6 +38,11 @@ const numeric = computed(() => {
 })
 const showRate = computed(() => currencyCode.value !== settings.baseCurrency)
 const preview = computed(() => fmtMoney(numeric.value * rate.value, settings.baseCurrency))
+const cat = computed(() => settings.category(categoryId.value))
+const catName = computed(() => cat.value?.name ?? '未分類')
+const catColor = computed(() => cat.value?.color ?? '#8a857c')
+const isExpense = computed(() => type.value === 'expense')
+const typeLabel = computed(() => (isExpense.value ? '支出' : '收入'))
 
 /* ── 圖片 ───────────────────────────────────────────────── */
 const urls = ref<Record<string, string>>({})
@@ -195,82 +200,106 @@ function save() {
     <div v-if="open && record" class="mask" @click.self="close">
       <div class="sheet card" role="dialog" aria-modal="true">
         <header class="sheet__head">
-          <h3>記錄明細</h3>
-          <button class="btn btn--ghost btn--sm" @click="close">關閉</button>
+          <div class="sheet__hd">
+            <span class="sheet__avatar" :style="{ background: catColor }" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M4 4h6l10 10-6 6L4 10V4Z" />
+                <circle cx="8" cy="8" r="1.2" />
+              </svg>
+            </span>
+            <div class="sheet__hd-t">
+              <h3 class="sheet__title">記錄明細</h3>
+              <span class="sheet__src">{{ record.source === 'image' ? '收據辨識' : '手動記帳' }}</span>
+            </div>
+          </div>
+          <button class="sheet__close" type="button" @click="close">關閉</button>
         </header>
 
         <div class="sheet__body">
-          <!-- 圖片（可上傳多張） -->
-          <div class="imgs">
-            <div v-for="im in images" :key="im.id" class="imgs__cell">
-              <button
-                class="imgs__item"
-                :title="im.name || '收據圖片'"
-                @click="openImage(im)"
-              >
-                <img v-if="im.thumb" :src="im.thumb" alt="" />
-              </button>
-              <button class="imgs__x" type="button" title="移除圖片" @click="removeImage(im)">✕</button>
+          <!-- 即時摘要 -->
+          <div class="hero" :class="isExpense ? 'is-exp' : 'is-inc'">
+            <div class="hero__l">
+              <span class="hero__cat">{{ catName }}</span>
+              <span class="hero__sub">{{ typeLabel }} · {{ fmtMoney(numeric || 0, currencyCode) }}</span>
             </div>
-            <button class="imgs__add" type="button" :disabled="busyImg" @click="pickImages">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-              <span>{{ busyImg ? '處理中…' : '上傳圖片' }}</span>
-            </button>
-            <input ref="fileInput" class="hidden" type="file" accept="image/*" multiple @change="onFiles" />
-          </div>
-          <p class="tiny muted imgs__hint">
-            {{ images.length ? '可上傳多張；點圖片放大檢視' : '可上傳多張圖片（自動壓縮為 480p）' }}
-          </p>
-
-          <div class="seg">
-            <button class="seg__btn" :class="{ 'is-on': type === 'expense' }" @click="type = 'expense'">
-              支出
-            </button>
-            <button class="seg__btn" :class="{ 'is-on': type === 'income' }" @click="type = 'income'">
-              收入
-            </button>
+            <span class="hero__amt num">{{ isExpense ? '−' : '+' }}{{ preview }}</span>
           </div>
 
-          <label class="lb">
-            <span>金額</span>
+          <!-- 類型 -->
+          <div class="flat">
+            <span class="flat__label">類型</span>
+            <div class="seg">
+              <button class="seg__btn" :class="{ 'is-on': isExpense }" @click="type = 'expense'">支出</button>
+              <button class="seg__btn" :class="{ 'is-on': !isExpense }" @click="type = 'income'">收入</button>
+            </div>
+          </div>
+
+          <!-- 金額 -->
+          <label class="flat">
+            <span class="flat__label">金額</span>
             <div class="amt">
-              <input v-model="amount" class="field num" inputmode="decimal" />
+              <div class="amt__in">
+                <span class="amt__sym">{{ currency(currencyCode).symbol }}</span>
+                <input v-model="amount" class="field amt__input num" inputmode="decimal" placeholder="0" />
+              </div>
               <select v-model="currencyCode" class="field sel2">
                 <option v-for="c in CURRENCIES" :key="c.code" :value="c.code">{{ c.code }}</option>
               </select>
             </div>
           </label>
 
-          <label v-if="showRate" class="lb">
-            <span>匯率（1 {{ currencyCode }} = ? {{ settings.baseCurrency }}）</span>
+          <!-- 匯率 -->
+          <label v-if="showRate" class="flat">
+            <span class="flat__label">匯率（1 {{ currencyCode }} = ? {{ settings.baseCurrency }}）</span>
             <div class="amt">
               <input v-model="rate" class="field num" inputmode="decimal" />
               <span class="conv num">≈ {{ preview }}</span>
             </div>
           </label>
 
-          <label class="lb">
-            <span>分類</span>
+          <!-- 分類 -->
+          <div class="flat">
+            <span class="flat__label">分類</span>
             <CategoryPicker v-model="categoryId" :type="type" variant="select" />
-          </label>
+          </div>
 
-          <label class="lb">
-            <span>日期時間</span>
+          <!-- 日期時間 -->
+          <label class="flat">
+            <span class="flat__label">日期時間</span>
             <input v-model="occurredAt" class="field" type="datetime-local" />
           </label>
 
-          <label class="lb">
-            <span>備註</span>
+          <!-- 備註 -->
+          <label class="flat">
+            <span class="flat__label">備註</span>
             <input v-model="note" class="field" maxlength="80" placeholder="可留空" />
           </label>
 
-          <div class="meta">
-            <div class="meta__row">
-              <span class="tiny muted">來源</span>
-              <span class="tiny">{{ record.source === 'image' ? '收據辨識' : '手動記帳' }}</span>
+          <!-- 收據圖片 -->
+          <div class="flat">
+            <span class="flat__label">收據圖片</span>
+            <div class="imgs">
+              <div v-for="im in images" :key="im.id" class="imgs__cell">
+                <button class="imgs__item" :title="im.name || '收據圖片'" @click="openImage(im)">
+                  <img v-if="im.thumb" :src="im.thumb" alt="" />
+                </button>
+                <button class="imgs__x" type="button" title="移除圖片" @click="removeImage(im)">✕</button>
+              </div>
+              <button class="imgs__add" type="button" :disabled="busyImg" @click="pickImages">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                <span>{{ busyImg ? '處理中…' : '上傳圖片' }}</span>
+              </button>
+              <input ref="fileInput" class="hidden" type="file" accept="image/*" multiple @change="onFiles" />
             </div>
+            <p class="tiny muted imgs__hint">
+              {{ images.length ? '可上傳多張；點圖片放大檢視' : '可上傳多張圖片（自動壓縮為 480p）' }}
+            </p>
+          </div>
+
+          <!-- 詳細資訊 -->
+          <section class="meta">
             <div class="meta__row">
               <span class="tiny muted">新增時間</span>
               <span class="tiny num">{{ formatFull(record.createdAt) }}</span>
@@ -289,7 +318,7 @@ function save() {
                 <span class="tiny num">1 {{ record.currency }} = {{ record.rate }} {{ record.baseCurrency }}</span>
               </div>
             </template>
-          </div>
+          </section>
 
           <details v-if="record.ocr?.text" class="raw">
             <summary class="tiny muted">
@@ -339,17 +368,73 @@ function save() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px 10px;
+  gap: 10px;
+  padding: 16px 16px 13px;
+  border-bottom: 1px solid var(--line);
 }
-.sheet__head h3 {
-  font-size: 16px;
+.sheet__hd {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.sheet__avatar {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  box-shadow: var(--shadow-1);
+}
+.sheet__avatar svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linejoin: round;
+}
+.sheet__hd-t {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.sheet__title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.sheet__src {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.sheet__close {
+  flex: none;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.sheet__close:hover {
+  background: var(--surface-3);
+  color: var(--text);
 }
 .sheet__body {
-  padding: 4px 16px 16px;
+  padding: 14px 16px 16px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 15px;
 }
 .sheet__foot {
   display: flex;
@@ -462,21 +547,86 @@ function save() {
   color: var(--text);
   box-shadow: var(--shadow-1);
 }
-.lb {
+.flat {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
 }
-.lb > span {
-  font-size: 12.5px;
-  font-weight: 650;
+.flat__label {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+}
+.hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 16px;
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.hero.is-exp {
+  background: var(--expense-soft);
+  border-color: #f0d8cf;
+}
+.hero.is-inc {
+  background: var(--accent-soft);
+  border-color: #cfe3da;
+}
+.hero__l {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.hero__cat {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hero__sub {
+  font-size: 12px;
   color: var(--text-2);
+}
+.hero__amt {
+  font-size: 19px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.hero.is-exp .hero__amt {
+  color: var(--expense);
+}
+.hero.is-inc .hero__amt {
+  color: var(--income);
 }
 .amt {
   display: grid;
   grid-template-columns: 1fr 96px;
   gap: 8px;
   align-items: center;
+}
+.amt__in {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.amt__sym {
+  position: absolute;
+  left: 13px;
+  font-size: 14px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+.amt__input {
+  padding-left: 32px;
+  font-weight: 600;
 }
 .sel2 {
   padding: 0 10px;
@@ -490,15 +640,17 @@ function save() {
 .meta {
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--line);
-  padding-top: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  padding: 2px 12px;
 }
 .meta__row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 0;
+  padding: 8px 0;
   border-bottom: 1px solid var(--line);
 }
 .meta__row:last-child {
