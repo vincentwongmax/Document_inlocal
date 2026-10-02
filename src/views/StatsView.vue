@@ -1,16 +1,31 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
-import { useStats } from '@/composables/useStats'
+import { useRecordsStore } from '@/stores/records'
+import { useStats, type DateRange } from '@/composables/useStats'
 import { fmtMoney } from '@/lib/currency'
-import { monthKey, monthLabel } from '@/lib/date'
+import { addDays, dayKey, formatRange, monthKey, monthLabel, monthRange, todayKey } from '@/lib/date'
 import DonutChart from '@/components/charts/DonutChart.vue'
 import TrendChart from '@/components/charts/TrendChart.vue'
 import DailyChart from '@/components/charts/DailyChart.vue'
 
 const settings = useSettingsStore()
+const records = useRecordsStore()
+
+/* ── 區間選擇 ───────────────────────────────────────────── */
+const mode = ref<'month' | 'custom'>('month')
 const month = ref(monthKey(new Date().toISOString()))
-const st = useStats(month)
+const start = ref(monthRange(month.value).start)
+const end = ref(monthRange(month.value).end)
+
+const range = computed<DateRange>(() => {
+  if (mode.value === 'month') return monthRange(month.value)
+  return start.value <= end.value
+    ? { start: start.value, end: end.value }
+    : { start: end.value, end: start.value }
+})
+
+const st = useStats(range)
 const base = computed(() => settings.baseCurrency)
 
 const months = computed(() => st.monthList(24))
@@ -22,15 +37,70 @@ function shift(delta: number) {
   if (next) month.value = next
 }
 
+/** 月份下拉與自訂日期互相同步，切換模式不會跳掉 */
+watch(
+  month,
+  (m) => {
+    const r = monthRange(m)
+    start.value = r.start
+    end.value = r.end
+  },
+  { immediate: true },
+)
+
+function presetRange(key: string): DateRange {
+  const today = todayKey()
+  const y = today.slice(0, 4)
+  if (key === 'month') return monthRange(monthKey(new Date().toISOString()))
+  if (key === 'lastMonth') {
+    const d = new Date()
+    d.setMonth(d.getMonth() - 1)
+    return monthRange(monthKey(d.toISOString()))
+  }
+  if (key === 'd7') return { start: addDays(today, -6), end: today }
+  if (key === 'd30') return { start: addDays(today, -29), end: today }
+  if (key === 'year') return { start: `${y}-01-01`, end: `${y}-12-31` }
+  // 全部：最早一筆記錄到今天
+  const first = records.records.reduce<string | null>((min, r) => {
+    const k = dayKey(r.occurredAt)
+    return !min || k < min ? k : min
+  }, null)
+  return { start: first ?? `${y}-01-01`, end: today }
+}
+
+const PRESETS: { key: string; label: string }[] = [
+  { key: 'd7', label: '近 7 天' },
+  { key: 'd30', label: '近 30 天' },
+  { key: 'month', label: '本月' },
+  { key: 'lastMonth', label: '上月' },
+  { key: 'year', label: '今年' },
+  { key: 'all', label: '全部' },
+]
+
+function applyPreset(key: string) {
+  const r = presetRange(key)
+  start.value = r.start
+  end.value = r.end
+  mode.value = 'custom'
+}
+
+function isPreset(key: string): boolean {
+  if (mode.value !== 'custom') return false
+  const p = presetRange(key)
+  return p.start === start.value && p.end === end.value
+}
+
+const rangeLabel = computed(() => formatRange(range.value.start, range.value.end))
+const prevLabel = computed(() => formatRange(st.prevRange.value.start, st.prevRange.value.end))
+
 const donutType = ref<'expense' | 'income'>('expense')
 const donutItems = computed(() =>
   donutType.value === 'expense' ? st.expenseByCat.value : st.incomeByCat.value,
 )
 const donutTotal = computed(() => donutItems.value.reduce((s, i) => s + i.total, 0))
 
-const dailyPoints = computed(() =>
-  st.daily.value.map(([day, v]) => ({ day, expense: v.expense, income: v.income })),
-)
+const dailyPoints = computed(() => st.daily.value)
+const dailyTitle = computed(() => (st.granularity.value === 'month' ? '每月收支' : '每日收支'))
 
 const mom = computed(() => st.momChange.value)
 </script>
@@ -47,19 +117,56 @@ const mom = computed(() => st.momChange.value)
       </div>
     </div>
 
-    <!-- 月份切換 -->
-    <div class="monthbar">
-      <button class="btn btn--ghost btn--sm" :disabled="monthIndex <= 0" @click="shift(-1)">‹</button>
-      <select v-model="month" class="field monthbar__sel">
-        <option v-for="m in months" :key="m" :value="m">{{ monthLabel(m) }}</option>
-      </select>
-      <button
-        class="btn btn--ghost btn--sm"
-        :disabled="monthIndex >= months.length - 1"
-        @click="shift(1)"
-      >
-        ›
-      </button>
+    <!-- 區間選擇 -->
+    <div class="card rangebar">
+      <div class="seg2 rangebar__mode">
+        <button :class="{ 'is-on': mode === 'month' }" @click="mode = 'month'">月份</button>
+        <button :class="{ 'is-on': mode === 'custom' }" @click="mode = 'custom'">自訂範圍</button>
+      </div>
+
+      <div v-if="mode === 'month'" class="monthbar">
+        <button class="btn btn--ghost btn--sm" :disabled="monthIndex <= 0" @click="shift(-1)">
+          ‹
+        </button>
+        <select v-model="month" class="field monthbar__sel">
+          <option v-for="m in months" :key="m" :value="m">{{ monthLabel(m) }}</option>
+        </select>
+        <button
+          class="btn btn--ghost btn--sm"
+          :disabled="monthIndex >= months.length - 1"
+          @click="shift(1)"
+        >
+          ›
+        </button>
+      </div>
+
+      <div v-else class="custom">
+        <div class="custom__dates">
+          <label class="custom__date">
+            <span class="tiny muted">從</span>
+            <input v-model="start" class="field" type="date" />
+          </label>
+          <label class="custom__date">
+            <span class="tiny muted">到</span>
+            <input v-model="end" class="field" type="date" />
+          </label>
+        </div>
+        <div class="presets">
+          <button
+            v-for="p in PRESETS"
+            :key="p.key"
+            class="chip"
+            :class="{ 'is-on': isPreset(p.key) }"
+            @click="applyPreset(p.key)"
+          >
+            {{ p.label }}
+          </button>
+        </div>
+      </div>
+
+      <p class="tiny muted rangebar__sum">
+        {{ rangeLabel }} · 共 {{ st.spanDays.value }} 天 · {{ st.rows.value.length }} 筆記錄
+      </p>
     </div>
 
     <!-- 摘要 -->
@@ -67,8 +174,13 @@ const mom = computed(() => st.momChange.value)
       <div class="card sum">
         <span class="tiny muted">支出</span>
         <strong class="num sum__exp">{{ fmtMoney(st.expense.value, base) }}</strong>
-        <span v-if="mom !== null" class="tiny" :class="mom > 0 ? 'up' : 'down'">
-          較上月 {{ mom > 0 ? '+' : '' }}{{ (mom * 100).toFixed(0) }}%
+        <span
+          v-if="mom !== null"
+          class="tiny"
+          :class="mom > 0 ? 'up' : 'down'"
+          :title="`前期 ${prevLabel}：${fmtMoney(st.prevExpense.value, base)}`"
+        >
+          較前期 {{ mom > 0 ? '+' : '' }}{{ (mom * 100).toFixed(0) }}%
         </span>
       </div>
       <div class="card sum">
@@ -81,12 +193,13 @@ const mom = computed(() => st.momChange.value)
         <strong class="num" :class="st.balance.value < 0 ? 'sum__exp' : 'sum__inc'">
           {{ fmtMoney(st.balance.value, base) }}
         </strong>
-        <span class="tiny muted">{{ st.inMonth.value.length }} 筆</span>
+        <span class="tiny muted">{{ st.rows.value.length }} 筆</span>
       </div>
     </div>
 
-    <div v-if="!st.inMonth.value.length" class="empty card">
-      <p class="muted">{{ monthLabel(month) }} 沒有記錄</p>
+    <div v-if="!st.rows.value.length" class="empty card">
+      <p class="muted">{{ rangeLabel }} 沒有記錄</p>
+      <p class="tiny muted">換個範圍，或先到主頁記一筆</p>
     </div>
 
     <template v-else>
@@ -129,7 +242,7 @@ const mom = computed(() => st.momChange.value)
 
       <!-- 每日 -->
       <section class="card block">
-        <header class="block__hd"><h2>每日收支</h2></header>
+        <header class="block__hd"><h2>{{ dailyTitle }}</h2></header>
         <div class="chartbox chartbox--tall">
           <DailyChart :points="dailyPoints" :currency="base" />
         </div>
@@ -145,7 +258,7 @@ const mom = computed(() => st.momChange.value)
 
       <!-- 前幾大支出 -->
       <section class="card block">
-        <header class="block__hd"><h2>本月最大支出</h2></header>
+        <header class="block__hd"><h2>區間最大支出</h2></header>
         <ul class="tops">
           <li v-for="(r, i) in st.topRecords.value" :key="r.id" class="top">
             <span class="top__rank num">{{ i + 1 }}</span>
@@ -161,11 +274,63 @@ const mom = computed(() => st.momChange.value)
 </template>
 
 <style scoped>
+.rangebar {
+  padding: 12px 14px 13px;
+  margin-bottom: 14px;
+}
+.rangebar__mode {
+  align-self: flex-start;
+}
 .monthbar {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-top: 11px;
+}
+.custom {
+  margin-top: 11px;
+}
+.custom__dates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.custom__date {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.custom__date .field {
+  min-width: 0;
+}
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.chip {
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-2);
+}
+.chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.chip.is-on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.rangebar__sum {
+  margin: 9px 0 0;
 }
 .monthbar__sel {
   height: 38px;

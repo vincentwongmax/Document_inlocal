@@ -5,7 +5,7 @@ import { useChart } from '@/composables/useChart'
 import { fmtMoney } from '@/lib/currency'
 
 const props = defineProps<{
-  points: { day: string; expense: number; income: number }[]
+  points: { key: string; label: string; expense: number; income: number }[]
   currency: string
 }>()
 
@@ -14,7 +14,7 @@ const { setCanvas, render } = useChart(() => {
   const cfg: ChartConfiguration<'bar'> = {
     type: 'bar',
     data: {
-      labels: props.points.map((p) => `${Number(p.day.split('-')[2])}`),
+      labels: props.points.map((p) => p.label),
       datasets: [
         {
           label: '支出',
@@ -57,7 +57,7 @@ const { setCanvas, render } = useChart(() => {
         },
         tooltip: {
           callbacks: {
-            title: (items) => `${props.points[items[0].dataIndex]?.day ?? ''}`,
+            title: (items) => `${props.points[items[0].dataIndex]?.key ?? ''}`,
             label: (ctx) => `${ctx.dataset.label} ${fmtMoney(Number(ctx.raw ?? 0), props.currency)}`,
           },
         },
