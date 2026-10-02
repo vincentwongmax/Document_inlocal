@@ -23,6 +23,11 @@
   --warn: #9a6b1f;
   --warn-soft: #fbf2e0;
 
+  /* 已選分類：粉紅（玫瑰粉，與白字對比 4.5:1 達 AA） */
+  --pick: #b85773;
+  --pick-soft: #fbeef2;
+  --pick-line: #eccfd9;
+
   --r-sm: 8px;
   --r-md: 12px;
   --r-lg: 16px;

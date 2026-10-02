@@ -418,7 +418,8 @@ watch(
   background: var(--surface-3);
 }
 .pop__item.is-on {
-  color: var(--text);
+  background: var(--pick-soft);
+  color: var(--pick);
   font-weight: 650;
 }
 .pop__ic {
@@ -432,7 +433,7 @@ watch(
   background: var(--bg);
 }
 .pop__item.is-on .pop__ic {
-  box-shadow: inset 0 0 0 1px rgba(44, 110, 91, 0.28);
+  box-shadow: inset 0 0 0 1px var(--pick-line);
 }
 .pop__name {
   flex: 1;
@@ -446,7 +447,7 @@ watch(
   width: 16px;
   height: 16px;
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--pick);
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -496,8 +497,8 @@ watch(
   background: var(--surface-3);
 }
 .cat.is-on {
-  background: var(--text);
-  border-color: var(--text);
+  background: var(--pick);
+  border-color: var(--pick);
   color: #fff;
 }
 .cat__ic {

@@ -41,6 +41,9 @@ App 是 PWA，`registerType: 'autoUpdate'`，Service Worker 會預快取整個 d
 - 視覺規範：米白紙感、石墨灰文字、**單一墨綠強調色 `--accent: #2c6e5b`**；
   支出 `--expense: #bf563c`（紅／暖）、收入 `--income: #2c6e5b`（綠）；
   不用漸層／玻璃擬態／霓虹色
+- 「已選分類」一律用粉紅 `--pick: #b85773`（白字對比 4.5:1）、`--pick-soft: #fbeef2`（下拉已選列底）、
+  `--pick-line: #eccfd9`（已選列的 icon 描邊）；**不要用 `--text`（近黑）當已選底色**（使用者明確要求）
+  - 兩處實作都在 `CategoryPicker.vue`：`.cat.is-on`（chips）與 `.pop__item.is-on`（自訂下拉）
 - 字體：`--font` = Noto Sans TC，`--font-display` = Noto Serif TC（Google Fonts，CJK subset 按需載入）
 - 圖示一律用描邊線性圖示（24×24 網格、`currentColor`），不要混用 emoji 或填充圖示
 - 元件在被多處共用時（例如 `RecordList` 同時用於記錄頁與統計頁），改動要一併回歸測試
