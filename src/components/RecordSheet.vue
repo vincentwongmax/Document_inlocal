@@ -152,7 +152,7 @@ function save() {
 
           <label class="lb">
             <span>分類</span>
-            <CategoryPicker v-model="categoryId" :type="type" />
+            <CategoryPicker v-model="categoryId" :type="type" variant="select" />
           </label>
 
           <label class="lb">

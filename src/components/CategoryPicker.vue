@@ -14,8 +14,10 @@ const props = withDefaults(
     usageOrder?: boolean
     /** 主頁模式：只顯示常用分類，其餘收進「更多」 */
     collapsed?: boolean
+    /** 顯示方式：chips 標籤（預設）／ select 下拉清單 */
+    variant?: 'chips' | 'select'
   }>(),
-  { limit: 0, usageOrder: true, collapsed: false },
+  { limit: 0, usageOrder: true, collapsed: false, variant: 'chips' },
 )
 const emit = defineEmits<{ 'update:modelValue': [id: string] }>()
 
@@ -72,6 +74,16 @@ function pick(id: string) {
   if (expanded.value) expanded.value = false
 }
 
+/** 下拉模式：目前選中的分類 */
+const selected = computed<Category | undefined>(() =>
+  all.value.find((c) => c.id === props.modelValue),
+)
+
+function onSelect(e: Event) {
+  const id = (e.target as HTMLSelectElement).value
+  if (id) pick(id)
+}
+
 // 換收支類型時收起，避免分類暴增
 watch(
   () => props.type,
@@ -83,7 +95,24 @@ watch(
 
 <template>
   <div class="picker">
-    <div class="cats">
+    <!-- 下拉清單模式 -->
+    <template v-if="variant === 'select'">
+      <div class="selwrap">
+        <span
+          v-if="selected"
+          class="selwrap__dot"
+          :style="{ background: selected.color }"
+          aria-hidden="true"
+        />
+        <select class="field selwrap__sel" :value="modelValue" @change="onSelect">
+          <option v-if="!list.length" value="" disabled>尚無分類，請到設定頁新增</option>
+          <option v-for="c in list" :key="c.id" :value="c.id">{{ c.name }}</option>
+        </select>
+      </div>
+    </template>
+
+    <!-- 標籤模式 -->
+    <div v-else class="cats">
       <button
         v-for="c in list"
         :key="c.id"
@@ -118,6 +147,28 @@ watch(
 <style scoped>
 .picker {
   min-width: 0;
+}
+/* ── 下拉模式 ── */
+.selwrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  max-width: 240px;
+  min-width: 160px;
+}
+.selwrap__dot {
+  position: absolute;
+  left: 12px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 1;
+}
+.selwrap__sel {
+  width: 100%;
+  padding-left: 30px;
+  height: 36px;
 }
 .cats {
   display: flex;
