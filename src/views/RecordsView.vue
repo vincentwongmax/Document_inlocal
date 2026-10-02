@@ -161,10 +161,15 @@ function removeEditing(id: string) {
     <div class="page-head">
       <div>
         <h1 class="page-title">記錄</h1>
-        <p class="page-sub">
-          {{ formatRange(range.start, range.end) }} · {{ rows.length }} 筆 · 支出
-          {{ fmtMoney(expense, settings.baseCurrency) }} / 收入
-          {{ fmtMoney(income, settings.baseCurrency) }}
+        <p class="page-sub rec-meta">
+          <span class="rec-meta__date">{{ formatRange(range.start, range.end) }}</span>
+          <span class="rec-meta__pill num">{{ rows.length }} 筆</span>
+          <span class="rec-meta__pill rec-meta__pill--exp num">
+            支出 {{ fmtMoney(expense, settings.baseCurrency) }}
+          </span>
+          <span class="rec-meta__pill rec-meta__pill--inc num">
+            收入 {{ fmtMoney(income, settings.baseCurrency) }}
+          </span>
         </p>
       </div>
     </div>
@@ -268,6 +273,47 @@ function removeEditing(id: string) {
 </template>
 
 <style scoped>
+.rec-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.rec-meta__date {
+  margin-right: 4px;
+}
+.rec-meta__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 23px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.rec-meta__pill--exp {
+  background: var(--expense-soft);
+  color: var(--expense);
+}
+.rec-meta__pill--exp::before {
+  content: '↓';
+  font-size: 11px;
+  font-weight: 700;
+}
+.rec-meta__pill--inc {
+  background: rgba(44, 110, 91, 0.1);
+  color: var(--income);
+}
+.rec-meta__pill--inc::before {
+  content: '↑';
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .rangebar {
   padding: 12px 14px 13px;
   margin-bottom: 14px;
