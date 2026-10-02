@@ -59,6 +59,12 @@ const range = computed<DateRange>(() => {
   return { start: unitRange(unit.value, ks[0]).start, end: unitRange(unit.value, ks[ks.length - 1]).end }
 })
 
+const rangeText = computed(() =>
+  range.value.start === range.value.end
+    ? range.value.start.replace(/-/g, '/')
+    : formatRange(range.value.start, range.value.end),
+)
+
 const rows = computed(() =>
   records.records
     .filter((r) => {
@@ -163,7 +169,7 @@ function removeEditing(id: string) {
         <h1 class="page-title">記錄</h1>
         <p class="page-sub rec-meta">
           <span class="rec-meta__pill rec-meta__pill--date num">
-            {{ formatRange(range.start, range.end) }}
+            {{ rangeText }}
           </span>
           <span class="rec-meta__pill num">{{ rows.length }} 筆</span>
           <span class="rec-meta__pill rec-meta__pill--exp num">
