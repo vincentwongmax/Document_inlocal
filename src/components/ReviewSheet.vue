@@ -4,6 +4,7 @@ import type { DraftRecord } from '@/types'
 import { useUpload } from '@/composables/useUpload'
 import { useSettingsStore } from '@/stores/settings'
 import CategoryPicker from './CategoryPicker.vue'
+import DateTimeField from './DateTimeField.vue'
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { toLocalInput, fromLocalInput, formatFull } from '@/lib/date'
 import { formatBytes } from '@/lib/imaging'
@@ -133,11 +134,9 @@ function applyDate(d: DraftRecord, iso: string) {
 
               <label class="lb">
                 <span>時間</span>
-                <input
-                  class="field"
-                  type="datetime-local"
-                  :value="toLocalInput(d.occurredAt)"
-                  @input="applyDate(d, fromLocalInput(($event.target as HTMLInputElement).value))"
+                <DateTimeField
+                  :model-value="toLocalInput(d.occurredAt)"
+                  @update:model-value="applyDate(d, fromLocalInput($event))"
                 />
               </label>
             </div>

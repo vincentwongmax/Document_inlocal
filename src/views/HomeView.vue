@@ -5,6 +5,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/composables/useToast'
 import Keypad from '@/components/Keypad.vue'
 import CategoryPicker from '@/components/CategoryPicker.vue'
+import DateTimeField from '@/components/DateTimeField.vue'
 import ReviewSheet from '@/components/ReviewSheet.vue'
 import { useUpload } from '@/composables/useUpload'
 import { displayMain, displaySub, calcValue, initCalc, input, equals, type CalcState } from '@/lib/calc'
@@ -248,7 +249,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           </div>
           <input v-model="note" class="field" placeholder="備註（可留空）" maxlength="80" />
           <div class="pad__row">
-            <input v-model="occurredAt" class="field" type="datetime-local" />
+            <DateTimeField v-model="occurredAt" />
             <button class="btn btn--primary btn--save" @click="submit">記錄</button>
           </div>
         </div>
@@ -435,6 +436,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   .pad__row {
     grid-template-columns: 1fr 1fr;
   }
+  /* 日期時間欄位現在包在 .dt 裡，這條要同時涵蓋外層容器，否則欄位會被擠成半寬 */
+  .pad__row .dt,
   .pad__row .field {
     grid-column: 1 / -1;
   }

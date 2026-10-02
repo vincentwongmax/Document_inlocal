@@ -14,6 +14,7 @@ import { iconForCategory } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
 import CategoryIcon from './CategoryIcon.vue'
 import CategoryPicker from './CategoryPicker.vue'
+import DateTimeField from './DateTimeField.vue'
 
 const props = defineProps<{ open: boolean; record: TxRecord | null }>()
 const emit = defineEmits<{
@@ -275,7 +276,7 @@ function save() {
           <!-- 日期時間 -->
           <label class="flat">
             <span class="flat__label">日期時間</span>
-            <input v-model="occurredAt" class="field" type="datetime-local" />
+            <DateTimeField v-model="occurredAt" />
           </label>
 
           <!-- 備註 -->
