@@ -2,6 +2,9 @@
 import type { Category, TxType } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
+import { iconForCategory } from '@/lib/icons'
+import { withAlpha } from '@/lib/color'
+import CategoryIcon from './CategoryIcon.vue'
 import { computed, ref, watch } from 'vue'
 
 const props = withDefaults(
@@ -100,10 +103,12 @@ watch(
       <div class="selwrap">
         <span
           v-if="selected"
-          class="selwrap__dot"
-          :style="{ background: selected.color }"
+          class="selwrap__ic"
+          :style="{ '--c': selected.color, '--bg': withAlpha(selected.color, 0.14) }"
           aria-hidden="true"
-        />
+        >
+          <CategoryIcon :name="iconForCategory(selected)" :size="14" :stroke="1.9" />
+        </span>
         <select class="field selwrap__sel" :value="modelValue" @change="onSelect">
           <option v-if="!list.length" value="" disabled>尚無分類，請到設定頁新增</option>
           <option v-for="c in list" :key="c.id" :value="c.id">{{ c.name }}</option>
@@ -121,7 +126,13 @@ watch(
         :class="{ 'is-on': c.id === modelValue }"
         @click="pick(c.id)"
       >
-        <span class="cat__dot" :style="{ background: c.color }" />
+        <span
+          class="cat__ic"
+          :style="{ '--c': c.color, '--bg': withAlpha(c.color, 0.14) }"
+          aria-hidden="true"
+        >
+          <CategoryIcon :name="iconForCategory(c)" :size="15" :stroke="1.9" />
+        </span>
         <span class="cat__name">{{ c.name }}</span>
       </button>
 
@@ -155,18 +166,22 @@ watch(
   max-width: 240px;
   min-width: 160px;
 }
-.selwrap__dot {
+.selwrap__ic {
   position: absolute;
-  left: 12px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+  left: 8px;
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 7px;
+  color: var(--c);
+  background: var(--bg);
   pointer-events: none;
   z-index: 1;
 }
 .selwrap__sel {
   width: 100%;
-  padding-left: 30px;
+  padding-left: 34px;
   height: 36px;
 }
 .cats {
@@ -199,11 +214,19 @@ watch(
   border-color: var(--text);
   color: #fff;
 }
-.cat__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+.cat__ic {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  color: var(--c);
+  background: var(--bg);
   flex: none;
+}
+.cat.is-on .cat__ic {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
 }
 .cat-more {
   display: inline-flex;

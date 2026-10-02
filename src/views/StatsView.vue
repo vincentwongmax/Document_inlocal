@@ -21,6 +21,9 @@ import TrendChart from '@/components/charts/TrendChart.vue'
 import DailyChart from '@/components/charts/DailyChart.vue'
 import RecordList from '@/components/RecordList.vue'
 import RecordSheet from '@/components/RecordSheet.vue'
+import CategoryIcon from '@/components/CategoryIcon.vue'
+import { iconForCategory } from '@/lib/icons'
+import { withAlpha } from '@/lib/color'
 
 const settings = useSettingsStore()
 const records = useRecordsStore()
@@ -326,7 +329,9 @@ const mom = computed(() => st.momChange.value)
 
           <ul class="cats">
             <li v-for="c in donutItems" :key="c.id" class="cat">
-              <span class="cat__dot" :style="{ background: c.color }" />
+              <span class="cat__ic" :style="{ '--c': c.color, '--bg': withAlpha(c.color, 0.14) }">
+                <CategoryIcon :name="iconForCategory(c)" :size="14" :stroke="1.9" />
+              </span>
               <span class="cat__name">{{ c.name }}</span>
               <span class="cat__bar">
                 <span class="cat__fill" :style="{ width: `${Math.max(2, c.ratio * 100)}%`, background: c.color }" />
@@ -566,14 +571,18 @@ const mom = computed(() => st.momChange.value)
 }
 .cat {
   display: grid;
-  grid-template-columns: 9px 84px 1fr auto 34px;
+  grid-template-columns: 22px 84px 1fr auto 34px;
   align-items: center;
   gap: 9px;
 }
-.cat__dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
+.cat__ic {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  color: var(--c);
+  background: var(--bg);
 }
 .cat__name {
   font-size: 13.5px;

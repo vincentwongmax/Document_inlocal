@@ -4,12 +4,19 @@ import type { TxRecord } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { fmtMoney } from '@/lib/currency'
 import { formatFull, relativeTime } from '@/lib/date'
+import { iconForCategory } from '@/lib/icons'
+import { withAlpha } from '@/lib/color'
+import CategoryIcon from './CategoryIcon.vue'
 
 const props = defineProps<{ record: TxRecord; showTime?: boolean }>()
 const emit = defineEmits<{ edit: [id: string]; remove: [id: string] }>()
 const settings = useSettingsStore()
 
 const cat = computed(() => settings.category(props.record.categoryId))
+const catColor = computed(() => cat.value?.color ?? '#8a857c')
+const catIcon = computed(() =>
+  cat.value ? iconForCategory(cat.value) : iconForCategory({ id: '', name: '' }),
+)
 const isExpense = computed(() => props.record.type === 'expense')
 const converted = computed(() => props.record.currency !== props.record.baseCurrency)
 /** 舊資料可能沒有 images 欄位 */
@@ -18,7 +25,9 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
 
 <template>
   <div class="row">
-    <span class="row__dot" :style="{ background: cat?.color ?? '#8a857c' }" />
+    <span class="row__ic" :style="{ '--c': catColor, '--bg': withAlpha(catColor, 0.14) }">
+      <CategoryIcon :name="catIcon" :size="17" :stroke="1.9" />
+    </span>
     <button class="row__main" type="button" @click="emit('edit', record.id)">
       <span class="row__top">
         <span class="row__cat">{{ cat?.name ?? '未分類' }}</span>
@@ -64,10 +73,14 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
 .row:hover {
   background: var(--surface-3);
 }
-.row__dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
+.row__ic {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  color: var(--c);
+  background: var(--bg);
   flex: none;
 }
 .row__main {

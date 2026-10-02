@@ -10,6 +10,9 @@ import { md5OfFile } from '@/lib/md5'
 import { uid } from '@/lib/id'
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { formatFull, fromLocalInput, toLocalInput } from '@/lib/date'
+import { iconForCategory } from '@/lib/icons'
+import { withAlpha } from '@/lib/color'
+import CategoryIcon from './CategoryIcon.vue'
 import CategoryPicker from './CategoryPicker.vue'
 
 const props = defineProps<{ open: boolean; record: TxRecord | null }>()
@@ -41,6 +44,9 @@ const preview = computed(() => fmtMoney(numeric.value * rate.value, settings.bas
 const cat = computed(() => settings.category(categoryId.value))
 const catName = computed(() => cat.value?.name ?? '未分類')
 const catColor = computed(() => cat.value?.color ?? '#8a857c')
+const catIcon = computed(() =>
+  cat.value ? iconForCategory(cat.value) : iconForCategory({ id: '', name: '' }),
+)
 const isExpense = computed(() => type.value === 'expense')
 const typeLabel = computed(() => (isExpense.value ? '支出' : '收入'))
 
@@ -201,11 +207,12 @@ function save() {
       <div class="sheet card" role="dialog" aria-modal="true">
         <header class="sheet__head">
           <div class="sheet__hd">
-            <span class="sheet__avatar" :style="{ background: catColor }" aria-hidden="true">
-              <svg viewBox="0 0 24 24">
-                <path d="M4 4h6l10 10-6 6L4 10V4Z" />
-                <circle cx="8" cy="8" r="1.2" />
-              </svg>
+            <span
+              class="sheet__avatar"
+              :style="{ background: withAlpha(catColor, 0.15), color: catColor }"
+              aria-hidden="true"
+            >
+              <CategoryIcon :name="catIcon" :size="20" :stroke="1.8" />
             </span>
             <div class="sheet__hd-t">
               <h3 class="sheet__title">記錄明細</h3>
@@ -385,16 +392,12 @@ function save() {
   border-radius: 12px;
   display: grid;
   place-items: center;
-  color: #fff;
   box-shadow: var(--shadow-1);
 }
 .sheet__avatar svg {
-  width: 19px;
-  height: 19px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linejoin: round;
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.8;
 }
 .sheet__hd-t {
   display: flex;

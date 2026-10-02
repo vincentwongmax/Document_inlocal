@@ -6,6 +6,8 @@ export interface Category {
   name: string
   type: TxType
   color: string
+  /** 分類圖示鍵值（見 src/lib/icons.ts）；舊資料可能沒有 */
+  icon?: string
   /** 內建分類不可刪除，但可改名 */
   builtin: boolean
   archived: boolean

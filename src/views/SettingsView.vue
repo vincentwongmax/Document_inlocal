@@ -5,6 +5,9 @@ import { useRecordsStore } from '@/stores/records'
 import { useToast } from '@/composables/useToast'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import CategoryAddModal from '@/components/CategoryAddModal.vue'
+import CategoryIcon from '@/components/CategoryIcon.vue'
+import { iconForCategory } from '@/lib/icons'
+import { withAlpha } from '@/lib/color'
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { buildExport, downloadJson, parseImport, restoreImages } from '@/lib/exportImport'
 import { usageBytes } from '@/lib/storage'
@@ -90,8 +93,8 @@ const grouped = computed(() => [
 
 /** 主頁常用分類：右側「＋ 新增」開啟新增分類彈窗 */
 const showAddCat = ref(false)
-function onAddCat(p: { name: string; color: string; type: TxType }) {
-  settings.addCategory(p.name, p.type, p.color)
+function onAddCat(p: { name: string; color: string; type: TxType; icon: string }) {
+  settings.addCategory(p.name, p.type, p.color, p.icon)
   showAddCat.value = false
   toast.push('已新增分類', 'ok')
 }
@@ -398,7 +401,9 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
               :class="{ 'is-on': settings.isFavorite(c.id), 'is-off': c.archived }"
               @click="settings.toggleFavorite(c.id)"
             >
-              <span class="catchip__dot" :style="{ background: c.color }" />
+              <span class="catchip__ic" :style="{ '--c': c.color, '--bg': withAlpha(c.color, 0.14) }">
+                <CategoryIcon :name="iconForCategory(c)" :size="15" :stroke="1.9" />
+              </span>
               <span class="catchip__name">{{ c.name }}</span>
             </button>
           </div>
@@ -844,10 +849,15 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
   font-size: 11px;
   font-weight: 700;
 }
-.catchip__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+.catchip__ic {
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 7px;
+  color: var(--c);
+  background: var(--bg);
+  flex: none;
 }
 .catchip__name {
   font-size: 13px;

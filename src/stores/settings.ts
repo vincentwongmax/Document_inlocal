@@ -4,15 +4,22 @@ import type { Category, Settings, TxType } from '@/types'
 import { Keys, readJSON, writeJSON } from '@/lib/storage'
 import { defaultSettings } from '@/lib/defaults'
 import { fetchRates, defaultRates } from '@/lib/currency'
+import { iconForCategory } from '@/lib/icons'
 import { uid } from '@/lib/id'
+
+/** 舊資料沒有 icon 欄位 → 依內建 id／分類名稱補上，避免每個地方都要做 fallback */
+function withIcons(list: Category[]): Category[] {
+  return list.map((c) => (c.icon ? c : { ...c, icon: iconForCategory(c) }))
+}
 
 function merge(base: Settings, saved: Partial<Settings>): Settings {
   return {
     ...base,
     ...saved,
     rates: { ...base.rates, ...(saved.rates ?? {}) },
-    categories:
+    categories: withIcons(
       saved.categories && saved.categories.length ? saved.categories : base.categories,
+    ),
     favoriteCategories: Array.isArray(saved.favoriteCategories)
       ? saved.favoriteCategories
       : base.favoriteCategories,
@@ -28,6 +35,11 @@ function merge(base: Settings, saved: Partial<Settings>): Settings {
 export const useSettingsStore = defineStore('settings', () => {
   const loaded = readJSON<Settings>(Keys.SETTINGS_KEY)
   const state = ref<Settings>(merge(defaultSettings(loaded?.baseCurrency ?? 'MOP'), loaded ?? {}))
+
+  // 舊資料第一次載入若有補上圖示，立刻回寫一次，讓匯出檔也帶得到 icon
+  if (loaded?.categories?.length && loaded.categories.some((c) => !c.icon)) {
+    writeJSON(Keys.SETTINGS_KEY, state.value)
+  }
 
   watch(
     state,
@@ -88,18 +100,30 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   /* ── 分類管理 ─────────────────────────────────────────── */
-  function addCategory(name: string, type: TxType, color: string) {
-    const c: Category = { id: uid('c'), name: name.trim(), type, color, builtin: false, archived: false }
+  function addCategory(name: string, type: TxType, color: string, icon?: string) {
+    const c: Category = {
+      id: uid('c'),
+      name: name.trim(),
+      type,
+      color,
+      icon: icon || iconForCategory({ id: '', name }),
+      builtin: false,
+      archived: false,
+    }
     state.value.categories.push(c)
     return c
   }
 
-  function updateCategory(id: string, patch: Partial<Pick<Category, 'name' | 'color' | 'type'>>) {
+  function updateCategory(
+    id: string,
+    patch: Partial<Pick<Category, 'name' | 'color' | 'type' | 'icon'>>,
+  ) {
     const c = state.value.categories.find((x) => x.id === id)
     if (!c) return
     if (patch.name !== undefined) c.name = patch.name.trim() || c.name
     if (patch.color !== undefined) c.color = patch.color
     if (patch.type !== undefined) c.type = patch.type
+    if (patch.icon !== undefined) c.icon = patch.icon
   }
 
   function removeCategory(id: string) {
