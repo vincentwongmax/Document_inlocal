@@ -5,6 +5,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/composables/useToast'
 import Keypad from '@/components/Keypad.vue'
 import CategoryPicker from '@/components/CategoryPicker.vue'
+import CategoryAddModal from '@/components/CategoryAddModal.vue'
 import ReviewSheet from '@/components/ReviewSheet.vue'
 import { useUpload } from '@/composables/useUpload'
 import { displayMain, displaySub, calcValue, initCalc, input, equals, type CalcState } from '@/lib/calc'
@@ -95,17 +96,6 @@ function setAmount(v: number) {
   calc.value = { tokens: [{ t: 'num', v: String(v) }], done: true }
 }
 
-/** 一鍵帶入上一筆的金額與分類 */
-const lastRecord = computed(() => records.byNewest[0])
-function repeatLast() {
-  const r = lastRecord.value
-  if (!r) return
-  setAmount(r.amount)
-  type.value = r.type
-  categoryId.value = r.categoryId
-  curCode.value = r.currency
-}
-
 function onKey(e: KeyboardEvent) {
   const t = e.target as HTMLElement | null
   if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return
@@ -187,6 +177,15 @@ async function onDrop(e: DragEvent) {
   if (files.length) await up.addFiles(files)
 }
 
+/* ── 新增分類（主頁常用分類右側＋） ─────────────────────── */
+const showAddCat = ref(false)
+function onAddCat(p: { name: string; color: string }) {
+  const c = settings.addCategory(p.name, type.value, p.color)
+  categoryId.value = c.id
+  showAddCat.value = false
+  toast.push('已新增分類', 'ok')
+}
+
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
@@ -253,21 +252,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <Keypad class="pad__keypad" @press="press" />
 
         <div class="pad__meta">
-          <CategoryPicker v-model="categoryId" :type="type" collapsed />
+          <div class="catbar">
+            <CategoryPicker v-model="categoryId" :type="type" collapsed />
+            <button class="cat-add" type="button" title="新增分類" @click="showAddCat = true">＋</button>
+          </div>
           <input v-model="note" class="field" placeholder="備註（可留空）" maxlength="80" />
           <div class="pad__row">
             <input v-model="occurredAt" class="field" type="datetime-local" />
-            <button
-              v-if="lastRecord"
-              class="btn btn--sm btn--repeat"
-              title="帶入上一筆金額與分類"
-              @click="repeatLast"
-            >
-              同上筆
-            </button>
             <button class="btn btn--primary btn--save" @click="submit">記錄</button>
           </div>
         </div>
+
+        <CategoryAddModal :open="showAddCat" :type="type" @close="showAddCat = false" @create="onAddCat" />
       </section>
     </div>
 
@@ -429,6 +425,35 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .pad__row .field {
   min-width: 0;
 }
+.catbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.catbar > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.cat-add {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 18px;
+  line-height: 1;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+.cat-add:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 /* 窄螢幕：時間獨佔一行，按鈕並排 */
 @media (max-width: 639px) {
   .pad__row {
@@ -437,9 +462,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   .pad__row .field {
     grid-column: 1 / -1;
   }
-}
-.btn--repeat {
-  align-self: stretch;
 }
 .quick {
   display: flex;
