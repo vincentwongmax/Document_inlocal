@@ -242,7 +242,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <Keypad class="pad__keypad" @press="press" />
 
         <div class="pad__meta">
-          <CategoryPicker v-model="categoryId" :type="type" collapsed />
+          <div class="catbox">
+            <span class="catbox__label">分類</span>
+            <CategoryPicker v-model="categoryId" :type="type" collapsed />
+          </div>
           <input v-model="note" class="field" placeholder="備註（可留空）" maxlength="80" />
           <div class="pad__row">
             <input v-model="occurredAt" class="field" type="datetime-local" />
@@ -401,6 +404,21 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   display: flex;
   flex-direction: column;
   gap: 9px;
+}
+/* 分類：把整組選框框成一個明顯的區塊，方便一眼看到 */
+.catbox {
+  padding: 10px 11px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-3);
+}
+.catbox__label {
+  display: block;
+  margin: 0 0 8px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
 }
 .pad__row {
   display: grid;
