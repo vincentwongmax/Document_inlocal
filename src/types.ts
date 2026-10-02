@@ -30,18 +30,6 @@ export interface ImageRef {
   originalBytes?: number
 }
 
-/** 快速記帳的常用項目 */
-export interface QuickItem {
-  id: string
-  /** 顯示名稱（預設為分類名稱，可自訂） */
-  label: string
-  type: TxType
-  categoryId: string
-  amount: number
-  currency: string
-  note: string
-}
-
 export interface AmountCandidate {
   value: number
   currency: string
@@ -100,8 +88,6 @@ export interface Settings {
   /** 一張圖含多種幣別時，預設採用哪一個 */
   preferredCurrency: string
   categories: Category[]
-  /** 快速記帳的常用清單（使用者自行維護） */
-  quickItems: QuickItem[]
   /** 主頁直接顯示的常用分類（空陣列 = 全部分類都顯示） */
   favoriteCategories: string[]
 }

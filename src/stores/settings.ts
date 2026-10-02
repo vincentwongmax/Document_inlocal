@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
-import type { Category, QuickItem, Settings, TxType } from '@/types'
+import type { Category, Settings, TxType } from '@/types'
 import { Keys, readJSON, writeJSON } from '@/lib/storage'
 import { defaultSettings } from '@/lib/defaults'
 import { fetchRates, defaultRates } from '@/lib/currency'
@@ -13,7 +13,6 @@ function merge(base: Settings, saved: Partial<Settings>): Settings {
     rates: { ...base.rates, ...(saved.rates ?? {}) },
     categories:
       saved.categories && saved.categories.length ? saved.categories : base.categories,
-    quickItems: Array.isArray(saved.quickItems) ? saved.quickItems : base.quickItems,
     favoriteCategories: Array.isArray(saved.favoriteCategories)
       ? saved.favoriteCategories
       : base.favoriteCategories,
@@ -118,24 +117,6 @@ export const useSettingsStore = defineStore('settings', () => {
     else state.value.favoriteCategories.push(id)
   }
 
-  /* ── 快速記帳常用清單 ─────────────────────────────────── */
-  function addQuickItem(item: Omit<QuickItem, 'id'>): QuickItem {
-    const q: QuickItem = { ...item, id: uid('q') }
-    state.value.quickItems.push(q)
-    return q
-  }
-
-  function updateQuickItem(id: string, patch: Partial<Omit<QuickItem, 'id'>>) {
-    const q = state.value.quickItems.find((x) => x.id === id)
-    if (!q) return
-    Object.assign(q, patch)
-  }
-
-  function removeQuickItem(id: string) {
-    const i = state.value.quickItems.findIndex((x) => x.id === id)
-    if (i >= 0) state.value.quickItems.splice(i, 1)
-  }
-
   function restoreDefaults() {
     state.value.categories = JSON.parse(JSON.stringify(defaultSettings().categories))
   }
@@ -160,9 +141,6 @@ export const useSettingsStore = defineStore('settings', () => {
     favoriteCategories,
     isFavorite,
     toggleFavorite,
-    addQuickItem,
-    updateQuickItem,
-    removeQuickItem,
     restoreDefaults,
   }
 })
