@@ -408,9 +408,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 /* 分類：把整組選框框成一個明顯的區塊，方便一眼看到 */
 .catbox {
   padding: 10px 11px 11px;
-  border: 1px solid var(--line);
+  /* 淡墨綠底（--accent-soft）＋ 取自 --accent #2c6e5b 的淡色描邊 */
+  border: 1px solid rgba(44, 110, 91, 0.16);
   border-radius: var(--r-md);
-  background: var(--surface-3);
+  background: var(--accent-soft);
 }
 .catbox__label {
   display: block;
@@ -418,7 +419,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
-  color: var(--text-3);
+  color: var(--accent);
+  opacity: 0.75;
 }
 .pad__row {
   display: grid;
