@@ -49,14 +49,18 @@ const units: { key: RangeUnit; label: string }[] = [
 
 const unitKeyList = computed(() => unitKeys(unit.value, key.value, span.value))
 
+/**
+ * 依單位算出的區間一律只有「目前選定的那一個單位」：
+ * 日 = 使用者選的那一天、月 = 那一個月、年 = 那一年。
+ * 右側「3 個」只影響下方快捷切換的 chips，不會把區間撐成 3 個單位。
+ */
 const range = computed<DateRange>(() => {
   if (mode.value === 'custom') {
     return start.value <= end.value
       ? { start: start.value, end: end.value }
       : { start: end.value, end: start.value }
   }
-  const ks = unitKeyList.value
-  return { start: unitRange(unit.value, ks[0]).start, end: unitRange(unit.value, ks[ks.length - 1]).end }
+  return unitRange(unit.value, key.value)
 })
 
 const rangeText = computed(() =>
@@ -415,9 +419,15 @@ function removeEditing(id: string) {
 }
 .ctl {
   display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
   gap: 8px;
   margin-top: 11px;
   flex-wrap: wrap;
+}
+/* 範圍那組推到最右邊 */
+.ctl > .grp:last-child {
+  margin-left: auto;
 }
 .nav {
   display: flex;
