@@ -396,12 +396,16 @@ function removeEditing(id: string) {
   grid-column: 1 / -1;
   justify-content: flex-end;
 }
+/* 與左邊的日／月／年按鈕同字級（13px/600）與同高（28px），避免右側看起來小一號 */
 .rangetag {
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-2);
   background: var(--surface-3);
-  padding: 3px 10px;
   border-radius: 999px;
   white-space: nowrap;
 }
