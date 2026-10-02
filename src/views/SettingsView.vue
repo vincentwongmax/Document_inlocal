@@ -303,22 +303,27 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
           <span class="panel__label">記帳幣別選單</span>
           <span class="tiny muted panel__meta">主頁切換幣別時顯示哪幾個；沒選 = 全部</span>
         </div>
-        <div class="chips" v-if="visibleCurs.length">
-          <span v-for="c in visibleCurs" :key="c.code" class="chip chip--sel">
-            {{ c.code }}
-            <button
-              class="chip__x"
-              title="從主頁幣別選單移除"
-              @click="settings.toggleVisibleCurrency(c.code)"
-            >
-              ✕
-            </button>
-          </span>
-        </div>
-        <p v-else class="tiny muted">尚未選擇——主頁目前顯示全部幣別</p>
-        <div class="rates__add" v-if="addableVisible.length">
-          <select class="field rates__addsel" :value="''" @change="addVisible($event)">
-            <option value="" disabled>＋ 新增幣別到主頁選單…</option>
+        <div class="currow">
+          <div class="chips" v-if="visibleCurs.length">
+            <span v-for="c in visibleCurs" :key="c.code" class="chip chip--sel">
+              {{ c.code }}
+              <button
+                class="chip__x"
+                title="從主頁幣別選單移除"
+                @click="settings.toggleVisibleCurrency(c.code)"
+              >
+                ✕
+              </button>
+            </span>
+          </div>
+          <p v-else class="tiny muted">尚未選擇——主頁目前顯示全部幣別</p>
+          <select
+            v-if="addableVisible.length"
+            class="field currow__add"
+            :value="''"
+            @change="addVisible($event)"
+          >
+            <option value="" disabled>新增</option>
             <option v-for="c in addableVisible" :key="c.code" :value="c.code">
               {{ c.code }} · {{ c.name }}
             </option>
@@ -763,6 +768,19 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
 }
 .rates__addsel {
   max-width: 260px;
+  height: 36px;
+  font-size: 13px;
+  background: var(--surface);
+}
+.currow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.currow__add {
+  margin-left: auto;
+  max-width: 200px;
   height: 36px;
   font-size: 13px;
   background: var(--surface);
