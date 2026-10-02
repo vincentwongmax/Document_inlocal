@@ -17,6 +17,9 @@
   --accent: #2c6e5b;
   --accent-hover: #245c4b;
   --accent-soft: #e7f0ec;
+  /* 淺綠：比 --accent-soft 再飽和一點，用於需要「看得出是按鈕但不想厚重」的地方（如等號鍵） */
+  --accent-light: #cde6da;
+  --accent-light-hover: #bcdccd;
   --income: #2c6e5b;
   --expense: #bf563c;
   --expense-soft: #faece7;

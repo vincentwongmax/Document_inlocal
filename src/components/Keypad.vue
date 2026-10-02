@@ -168,13 +168,15 @@ function onKey(key: PlacedKey) {
   font-size: 17px;
 }
 .key--eq {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background: var(--accent-light);
+  border-color: var(--accent-light);
+  color: var(--accent);
   font-size: 22px;
+  font-weight: 700;
 }
 .key--eq:hover {
-  background: var(--accent-hover);
+  background: var(--accent-light-hover);
+  border-color: var(--accent-light-hover);
 }
 .key--tool {
   color: var(--text-2);

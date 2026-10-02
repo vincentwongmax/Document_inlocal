@@ -135,6 +135,23 @@ function onKey(e: KeyboardEvent) {
 }
 
 /* ── 送出 ───────────────────────────────────────────────── */
+/**
+ * 回到乾淨狀態：金額、備註、時間。
+ * 收支類型、分類、幣別刻意保留，方便連續記帳。
+ */
+function resetForm() {
+  calc.value = initCalc()
+  note.value = ''
+  occurredAt.value = nowLocalInput()
+}
+
+/** 清空鈕：沒有內容時不動作，避免彈出沒意義的提示 */
+function clearForm() {
+  const dirty = calc.value.tokens.length > 0 || note.value !== ''
+  resetForm()
+  if (dirty) toast.push('已清空', 'info')
+}
+
 function submit() {
   if (!(amount.value > 0)) {
     toast.push('請先輸入金額', 'warn')
@@ -156,9 +173,7 @@ function submit() {
   const label = `${fmtMoney(rec.baseAmount, rec.baseCurrency)} · ${settings.category(rec.categoryId)?.name ?? ''}`
   toast.push(`已記錄 ${label}`, 'ok', { label: '復原', run: () => records.remove(rec.id) })
 
-  calc.value = initCalc()
-  note.value = ''
-  occurredAt.value = nowLocalInput()
+  resetForm()
 }
 
 /* ── 圖片上傳（可多張、可拖曳） ─────────────────────────── */
@@ -251,6 +266,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <ClearableInput v-model="note" placeholder="備註（可留空）" :maxlength="80" />
           <div class="pad__row">
             <DateTimeField v-model="occurredAt" />
+            <button class="btn btn--clear" @click="clearForm">清空</button>
             <button class="btn btn--primary btn--save" @click="submit">記錄</button>
           </div>
         </div>
@@ -468,6 +484,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 .btn--save {
   min-width: 96px;
+  height: 42px;
+}
+/* 「記錄」左邊的清空鈕：次級動作，白底描邊即可，不搶主按鈕焦點 */
+.btn--clear {
+  min-width: 72px;
   height: 42px;
 }
 
