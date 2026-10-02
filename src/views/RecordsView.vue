@@ -16,10 +16,8 @@ import {
   monthRange,
   todayKey,
   todayUnit,
-  unitKeys,
   unitLabel,
   unitRange,
-  unitShort,
   type RangeUnit,
 } from '@/lib/date'
 
@@ -29,7 +27,6 @@ const toast = useToast()
 
 const mode = ref<'unit' | 'custom'>('unit')
 const unit = ref<RangeUnit>('day')
-const span = ref<1 | 3>(1)
 const key = ref(todayUnit('day'))
 const start = ref(todayKey())
 const end = ref(todayKey())
@@ -47,12 +44,9 @@ const units: { key: RangeUnit; label: string }[] = [
   { key: 'year', label: '年' },
 ]
 
-const unitKeyList = computed(() => unitKeys(unit.value, key.value, span.value))
-
 /**
  * 依單位算出的區間一律只有「目前選定的那一個單位」：
  * 日 = 使用者選的那一天、月 = 那一個月、年 = 那一年。
- * 右側「3 個」只影響下方快捷切換的 chips，不會把區間撐成 3 個單位。
  */
 const range = computed<DateRange>(() => {
   if (mode.value === 'custom') {
@@ -102,14 +96,6 @@ function shiftMonthKey(k: string, delta: number): string {
 function goToday() {
   key.value = todayUnit(unit.value)
   mode.value = 'unit'
-}
-
-function setSpan(s: 1 | 3) {
-  span.value = s
-}
-
-function goKey(k: string) {
-  key.value = k
 }
 
 /* ── 自訂範圍快捷 ───────────────────────────────────────── */
@@ -240,13 +226,6 @@ function removeEditing(id: string) {
               </button>
             </div>
           </div>
-          <div class="grp">
-            <span class="grp__label">範圍</span>
-            <div class="seg2">
-              <button :class="{ 'is-on': span === 1 }" @click="setSpan(1)">單一</button>
-              <button :class="{ 'is-on': span === 3 }" @click="setSpan(3)">3 個</button>
-            </div>
-          </div>
         </div>
 
         <div class="nav">
@@ -255,18 +234,6 @@ function removeEditing(id: string) {
           <button class="btn btn--ghost btn--sm" @click="shiftUnit(1)">›</button>
           <button class="btn btn--ghost btn--sm nav__today" @click="goToday">
             {{ unit === 'day' ? '今天' : unit === 'month' ? '本月' : '今年' }}
-          </button>
-        </div>
-
-        <div v-if="span === 3" class="keys">
-          <button
-            v-for="k in unitKeyList"
-            :key="k"
-            class="chip"
-            :class="{ 'is-on': k === key }"
-            @click="goKey(k)"
-          >
-            {{ unitShort(unit, k) }}
           </button>
         </div>
       </template>
@@ -420,14 +387,9 @@ function removeEditing(id: string) {
 .ctl {
   display: flex;
   align-items: flex-end;
-  justify-content: space-between;
   gap: 8px;
   margin-top: 11px;
   flex-wrap: wrap;
-}
-/* 範圍那組推到最右邊 */
-.ctl > .grp:last-child {
-  margin-left: auto;
 }
 .nav {
   display: flex;
@@ -444,11 +406,6 @@ function removeEditing(id: string) {
 }
 .nav__today {
   flex: none;
-}
-.keys {
-  display: flex;
-  gap: 6px;
-  margin-top: 10px;
 }
 .chip {
   flex: 1;
