@@ -24,8 +24,8 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
         <span class="row__cat">{{ cat?.name ?? '未分類' }}</span>
         <span v-if="showTime" class="ttag" :title="formatFull(record.occurredAt)">
           <svg class="ttag__ic" viewBox="0 0 16 16" aria-hidden="true">
-            <circle cx="8" cy="8" r="5.9" />
-            <path d="M8 4.7v3.45l2.2 1.35" />
+            <circle class="ttag__face" cx="8" cy="8" r="6.3" />
+            <path d="M8 4.55v3.75l2.3 1.4" />
           </svg>
           <span>{{ relativeTime(record.occurredAt) }}</span>
         </span>
@@ -125,14 +125,23 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-/* 時間標籤：比圖片標籤再輕一階 */
+/* 時間標籤：暖調軟底膠囊，比圖片標籤輕一階 */
 .ttag {
-  border-color: var(--line);
-  color: var(--text-3);
+  border-color: transparent;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-weight: 650;
+  padding: 0 9px;
+  box-shadow: var(--shadow-1);
   font-variant-numeric: tabular-nums;
 }
 .ttag__ic {
   stroke: var(--text-3);
+  stroke-width: 1.25;
+}
+.ttag__face {
+  fill: currentColor;
+  fill-opacity: 0.16;
 }
 .imtag__ic {
   stroke: var(--accent);
