@@ -162,7 +162,9 @@ function removeEditing(id: string) {
       <div>
         <h1 class="page-title">記錄</h1>
         <p class="page-sub rec-meta">
-          <span class="rec-meta__date">{{ formatRange(range.start, range.end) }}</span>
+          <span class="rec-meta__pill rec-meta__pill--date num">
+            {{ formatRange(range.start, range.end) }}
+          </span>
           <span class="rec-meta__pill num">{{ rows.length }} 筆</span>
           <span class="rec-meta__pill rec-meta__pill--exp num">
             支出 {{ fmtMoney(expense, settings.baseCurrency) }}
@@ -175,12 +177,12 @@ function removeEditing(id: string) {
     </div>
 
     <div class="card rangebar">
-      <div class="seg2 rangebar__mode">
-        <button :class="{ 'is-on': mode === 'unit' }" @click="mode = 'unit'">依單位</button>
-        <button :class="{ 'is-on': mode === 'custom' }" @click="mode = 'custom'">自訂範圍</button>
-      </div>
+      <div class="rangebar__top">
+        <div class="seg2 rangebar__mode">
+          <button :class="{ 'is-on': mode === 'unit' }" @click="mode = 'unit'">依單位</button>
+          <button :class="{ 'is-on': mode === 'custom' }" @click="mode = 'custom'">自訂範圍</button>
+        </div>
 
-      <div class="ctl">
         <div class="seg2">
           <button :class="{ 'is-on': typeFilter === 'all' }" @click="typeFilter = 'all'">全部</button>
           <button
@@ -279,8 +281,17 @@ function removeEditing(id: string) {
   flex-wrap: wrap;
   gap: 6px;
 }
-.rec-meta__date {
-  margin-right: 4px;
+.rec-meta__pill--date {
+  gap: 6px;
+  color: var(--text-2);
+}
+.rec-meta__pill--date::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
 }
 .rec-meta__pill {
   display: inline-flex;
@@ -320,6 +331,13 @@ function removeEditing(id: string) {
 }
 .rangebar__mode {
   align-self: flex-start;
+}
+.rangebar__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .ctl {
   display: flex;
