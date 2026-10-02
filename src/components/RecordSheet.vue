@@ -14,6 +14,7 @@ import { iconForCategory } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
 import CategoryIcon from './CategoryIcon.vue'
 import CategoryPicker from './CategoryPicker.vue'
+import ClearableInput from './ClearableInput.vue'
 import DateTimeField from './DateTimeField.vue'
 
 const props = defineProps<{ open: boolean; record: TxRecord | null }>()
@@ -282,7 +283,7 @@ function save() {
           <!-- 備註 -->
           <label class="flat">
             <span class="flat__label">備註</span>
-            <input v-model="note" class="field" maxlength="80" placeholder="可留空" />
+            <ClearableInput v-model="note" placeholder="可留空" :maxlength="80" />
           </label>
 
           <!-- 收據圖片 -->

@@ -49,4 +49,9 @@ App 是 PWA，`registerType: 'autoUpdate'`，Service Worker 會預快取整個 d
 - 元件在被多處共用時（例如 `RecordList` 同時用於記錄頁與統計頁），改動要一併回歸測試
 - 共用元件：`DateTimeField`（`datetime-local` 輸入框，右側內嵌「設為現在」小按鈕，v-model 為
   `YYYY-MM-DDTHH:mm` 本地字串）用於記帳頁、記錄明細、收據複核三處；
+  `ClearableInput`（文字輸入框，右側內嵌「清空」小按鈕，空值時變灰停用，支援 placeholder/maxlength）
+  同樣用於那三處的備註欄位；
   `CategoryIcon` / `CategoryPicker` / `RecordList` / `RecordRow` 為其他共用件
+- 「輸入框內嵌小按鈕」的統一樣式：26×26、radius 8px、`right: 5px` 垂直置中、
+  底色 `--accent-soft` + 圖示 `--accent`、hover 反白（`--accent` 底 + 白圖示）；
+  輸入框一律 `padding-right: 40px` 讓開（datetime 還需容納 Chromium 原生日曆選擇器）

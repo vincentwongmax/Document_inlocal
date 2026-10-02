@@ -4,6 +4,7 @@ import type { DraftRecord } from '@/types'
 import { useUpload } from '@/composables/useUpload'
 import { useSettingsStore } from '@/stores/settings'
 import CategoryPicker from './CategoryPicker.vue'
+import ClearableInput from './ClearableInput.vue'
 import DateTimeField from './DateTimeField.vue'
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { toLocalInput, fromLocalInput, formatFull } from '@/lib/date'
@@ -178,7 +179,7 @@ function applyDate(d: DraftRecord, iso: string) {
               <CategoryPicker v-model="d.categoryId" :type="d.type" />
             </div>
 
-            <input v-model="d.note" class="field" placeholder="備註（可留空）" maxlength="80" />
+            <ClearableInput v-model="d.note" placeholder="備註（可留空）" :maxlength="80" />
 
             <details v-if="d.ocr?.text" class="raw">
               <summary class="tiny muted">辨識原始文字（信心度 {{ Math.round(d.ocr.confidence) }}%）</summary>

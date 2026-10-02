@@ -5,6 +5,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/composables/useToast'
 import Keypad from '@/components/Keypad.vue'
 import CategoryPicker from '@/components/CategoryPicker.vue'
+import ClearableInput from '@/components/ClearableInput.vue'
 import DateTimeField from '@/components/DateTimeField.vue'
 import ReviewSheet from '@/components/ReviewSheet.vue'
 import { useUpload } from '@/composables/useUpload'
@@ -247,7 +248,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             <span class="catbox__label">分類</span>
             <CategoryPicker v-model="categoryId" :type="type" collapsed />
           </div>
-          <input v-model="note" class="field" placeholder="備註（可留空）" maxlength="80" />
+          <ClearableInput v-model="note" placeholder="備註（可留空）" :maxlength="80" />
           <div class="pad__row">
             <DateTimeField v-model="occurredAt" />
             <button class="btn btn--primary btn--save" @click="submit">記錄</button>
