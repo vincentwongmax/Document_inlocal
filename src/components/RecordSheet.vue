@@ -18,6 +18,7 @@ const emit = defineEmits<{
 const settings = useSettingsStore()
 const toast = useToast()
 
+const converted = computed(() => props.record?.currency !== props.record?.baseCurrency)
 const type = ref<TxType>('expense')
 const amount = ref('')
 const currencyCode = ref('MOP')
@@ -178,6 +179,16 @@ function save() {
               <span class="tiny muted">主幣金額</span>
               <span class="tiny num">{{ fmtMoney(record.baseAmount, record.baseCurrency) }}</span>
             </div>
+            <template v-if="converted">
+              <div class="meta__row">
+                <span class="tiny muted">原幣金額</span>
+                <span class="tiny num">{{ fmtMoney(record.amount, record.currency) }}</span>
+              </div>
+              <div class="meta__row">
+                <span class="tiny muted">記錄匯率</span>
+                <span class="tiny num">1 {{ record.currency }} = {{ record.rate }} {{ record.baseCurrency }}</span>
+              </div>
+            </template>
           </div>
 
           <details v-if="record.ocr?.text" class="raw">
