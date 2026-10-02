@@ -162,6 +162,24 @@ export function formatTime(iso: string): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
+/** 相對時間：剛剛 / N 分鐘前 / N 小時前 / N 天前；超過 30 天顯示日期、未來顯示時刻 */
+export function relativeTime(iso: string, now = Date.now()): string {
+  const t = new Date(iso).getTime()
+  if (isNaN(t)) return ''
+  const diff = now - t
+  if (diff < 0) return formatTime(iso)
+  const min = Math.floor(diff / 60000)
+  if (min < 1) return '剛剛'
+  if (min < 60) return `${min} 分鐘前`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr} 小時前`
+  const day = Math.floor(hr / 24)
+  if (day <= 30) return `${day} 天前`
+  const d = new Date(iso)
+  const nowY = new Date(now).getFullYear()
+  return `${d.getFullYear() !== nowY ? `${d.getFullYear()}/` : ''}${d.getMonth() + 1}/${d.getDate()}`
+}
+
 export function formatFull(iso: string): string {
   const d = new Date(iso)
   return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`

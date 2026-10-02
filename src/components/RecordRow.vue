@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import type { TxRecord } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { fmtMoney } from '@/lib/currency'
-import { formatTime } from '@/lib/date'
+import { formatFull, relativeTime } from '@/lib/date'
 
 const props = defineProps<{ record: TxRecord; showTime?: boolean }>()
 const emit = defineEmits<{ edit: [id: string]; remove: [id: string] }>()
@@ -20,7 +20,11 @@ const converted = computed(() => props.record.currency !== props.record.baseCurr
     <button class="row__main" type="button" @click="emit('edit', record.id)">
       <span class="row__top">
         <span class="row__cat">{{ cat?.name ?? '未分類' }}</span>
-        <span v-if="showTime" class="row__time tiny muted num">{{ formatTime(record.occurredAt) }}</span>
+        <span
+          v-if="showTime"
+          class="row__time tiny muted num"
+          :title="formatFull(record.occurredAt)"
+        >{{ relativeTime(record.occurredAt) }}</span>
       </span>
       <span v-if="record.note" class="row__note tiny muted">{{ record.note }}</span>
       <span class="row__meta">
