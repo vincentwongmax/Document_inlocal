@@ -2,8 +2,12 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { ImageRef, TxRecord, TxType } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
+import { useRecordsStore } from '@/stores/records'
 import { useToast } from '@/composables/useToast'
-import { getImage } from '@/lib/imageDb'
+import { getImage, putImage, deleteImage } from '@/lib/imageDb'
+import { compressImage, makeThumb } from '@/lib/imaging'
+import { md5OfFile } from '@/lib/md5'
+import { uid } from '@/lib/id'
 import { CURRENCIES, fmtMoney } from '@/lib/currency'
 import { formatFull, fromLocalInput, toLocalInput } from '@/lib/date'
 import CategoryPicker from './CategoryPicker.vue'
@@ -16,6 +20,7 @@ const emit = defineEmits<{
 }>()
 
 const settings = useSettingsStore()
+const records = useRecordsStore()
 const toast = useToast()
 
 const converted = computed(() => props.record?.currency !== props.record?.baseCurrency)
@@ -38,6 +43,15 @@ const preview = computed(() => fmtMoney(numeric.value * rate.value, settings.bas
 const urls = ref<Record<string, string>>({})
 const lightbox = ref<string | null>(null)
 
+/** 明細中可編輯的圖片（含本次新上傳、尚未儲存的） */
+const images = ref<ImageRef[]>([])
+/** 載入時的原始圖片，儲存時用來清掉被移除者 */
+let originalImages: ImageRef[] = []
+/** 本次新加入、尚未儲存的圖片 id（關閉未存則清除，避免殘留孤兒） */
+const addedIds = new Set<string>()
+const busyImg = ref(false)
+const fileInput = ref<HTMLInputElement | null>(null)
+
 function releaseUrls() {
   for (const u of Object.values(urls.value)) URL.revokeObjectURL(u)
   urls.value = {}
@@ -59,12 +73,81 @@ async function openImage(im: ImageRef) {
   lightbox.value = url
 }
 
-onBeforeUnmount(releaseUrls)
+function pickImages() {
+  fileInput.value?.click()
+}
+
+/** 上傳多張：MD5 去重 → 壓縮 480p（同主頁流程）→ 存 IndexedDB → 產生縮圖 */
+async function onFiles(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = Array.from(input.files ?? []).filter((f) => f.type.startsWith('image/'))
+  input.value = ''
+  if (!files.length) return
+  busyImg.value = true
+  try {
+    const known = new Set(records.knownMd5)
+    const batch = new Set<string>()
+    let skipped = 0
+    for (const file of files) {
+      const md5 = await md5OfFile(file)
+      if (known.has(md5) || batch.has(md5) || images.value.some((im) => im.md5 === md5)) {
+        skipped++
+        continue
+      }
+      batch.add(md5)
+      const id = uid('img')
+      const comp = await compressImage(file)
+      await putImage(id, comp.blob)
+      const thumb = await makeThumb(comp.blob)
+      images.value.push({
+        id,
+        md5,
+        shotAt: null,
+        name: file.name,
+        thumb,
+        w: comp.width || undefined,
+        h: comp.height || undefined,
+        bytes: comp.bytes,
+        originalBytes: comp.originalBytes || file.size,
+      })
+      addedIds.add(id)
+    }
+    if (skipped) toast.push(`已略過 ${skipped} 張重複圖片`, 'warn')
+  } finally {
+    busyImg.value = false
+  }
+}
+
+/** 從明細移除圖片（實際刪除在儲存 / 關閉時處理） */
+function removeImage(im: ImageRef) {
+  images.value = images.value.filter((x) => x.id !== im.id)
+  if (urls.value[im.id]) {
+    URL.revokeObjectURL(urls.value[im.id])
+    delete urls.value[im.id]
+  }
+}
+
+/** 丟棄尚未儲存的新圖片，避免 IndexedDB 殘留孤兒 */
+function discardPending() {
+  for (const id of addedIds) void deleteImage(id)
+  addedIds.clear()
+}
+
+function close() {
+  discardPending()
+  emit('close')
+}
+
+onBeforeUnmount(() => {
+  releaseUrls()
+  discardPending()
+})
 
 watch(
   () => props.record,
   (r) => {
     releaseUrls()
+    discardPending()
     if (!r) return
     type.value = r.type
     amount.value = String(r.amount)
@@ -73,6 +156,9 @@ watch(
     occurredAt.value = toLocalInput(r.occurredAt)
     note.value = r.note ?? ''
     rate.value = r.rate
+    images.value = [...(r.images ?? [])]
+    originalImages = [...(r.images ?? [])]
+    busyImg.value = false
   },
   { immediate: true },
 )
@@ -86,6 +172,11 @@ function save() {
     toast.push('金額必須大於 0', 'warn')
     return
   }
+  // 清掉在明細中被移除的既有圖片
+  const keep = new Set(images.value.map((i) => i.id))
+  for (const im of originalImages) if (!keep.has(im.id)) void deleteImage(im.id)
+  // 本批新圖將隨記錄一起儲存，清掉 pending 標記
+  addedIds.clear()
   emit('save', {
     type: type.value,
     amount: numeric.value,
@@ -94,34 +185,43 @@ function save() {
     categoryId: categoryId.value,
     occurredAt: fromLocalInput(occurredAt.value),
     note: note.value.trim(),
+    images: images.value,
   })
 }
 </script>
 
 <template>
   <Transition name="sheet">
-    <div v-if="open && record" class="mask" @click.self="emit('close')">
+    <div v-if="open && record" class="mask" @click.self="close">
       <div class="sheet card" role="dialog" aria-modal="true">
         <header class="sheet__head">
           <h3>記錄明細</h3>
-          <button class="btn btn--ghost btn--sm" @click="emit('close')">關閉</button>
+          <button class="btn btn--ghost btn--sm" @click="close">關閉</button>
         </header>
 
         <div class="sheet__body">
-          <!-- 圖片 -->
-          <div v-if="record.images.length" class="imgs">
-            <button
-              v-for="im in record.images"
-              :key="im.id"
-              class="imgs__item"
-              :title="im.name || '收據圖片'"
-              @click="openImage(im)"
-            >
-              <img v-if="im.thumb" :src="im.thumb" alt="" />
+          <!-- 圖片（可上傳多張） -->
+          <div class="imgs">
+            <div v-for="im in images" :key="im.id" class="imgs__cell">
+              <button
+                class="imgs__item"
+                :title="im.name || '收據圖片'"
+                @click="openImage(im)"
+              >
+                <img v-if="im.thumb" :src="im.thumb" alt="" />
+              </button>
+              <button class="imgs__x" type="button" title="移除圖片" @click="removeImage(im)">✕</button>
+            </div>
+            <button class="imgs__add" type="button" :disabled="busyImg" @click="pickImages">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              <span>{{ busyImg ? '處理中…' : '上傳圖片' }}</span>
             </button>
+            <input ref="fileInput" class="hidden" type="file" accept="image/*" multiple @change="onFiles" />
           </div>
-          <p v-if="record.images.length" class="tiny muted imgs__hint">
-            點圖片可放大檢視（原圖已壓縮為 480p）
+          <p class="tiny muted imgs__hint">
+            {{ images.length ? '可上傳多張；點圖片放大檢視' : '可上傳多張圖片（自動壓縮為 480p）' }}
           </p>
 
           <div class="seg">
@@ -264,6 +364,9 @@ function save() {
   gap: 8px;
   flex-wrap: wrap;
 }
+.imgs__cell {
+  position: relative;
+}
 .imgs__item {
   width: 76px;
   height: 76px;
@@ -278,8 +381,65 @@ function save() {
   object-fit: cover;
   display: block;
 }
+.imgs__x {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--surface);
+  font-size: 11px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.imgs__x:hover {
+  background: var(--expense);
+  color: #fff;
+}
+.imgs__add {
+  width: 76px;
+  height: 76px;
+  border-radius: 12px;
+  border: 1px dashed var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text-2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+.imgs__add:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.imgs__add:disabled {
+  opacity: 0.6;
+}
+.imgs__add svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
 .imgs__hint {
   margin: -8px 0 0;
+}
+.hidden {
+  display: none;
 }
 
 .seg {
