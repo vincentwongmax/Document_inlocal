@@ -227,7 +227,7 @@ function removeEditing(id: string) {
           </div>
           <!-- 區間與筆數：擺在日／月／年這一列的最右邊 -->
           <div class="rangeinfo">
-            <span v-for="t in rangeTags" :key="t" class="rangetag num">{{ t }}</span>
+            <span v-for="t in rangeTags" :key="t" class="rangetag">{{ t }}</span>
           </div>
         </div>
 
@@ -253,7 +253,7 @@ function removeEditing(id: string) {
           </label>
           <!-- 自訂範圍沒有「日／月／年」那一列，標籤改放在日期列下方靠右 -->
           <div class="rangeinfo rangeinfo--end">
-            <span v-for="t in rangeTags" :key="t" class="rangetag num">{{ t }}</span>
+            <span v-for="t in rangeTags" :key="t" class="rangetag">{{ t }}</span>
           </div>
         </div>
         <div class="presets">
@@ -381,9 +381,12 @@ function removeEditing(id: string) {
   margin-top: 11px;
   flex-wrap: wrap;
 }
-/* 區間／筆數標籤：推到「日／月／年」這一列的最右邊 */
+/* 區間／筆數標籤：推到「日／月／年」這一列的最右邊。
+   下緣留 3px 是因為 .seg2 有 3px 內距，實際按鈕是內縮的；
+   不補的話標籤會比左側按鈕低 3px，看起來不在同一列。 */
 .ctl .rangeinfo {
   margin-left: auto;
+  margin-bottom: 3px;
 }
 .rangeinfo {
   display: flex;
@@ -396,14 +399,16 @@ function removeEditing(id: string) {
   grid-column: 1 / -1;
   justify-content: flex-end;
 }
-/* 與左邊的日／月／年按鈕同字級（13px/600）與同高（28px），避免右側看起來小一號 */
+/* 與左邊的日／月／年按鈕完全同級：13px／600／28px／左右 14px、沿用內文字體
+   （刻意不加 .num 的等寬數字字體，那會讓右側看起來與左邊不是同一套字） */
 .rangetag {
   display: inline-flex;
   align-items: center;
   height: 28px;
-  padding: 0 12px;
+  padding: 0 14px;
   font-size: 13px;
   font-weight: 600;
+  letter-spacing: normal;
   color: var(--text-2);
   background: var(--surface-3);
   border-radius: 999px;
