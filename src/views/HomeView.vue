@@ -267,7 +267,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             </button>
             <button class="btn btn--primary btn--save" @click="submit">記錄</button>
           </div>
-          <p class="tiny muted hint">按 = 才會算出答案；Enter 送出、Esc 清空</p>
         </div>
       </section>
     </div>
@@ -468,9 +467,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .btn--save {
   min-width: 96px;
   height: 42px;
-}
-.hint {
-  margin: 0;
 }
 
 @media (min-width: 1024px) {
