@@ -63,6 +63,9 @@ const rangeText = computed(() =>
     : formatRange(range.value.start, range.value.end),
 )
 
+/** 區間與筆數兩顆小標籤（依單位模式靠「日／月／年」右側，自訂範圍模式靠日期列下方） */
+const rangeTags = computed(() => [rangeText.value, `${rows.value.length} 筆`])
+
 const rows = computed(() =>
   records.records
     .filter((r) => {
@@ -178,10 +181,6 @@ function removeEditing(id: string) {
           </span>
         </div>
       </div>
-      <div class="sum__foot">
-        <span class="sum__tag num">{{ rangeText }}</span>
-        <span class="sum__tag num">{{ rows.length }} 筆</span>
-      </div>
     </div>
 
     <div class="card rangebar">
@@ -226,6 +225,10 @@ function removeEditing(id: string) {
               </button>
             </div>
           </div>
+          <!-- 區間與筆數：擺在日／月／年這一列的最右邊 -->
+          <div class="rangeinfo">
+            <span v-for="t in rangeTags" :key="t" class="rangetag num">{{ t }}</span>
+          </div>
         </div>
 
         <div class="nav">
@@ -248,6 +251,10 @@ function removeEditing(id: string) {
             <span class="grp__label">到</span>
             <input v-model="end" class="field" type="date" />
           </label>
+          <!-- 自訂範圍沒有「日／月／年」那一列，標籤改放在日期列下方靠右 -->
+          <div class="rangeinfo rangeinfo--end">
+            <span v-for="t in rangeTags" :key="t" class="rangetag num">{{ t }}</span>
+          </div>
         </div>
         <div class="presets">
           <button v-for="p in presets" :key="p.label" class="chip" @click="p.run()">
@@ -279,7 +286,7 @@ function removeEditing(id: string) {
 .sum {
   position: relative;
   overflow: hidden;
-  padding: 16px 16px 13px;
+  padding: 16px;
   margin-bottom: 14px;
 }
 .sum::before {
@@ -334,23 +341,6 @@ function removeEditing(id: string) {
 .sum__val.is-inc {
   color: var(--income);
 }
-.sum__foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 13px;
-  padding-top: 11px;
-  border-top: 1px dashed var(--line);
-}
-.sum__tag {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-2);
-  background: var(--surface-3);
-  padding: 3px 10px;
-  border-radius: 999px;
-  white-space: nowrap;
-}
 @media (max-width: 519px) {
   .sum__val {
     font-size: 15px;
@@ -390,6 +380,30 @@ function removeEditing(id: string) {
   gap: 8px;
   margin-top: 11px;
   flex-wrap: wrap;
+}
+/* 區間／筆數標籤：推到「日／月／年」這一列的最右邊 */
+.ctl .rangeinfo {
+  margin-left: auto;
+}
+.rangeinfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* 自訂範圍模式：標籤單獨一列、靠右對齊 */
+.rangeinfo--end {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+}
+.rangetag {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--surface-3);
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
 }
 .nav {
   display: flex;
