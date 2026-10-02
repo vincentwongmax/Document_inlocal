@@ -57,5 +57,9 @@ export default defineConfig({
       },
     },
   },
-  optimizeDeps: { exclude: ['tesseract.js'] },
+  // tesseract.js 的 main 指向 CommonJS（src/index.js）且沒有 exports/module 欄位。
+  // 若把它 exclude 掉，dev server 會把 CJS 當 ESM 直接送出，瀏覽器就會報
+  // "does not provide an export named 'createWorker'" 而整個 App 白屏。
+  // 交給 esbuild 預打包（CJS→ESM interop）即可正常運作。
+  optimizeDeps: { include: ['tesseract.js'] },
 })
