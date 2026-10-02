@@ -34,6 +34,9 @@ const key = ref(todayUnit('day'))
 const start = ref(todayKey())
 const end = ref(todayKey())
 
+/** 收支篩選 */
+const typeFilter = ref<'all' | 'expense' | 'income'>('all')
+
 watch(unit, (u) => {
   key.value = todayUnit(u)
 })
@@ -60,7 +63,8 @@ const rows = computed(() =>
   records.records
     .filter((r) => {
       const k = dayKey(r.occurredAt)
-      return k >= range.value.start && k <= range.value.end
+      if (k < range.value.start || k > range.value.end) return false
+      return typeFilter.value === 'all' || r.type === typeFilter.value
     })
     .sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1)),
 )
@@ -169,6 +173,26 @@ function removeEditing(id: string) {
       <div class="seg2 rangebar__mode">
         <button :class="{ 'is-on': mode === 'unit' }" @click="mode = 'unit'">依單位</button>
         <button :class="{ 'is-on': mode === 'custom' }" @click="mode = 'custom'">自訂範圍</button>
+      </div>
+
+      <div class="ctl">
+        <div class="seg2">
+          <button :class="{ 'is-on': typeFilter === 'all' }" @click="typeFilter = 'all'">全部</button>
+          <button
+            :class="{ 'is-on': typeFilter === 'expense' }"
+            class="seg2--exp"
+            @click="typeFilter = 'expense'"
+          >
+            支出
+          </button>
+          <button
+            :class="{ 'is-on': typeFilter === 'income' }"
+            class="seg2--inc"
+            @click="typeFilter = 'income'"
+          >
+            收入
+          </button>
+        </div>
       </div>
 
       <template v-if="mode === 'unit'">
@@ -343,5 +367,11 @@ function removeEditing(id: string) {
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--shadow-1);
+}
+.seg2 .seg2--exp.is-on {
+  color: var(--expense);
+}
+.seg2 .seg2--inc.is-on {
+  color: var(--income);
 }
 </style>
