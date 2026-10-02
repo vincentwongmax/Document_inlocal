@@ -116,6 +116,19 @@ function removeCat(c: Category) {
   toast.push('已移除分類', 'info')
 }
 
+/** 從下拉選單選了某分類 → 開啟編輯 */
+function openCat(e: Event, type: TxType) {
+  const id = (e.target as HTMLSelectElement).value
+  ;(e.target as HTMLSelectElement).value = ''
+  const cat = settings.state.categories.find((c) => c.id === id && c.type === type)
+  if (cat) editingCat.value = cat
+}
+
+function removeEditing() {
+  if (editingCat.value) removeCat(editingCat.value)
+  editingCat.value = null
+}
+
 /* ── 資料管理 ───────────────────────────────────────────── */
 const imageCount = ref(0)
 const usage = ref(0)
@@ -389,21 +402,19 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
         </span>
         <div class="sec__meta">
           <h2 class="sec__title">分類</h2>
-          <p class="sec__desc">點分類名稱可改名與換色；勾選的分類會固定顯示在主頁</p>
+          <p class="sec__desc">從下拉選單選擇分類可改名與換色、移除；勾選的分類會固定顯示在主頁</p>
         </div>
       </header>
 
       <div class="panel">
         <div v-for="g in grouped" :key="g.type" class="catgroup">
           <span class="tiny muted catgroup__label">{{ g.label }}</span>
-          <div class="chips">
-            <span v-for="c in g.list" :key="c.id" class="catchip" :class="{ 'is-off': c.archived }">
-              <span class="catchip__dot" :style="{ background: c.color }" />
-              <button class="catchip__name" @click="editingCat = c">{{ c.name }}</button>
-              <button class="catchip__x" @click="removeCat(c)">×</button>
-            </span>
-            <button class="chip chip--add" @click="newType = g.type; addCat()">＋</button>
-          </div>
+          <select class="field cat-sel" :value="''" @change="openCat($event, g.type)">
+            <option value="" disabled>選擇{{ g.label }}…</option>
+            <option v-for="c in g.list" :key="c.id" :value="c.id" :disabled="c.archived">
+              {{ c.name }}{{ c.archived ? '（已隱藏）' : '' }}
+            </option>
+          </select>
         </div>
 
         <div class="addcat">
@@ -562,7 +573,10 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
           <h3>編輯分類</h3>
           <input v-model="editingCat.name" class="field" maxlength="12" />
           <input v-model="editingCat.color" class="modal__color" type="color" />
-          <button class="btn btn--primary" @click="editingCat = null">完成</button>
+          <div class="modal__acts">
+            <button v-if="!editingCat.builtin" class="btn btn--danger" @click="removeEditing">移除</button>
+            <button class="btn btn--primary" @click="editingCat = null">完成</button>
+          </div>
         </div>
       </div>
     </Transition>
@@ -1031,6 +1045,15 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
   padding: 2px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
+}
+.modal__acts {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.modal__acts .btn--danger {
+  margin-right: auto;
 }
 .fade-enter-active,
 .fade-leave-active {
