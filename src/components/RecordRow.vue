@@ -22,11 +22,13 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
     <button class="row__main" type="button" @click="emit('edit', record.id)">
       <span class="row__top">
         <span class="row__cat">{{ cat?.name ?? '未分類' }}</span>
-        <span
-          v-if="showTime"
-          class="row__time tiny muted num"
-          :title="formatFull(record.occurredAt)"
-        >{{ relativeTime(record.occurredAt) }}</span>
+        <span v-if="showTime" class="ttag" :title="formatFull(record.occurredAt)">
+          <svg class="ttag__ic" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="5.9" />
+            <path d="M8 4.7v3.45l2.2 1.35" />
+          </svg>
+          <span>{{ relativeTime(record.occurredAt) }}</span>
+        </span>
         <span v-if="imgCount" class="imtag">
           <svg class="imtag__ic" viewBox="0 0 16 16" aria-hidden="true">
             <rect x="2.2" y="3.2" width="11.6" height="9.6" rx="2.4" />
@@ -95,7 +97,8 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.imtag {
+.imtag,
+.ttag {
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -111,15 +114,28 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
-.imtag__ic {
+.imtag__ic,
+.ttag__ic {
   width: 12px;
   height: 12px;
   flex: none;
   fill: none;
-  stroke: var(--accent);
+  stroke: currentColor;
   stroke-width: 1.35;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+/* 時間標籤：比圖片標籤再輕一階 */
+.ttag {
+  border-color: var(--line);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.ttag__ic {
+  stroke: var(--text-3);
+}
+.imtag__ic {
+  stroke: var(--accent);
 }
 .imtag__ic circle {
   fill: var(--accent);
