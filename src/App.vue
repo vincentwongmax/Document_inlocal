@@ -13,6 +13,7 @@ const settings = useSettingsStore()
 
 const nav = [
   { to: '/', label: '記帳', icon: 'pen' },
+  { to: '/records', label: '記錄', icon: 'list' },
   { to: '/stats', label: '統計', icon: 'chart' },
   { to: '/settings', label: '設定', icon: 'gear' },
 ]
@@ -52,6 +53,8 @@ watch(offlineReady, (v) => {
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
             <path v-if="n.icon === 'pen'" d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3Z" />
             <path v-if="n.icon === 'pen'" d="M14.5 6.5 17.5 9.5" />
+            <path v-else-if="n.icon === 'list'" d="M8 6h12M8 12h12M8 18h12" />
+            <path v-else-if="n.icon === 'list'" d="M4 6h.01M4 12h.01M4 18h.01" />
             <path v-else-if="n.icon === 'chart'" d="M5 20V11M12 20V5M19 20v-6" />
             <g v-else>
               <circle cx="12" cy="12" r="3" />
@@ -85,6 +88,8 @@ watch(offlineReady, (v) => {
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
           <path v-if="n.icon === 'pen'" d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3Z" />
           <path v-if="n.icon === 'pen'" d="M14.5 6.5 17.5 9.5" />
+          <path v-else-if="n.icon === 'list'" d="M8 6h12M8 12h12M8 18h12" />
+          <path v-else-if="n.icon === 'list'" d="M4 6h.01M4 12h.01M4 18h.01" />
           <path v-else-if="n.icon === 'chart'" d="M5 20V11M12 20V5M19 20v-6" />
           <g v-else>
             <circle cx="12" cy="12" r="3" />

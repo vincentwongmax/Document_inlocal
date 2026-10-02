@@ -30,6 +30,5 @@ export function defaultSettings(base = 'MOP'): Settings {
     categories: JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)) as Category[],
     quickItems: [],
     favoriteCategories: [],
-    homeCategoryLimit: 6,
   }
 }

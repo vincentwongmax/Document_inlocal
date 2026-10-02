@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import type { TxRecord, TxType } from '@/types'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import type { ImageRef, TxRecord, TxType } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
+import { useToast } from '@/composables/useToast'
+import { getImage } from '@/lib/imageDb'
 import { CURRENCIES, fmtMoney } from '@/lib/currency'
-import { fromLocalInput, toLocalInput } from '@/lib/date'
+import { formatFull, fromLocalInput, toLocalInput } from '@/lib/date'
 import CategoryPicker from './CategoryPicker.vue'
 
 const props = defineProps<{ open: boolean; record: TxRecord | null }>()
@@ -14,6 +16,8 @@ const emit = defineEmits<{
 }>()
 
 const settings = useSettingsStore()
+const toast = useToast()
+
 const type = ref<TxType>('expense')
 const amount = ref('')
 const currencyCode = ref('MOP')
@@ -22,21 +26,6 @@ const occurredAt = ref('')
 const note = ref('')
 const rate = ref(1)
 
-watch(
-  () => props.record,
-  (r) => {
-    if (!r) return
-    type.value = r.type
-    amount.value = String(r.amount)
-    currencyCode.value = r.currency
-    categoryId.value = r.categoryId
-    occurredAt.value = toLocalInput(r.occurredAt)
-    note.value = r.note
-    rate.value = r.rate
-  },
-  { immediate: true },
-)
-
 const numeric = computed(() => {
   const n = Number(amount.value)
   return isFinite(n) ? n : 0
@@ -44,12 +33,58 @@ const numeric = computed(() => {
 const showRate = computed(() => currencyCode.value !== settings.baseCurrency)
 const preview = computed(() => fmtMoney(numeric.value * rate.value, settings.baseCurrency))
 
+/* ── 圖片 ───────────────────────────────────────────────── */
+const urls = ref<Record<string, string>>({})
+const lightbox = ref<string | null>(null)
+
+function releaseUrls() {
+  for (const u of Object.values(urls.value)) URL.revokeObjectURL(u)
+  urls.value = {}
+  lightbox.value = null
+}
+
+async function openImage(im: ImageRef) {
+  if (urls.value[im.id]) {
+    lightbox.value = urls.value[im.id]
+    return
+  }
+  const blob = await getImage(im.id)
+  if (!blob) {
+    toast.push('圖片已不存在（可能已被清除）', 'warn')
+    return
+  }
+  const url = URL.createObjectURL(blob)
+  urls.value[im.id] = url
+  lightbox.value = url
+}
+
+onBeforeUnmount(releaseUrls)
+
+watch(
+  () => props.record,
+  (r) => {
+    releaseUrls()
+    if (!r) return
+    type.value = r.type
+    amount.value = String(r.amount)
+    currencyCode.value = r.currency
+    categoryId.value = r.categoryId
+    occurredAt.value = toLocalInput(r.occurredAt)
+    note.value = r.note ?? ''
+    rate.value = r.rate
+  },
+  { immediate: true },
+)
+
 watch(currencyCode, (c) => {
   rate.value = settings.rate(c)
 })
 
 function save() {
-  if (!(numeric.value > 0)) return
+  if (!(numeric.value > 0)) {
+    toast.push('金額必須大於 0', 'warn')
+    return
+  }
   emit('save', {
     type: type.value,
     amount: numeric.value,
@@ -67,11 +102,27 @@ function save() {
     <div v-if="open && record" class="mask" @click.self="emit('close')">
       <div class="sheet card" role="dialog" aria-modal="true">
         <header class="sheet__head">
-          <h3>編輯記錄</h3>
+          <h3>記錄明細</h3>
           <button class="btn btn--ghost btn--sm" @click="emit('close')">關閉</button>
         </header>
 
         <div class="sheet__body">
+          <!-- 圖片 -->
+          <div v-if="record.images.length" class="imgs">
+            <button
+              v-for="im in record.images"
+              :key="im.id"
+              class="imgs__item"
+              :title="im.name || '收據圖片'"
+              @click="openImage(im)"
+            >
+              <img v-if="im.thumb" :src="im.thumb" alt="" />
+            </button>
+          </div>
+          <p v-if="record.images.length" class="tiny muted imgs__hint">
+            點圖片可放大檢視（原圖已壓縮為 480p）
+          </p>
+
           <div class="seg">
             <button class="seg__btn" :class="{ 'is-on': type === 'expense' }" @click="type = 'expense'">
               支出
@@ -105,7 +156,7 @@ function save() {
           </label>
 
           <label class="lb">
-            <span>時間</span>
+            <span>日期時間</span>
             <input v-model="occurredAt" class="field" type="datetime-local" />
           </label>
 
@@ -113,6 +164,28 @@ function save() {
             <span>備註</span>
             <input v-model="note" class="field" maxlength="80" placeholder="可留空" />
           </label>
+
+          <div class="meta">
+            <div class="meta__row">
+              <span class="tiny muted">來源</span>
+              <span class="tiny">{{ record.source === 'image' ? '收據辨識' : '手動記帳' }}</span>
+            </div>
+            <div class="meta__row">
+              <span class="tiny muted">新增時間</span>
+              <span class="tiny num">{{ formatFull(record.createdAt) }}</span>
+            </div>
+            <div class="meta__row">
+              <span class="tiny muted">主幣金額</span>
+              <span class="tiny num">{{ fmtMoney(record.baseAmount, record.baseCurrency) }}</span>
+            </div>
+          </div>
+
+          <details v-if="record.ocr?.text" class="raw">
+            <summary class="tiny muted">
+              收據辨識原始文字（信心度 {{ Math.round(record.ocr.confidence) }}%）
+            </summary>
+            <pre>{{ record.ocr.text }}</pre>
+          </details>
         </div>
 
         <footer class="sheet__foot">
@@ -120,6 +193,14 @@ function save() {
           <button class="btn btn--primary" :disabled="!(numeric > 0)" @click="save">儲存</button>
         </footer>
       </div>
+    </div>
+  </Transition>
+
+  <!-- 圖片放大 -->
+  <Transition name="fade">
+    <div v-if="lightbox" class="lightbox" @click="lightbox = null">
+      <img :src="lightbox" alt="" />
+      <button class="lightbox__x" @click="lightbox = null">✕</button>
     </div>
   </Transition>
 </template>
@@ -166,6 +247,30 @@ function save() {
   padding: 12px 16px calc(16px + var(--safe-b));
   border-top: 1px solid var(--line);
 }
+
+.imgs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.imgs__item {
+  width: 76px;
+  height: 76px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--surface-3);
+}
+.imgs__item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.imgs__hint {
+  margin: -8px 0 0;
+}
+
 .seg {
   display: flex;
   gap: 6px;
@@ -198,7 +303,7 @@ function save() {
 }
 .amt {
   display: grid;
-  grid-template-columns: 1fr 96px auto;
+  grid-template-columns: 1fr 96px;
   gap: 8px;
   align-items: center;
 }
@@ -206,8 +311,66 @@ function save() {
   padding: 0 10px;
 }
 .conv {
+  grid-column: 1 / -1;
   font-size: 13px;
   color: var(--accent);
+}
+
+.meta {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+  padding-top: 4px;
+}
+.meta__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.meta__row:last-child {
+  border-bottom: 0;
+}
+.raw pre {
+  margin: 8px 0 0;
+  padding: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 160px;
+  overflow: auto;
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(20, 19, 17, 0.9);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 10px;
+}
+.lightbox__x {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 15px;
 }
 
 .sheet-enter-active,
@@ -225,6 +388,14 @@ function save() {
 .sheet-enter-from .sheet,
 .sheet-leave-to .sheet {
   transform: translateY(14px);
+}
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.18s;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 @media (min-width: 768px) {

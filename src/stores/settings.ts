@@ -17,10 +17,6 @@ function merge(base: Settings, saved: Partial<Settings>): Settings {
     favoriteCategories: Array.isArray(saved.favoriteCategories)
       ? saved.favoriteCategories
       : base.favoriteCategories,
-    homeCategoryLimit:
-      typeof saved.homeCategoryLimit === 'number' && saved.homeCategoryLimit > 0
-        ? saved.homeCategoryLimit
-        : base.homeCategoryLimit,
   }
 }
 
@@ -122,12 +118,6 @@ export const useSettingsStore = defineStore('settings', () => {
     else state.value.favoriteCategories.push(id)
   }
 
-  function setHomeCategoryLimit(n: number) {
-    const v = Math.round(n)
-    if (!isFinite(v)) return
-    state.value.homeCategoryLimit = Math.min(24, Math.max(1, v))
-  }
-
   /* ── 快速記帳常用清單 ─────────────────────────────────── */
   function addQuickItem(item: Omit<QuickItem, 'id'>): QuickItem {
     const q: QuickItem = { ...item, id: uid('q') }
@@ -170,7 +160,6 @@ export const useSettingsStore = defineStore('settings', () => {
     favoriteCategories,
     isFavorite,
     toggleFavorite,
-    setHomeCategoryLimit,
     addQuickItem,
     updateQuickItem,
     removeQuickItem,

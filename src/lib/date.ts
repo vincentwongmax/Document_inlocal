@@ -55,6 +55,79 @@ export function previousRange(start: string, end: string): { start: string; end:
   return { start: addDays(start, -len), end: addDays(start, -1) }
 }
 
+/* ── 範圍單位：日 / 月 / 年 ─────────────────────────────── */
+export type RangeUnit = 'day' | 'month' | 'year'
+
+const WEEK = ['日', '一', '二', '三', '四', '五', '六']
+
+/** ISO → 單位鍵值（日：YYYY-MM-DD、月：YYYY-MM、年：YYYY） */
+export function unitKey(u: RangeUnit, iso: string): string {
+  const k = dayKey(iso)
+  if (!k) return ''
+  if (u === 'day') return k
+  if (u === 'month') return k.slice(0, 7)
+  return k.slice(0, 4)
+}
+
+export function todayUnit(u: RangeUnit): string {
+  return unitKey(u, new Date().toISOString())
+}
+
+/** 單位鍵值加減 n 個單位 */
+export function addUnit(u: RangeUnit, key: string, n: number): string {
+  if (u === 'day') return addDays(key, n)
+  if (u === 'month') {
+    const [y, m] = key.split('-').map(Number)
+    if (!y || !m) return key
+    const d = new Date(y, m - 1 + n, 1)
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}`
+  }
+  const y = Number(key)
+  return isFinite(y) ? String(y + n) : key
+}
+
+/** 單位所涵蓋的日期區間（含首尾） */
+export function unitRange(u: RangeUnit, key: string): { start: string; end: string } {
+  if (u === 'day') return { start: key, end: key }
+  if (u === 'month') return monthRange(key)
+  return { start: `${key}-01-01`, end: `${key}-12-31` }
+}
+
+/** 導覽列顯示用 */
+export function unitLabel(u: RangeUnit, key: string): string {
+  if (u === 'day') {
+    const [y, m, d] = key.split('-').map(Number)
+    if (!y || !m || !d) return key
+    const w = WEEK[new Date(y, m - 1, d).getDay()]
+    const nowY = new Date().getFullYear()
+    return `${y !== nowY ? `${y}年` : ''}${m}月${d}日 週${w}`
+  }
+  if (u === 'month') {
+    const [y, m] = key.split('-')
+    return `${y}年${Number(m)}月`
+  }
+  return `${key}年`
+}
+
+/** 單位鍵值的短標籤（切換用） */
+export function unitShort(u: RangeUnit, key: string): string {
+  if (u === 'day') {
+    const [, m, d] = key.split('-')
+    return `${Number(m)}/${Number(d)}`
+  }
+  if (u === 'month') {
+    const [y, m] = key.split('-')
+    const nowY = String(new Date().getFullYear())
+    return y === nowY ? `${Number(m)}月` : `${y.slice(2)}/${Number(m)}月`
+  }
+  return key
+}
+
+/** 單一單位，或含當下共三個單位（前天／昨天／今天） */
+export function unitKeys(u: RangeUnit, key: string, span: 1 | 3): string[] {
+  return span === 3 ? [addUnit(u, key, -2), addUnit(u, key, -1), key] : [key]
+}
+
 /** 例：2026/09/01 – 09/30（同年省略年份） */
 export function formatRange(start: string, end: string): string {
   const f = (k: string, withYear: boolean) => {

@@ -51,10 +51,8 @@ const list = computed<Category[]>(() => {
 
   if (!props.collapsed || expanded.value) return out
 
-  // 有勾選就用勾選的；沒勾選就自動取最常使用的前 N 個
-  const fav = favorites.value.length
-    ? favorites.value
-    : out.slice(0, Math.max(1, settings.state.homeCategoryLimit))
+  // 有勾選就只顯示勾選的；沒勾選則全部顯示（不限制數量）
+  const fav = favorites.value.length ? favorites.value : out
 
   // 目前選中的分類一定要看得到，不然會出現「看不到自己選了什麼」
   if (props.modelValue && !fav.some((c) => c.id === props.modelValue)) {

@@ -6,14 +6,12 @@ import { useToast } from '@/composables/useToast'
 import Keypad from '@/components/Keypad.vue'
 import QuickAdd from '@/components/QuickAdd.vue'
 import CategoryPicker from '@/components/CategoryPicker.vue'
-import RecordRow from '@/components/RecordRow.vue'
-import EditSheet from '@/components/EditSheet.vue'
 import ReviewSheet from '@/components/ReviewSheet.vue'
 import { useUpload } from '@/composables/useUpload'
 import { calcText, calcValue, currentNumber, initCalc, input, equals, type CalcState } from '@/lib/calc'
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
-import { fromLocalInput, nowLocalInput, dayKey, formatDay } from '@/lib/date'
-import type { TxRecord, TxType } from '@/types'
+import { fromLocalInput, nowLocalInput } from '@/lib/date'
+import type { TxType } from '@/types'
 import { readJSON, writeJSON } from '@/lib/storage'
 
 const records = useRecordsStore()
@@ -162,49 +160,6 @@ function submit() {
   occurredAt.value = nowLocalInput()
 }
 
-/* ── 最近記錄 ───────────────────────────────────────────── */
-const recent = computed(() => records.byOccurred.slice(0, 40))
-const groups = computed(() => {
-  const m = new Map<string, typeof recent.value>()
-  for (const r of recent.value) {
-    const k = dayKey(r.occurredAt)
-    if (!m.has(k)) m.set(k, [])
-    m.get(k)!.push(r)
-  }
-  return [...m.entries()].map(([k, list]) => ({
-    key: k,
-    label: formatDay(list[0].occurredAt),
-    total: list.reduce((s, r) => s + (r.type === 'expense' ? r.baseAmount : -r.baseAmount), 0),
-    list,
-  }))
-})
-
-const monthExpense = computed(() => {
-  const now = new Date()
-  const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  return records.records
-    .filter((r) => r.type === 'expense' && r.occurredAt.slice(0, 7) === key)
-    .reduce((s, r) => s + r.baseAmount, 0)
-})
-
-/* ── 單筆編輯 ───────────────────────────────────────────── */
-const editingId = ref<string | null>(null)
-const editing = computed(() => records.records.find((r) => r.id === editingId.value) ?? null)
-
-function openRecord(id: string) {
-  editingId.value = id
-}
-function saveEdit(patch: Partial<TxRecord>) {
-  if (editingId.value) records.update(editingId.value, patch)
-  editingId.value = null
-  toast.push('已更新', 'ok')
-}
-function removeEditing(id: string) {
-  records.remove(id)
-  editingId.value = null
-  toast.push('已刪除', 'info')
-}
-
 /* ── 圖片上傳（可多張、可拖曳） ─────────────────────────── */
 const dragOver = ref(false)
 
@@ -311,50 +266,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </section>
       </div>
 
-      <!-- 最近記錄 -->
-      <section class="recent">
-        <div class="page-head recent__head">
-          <div>
-            <h2 class="page-title">最近記錄</h2>
-            <p class="page-sub">本月支出 {{ fmtMoney(monthExpense, settings.baseCurrency) }}</p>
-          </div>
-          <RouterLink to="/stats" class="btn btn--sm">查看統計</RouterLink>
-        </div>
-
-        <div v-if="!groups.length" class="empty card">
-          <svg class="empty__art" viewBox="0 0 120 76" aria-hidden="true">
-            <rect x="26" y="8" width="68" height="60" rx="5" fill="#f1efe9" />
-            <rect x="38" y="22" width="44" height="3" rx="1.5" fill="#dcd8cf" />
-            <rect x="38" y="32" width="32" height="3" rx="1.5" fill="#dcd8cf" />
-            <rect x="38" y="42" width="24" height="3" rx="1.5" fill="#dcd8cf" />
-            <rect x="38" y="52" width="44" height="5" rx="2.5" fill="#cfded8" />
-          </svg>
-          <p class="muted">還沒有任何記錄</p>
-          <p class="tiny muted">輸入金額、選分類，三秒完成一筆</p>
-        </div>
-
-        <div v-for="g in groups" :key="g.key" class="day">
-          <div class="day__head">
-            <span class="day__label">{{ g.label }}</span>
-            <span class="day__total num">{{ fmtMoney(g.total, settings.baseCurrency) }}</span>
-          </div>
-          <div class="card day__card">
-            <template v-for="(r, i) in g.list" :key="r.id">
-              <hr v-if="i > 0" class="divider" />
-              <RecordRow :record="r" :show-time="true" @edit="openRecord" @remove="records.remove($event)" />
-            </template>
-          </div>
-        </div>
-      </section>
     </div>
 
-    <EditSheet
-      :open="!!editing"
-      :record="editing"
-      @close="editingId = null"
-      @save="saveEdit"
-      @remove="removeEditing"
-    />
     <ReviewSheet />
   </div>
 </template>
@@ -365,6 +278,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   gap: 18px;
 }
 .home__left {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -551,58 +467,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   margin: 0;
 }
 
-.day {
-  margin-bottom: 12px;
-}
-.day__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 0 4px 6px;
-}
-.day__label {
-  font-size: 12.5px;
-  font-weight: 650;
-  color: var(--text-2);
-}
-.day__total {
-  font-size: 12.5px;
-  color: var(--text-3);
-}
-.day__card {
-  overflow: hidden;
-}
-.empty {
-  padding: 30px 18px;
-  text-align: center;
-}
-.empty__art {
-  width: 118px;
-  height: 75px;
-  margin-bottom: 8px;
-  opacity: 0.9;
-}
-.empty p {
-  margin: 2px 0;
-}
-.recent__head {
-  margin-bottom: 12px;
-}
-
-@media (min-width: 620px) and (max-width: 1023px) {
-  .home__grid {
-    max-width: 580px;
-    margin: 0 auto;
-  }
-}
 @media (min-width: 1024px) {
   .home__grid {
-    grid-template-columns: minmax(380px, 440px) 1fr;
     gap: 24px;
-    align-items: start;
-  }
-  .recent__head {
-    margin-top: 2px;
   }
 }
 </style>

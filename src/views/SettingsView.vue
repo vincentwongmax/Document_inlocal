@@ -301,20 +301,12 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
       <div class="favs">
         <div class="favs__hd">
           <span class="tiny muted">主頁常用分類</span>
-          <label class="favs__limit">
-            <span class="tiny muted">自動顯示</span>
-            <select
-              class="field"
-              :value="settings.state.homeCategoryLimit"
-              @change="settings.setHomeCategoryLimit(Number(($event.target as HTMLSelectElement).value))"
-            >
-              <option v-for="n in [4, 6, 8, 12]" :key="n" :value="n">{{ n }} 個</option>
-            </select>
-          </label>
+          <span class="tiny muted">
+            已選 {{ settings.favoriteCategories.length }} 個
+          </span>
         </div>
         <p class="tiny muted sec__hint">
-          勾選的分類會直接顯示在主頁其餘收進「更多」；沒勾選任何一個時，自動顯示最常用的前
-          {{ settings.state.homeCategoryLimit }} 個。
+          勾選幾個，主頁就只顯示那幾個，其餘收進「更多」；沒有勾選任何一個時，主頁顯示全部分類。
         </p>
         <div v-for="g in grouped" :key="'fav-' + g.type" class="catgroup">
           <span class="tiny muted catgroup__label">{{ g.label }}</span>
@@ -570,16 +562,6 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
 .favs__hd > span {
   font-weight: 650;
   color: var(--text-2);
-}
-.favs__limit {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-.favs__limit .field {
-  height: 32px;
-  padding: 0 8px;
-  font-size: 13px;
 }
 .favs .sec__hint {
   margin: 6px 0 10px;

@@ -2,27 +2,53 @@
 import { computed, ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
+import { useToast } from '@/composables/useToast'
 import { useStats, type DateRange } from '@/composables/useStats'
 import { fmtMoney } from '@/lib/currency'
-import { addDays, dayKey, formatRange, monthKey, monthLabel, monthRange, todayKey } from '@/lib/date'
+import {
+  addDays,
+  dayKey,
+  formatRange,
+  monthKey,
+  monthLabel,
+  monthRange,
+  todayKey,
+  unitRange,
+} from '@/lib/date'
+import type { TxRecord } from '@/types'
 import DonutChart from '@/components/charts/DonutChart.vue'
 import TrendChart from '@/components/charts/TrendChart.vue'
 import DailyChart from '@/components/charts/DailyChart.vue'
+import RecordList from '@/components/RecordList.vue'
+import RecordSheet from '@/components/RecordSheet.vue'
 
 const settings = useSettingsStore()
 const records = useRecordsStore()
+const toast = useToast()
 
 /* ── 區間選擇 ───────────────────────────────────────────── */
-const mode = ref<'month' | 'custom'>('month')
+const mode = ref<'month' | 'year' | 'custom'>('month')
 const month = ref(monthKey(new Date().toISOString()))
+const year = ref(new Date().getFullYear().toString())
 const start = ref(monthRange(month.value).start)
 const end = ref(monthRange(month.value).end)
 
 const range = computed<DateRange>(() => {
   if (mode.value === 'month') return monthRange(month.value)
+  if (mode.value === 'year') return unitRange('year', year.value)
   return start.value <= end.value
     ? { start: start.value, end: end.value }
     : { start: end.value, end: start.value }
+})
+
+/** 有記錄的年份 + 今年前後各一年 */
+const years = computed(() => {
+  const set = new Set<string>(records.records.map((r) => dayKey(r.occurredAt).slice(0, 4)))
+  const now = new Date().getFullYear()
+  set.add(String(now))
+  set.add(String(now - 1))
+  set.add(String(now + 1))
+  return [...set].filter(Boolean).sort((a, b) => (a < b ? 1 : -1))
 })
 
 const st = useStats(range)
@@ -37,16 +63,22 @@ function shift(delta: number) {
   if (next) month.value = next
 }
 
-/** 月份下拉與自訂日期互相同步，切換模式不會跳掉 */
+/** 月份／年份下拉與自訂日期互相同步，切換模式不會跳掉 */
 watch(
-  month,
-  (m) => {
-    const r = monthRange(m)
+  [month, year, mode],
+  ([m, y]) => {
+    const r = mode.value === 'year' ? unitRange('year', y) : monthRange(m)
     start.value = r.start
     end.value = r.end
   },
   { immediate: true },
 )
+
+function shiftYear(delta: number) {
+  const i = years.value.indexOf(year.value)
+  const next = years.value[i + delta]
+  if (next) year.value = next
+}
 
 function presetRange(key: string): DateRange {
   const today = todayKey()
@@ -93,6 +125,32 @@ function isPreset(key: string): boolean {
 const rangeLabel = computed(() => formatRange(range.value.start, range.value.end))
 const prevLabel = computed(() => formatRange(st.prevRange.value.start, st.prevRange.value.end))
 
+/* ── 單筆明細 ───────────────────────────────────────────── */
+const editingId = ref<string | null>(null)
+const editing = computed(() => records.records.find((r) => r.id === editingId.value) ?? null)
+
+function openRecord(id: string) {
+  editingId.value = id
+}
+
+function saveEdit(patch: Partial<TxRecord>) {
+  if (editingId.value) records.update(editingId.value, patch)
+  editingId.value = null
+  toast.push('已更新', 'ok')
+}
+
+function removeRecord(id: string) {
+  const r = records.records.find((x) => x.id === id)
+  records.remove(id)
+  editingId.value = null
+  toast.push('已刪除', 'info', {
+    label: '復原',
+    run: () => {
+      if (r) records.restore(r)
+    },
+  })
+}
+
 const donutType = ref<'expense' | 'income'>('expense')
 const donutItems = computed(() =>
   donutType.value === 'expense' ? st.expenseByCat.value : st.incomeByCat.value,
@@ -121,6 +179,7 @@ const mom = computed(() => st.momChange.value)
     <div class="card rangebar">
       <div class="seg2 rangebar__mode">
         <button :class="{ 'is-on': mode === 'month' }" @click="mode = 'month'">月份</button>
+        <button :class="{ 'is-on': mode === 'year' }" @click="mode = 'year'">年份</button>
         <button :class="{ 'is-on': mode === 'custom' }" @click="mode = 'custom'">自訂範圍</button>
       </div>
 
@@ -135,6 +194,26 @@ const mom = computed(() => st.momChange.value)
           class="btn btn--ghost btn--sm"
           :disabled="monthIndex >= months.length - 1"
           @click="shift(1)"
+        >
+          ›
+        </button>
+      </div>
+
+      <div v-else-if="mode === 'year'" class="monthbar">
+        <button
+          class="btn btn--ghost btn--sm"
+          :disabled="years.indexOf(year) <= 0"
+          @click="shiftYear(-1)"
+        >
+          ‹
+        </button>
+        <select v-model="year" class="field monthbar__sel">
+          <option v-for="y in years" :key="y" :value="y">{{ y }} 年</option>
+        </select>
+        <button
+          class="btn btn--ghost btn--sm"
+          :disabled="years.indexOf(year) >= years.length - 1"
+          @click="shiftYear(1)"
         >
           ›
         </button>
@@ -269,7 +348,30 @@ const mom = computed(() => st.momChange.value)
         </ul>
         <p v-if="!st.topRecords.value.length" class="muted tiny">沒有支出記錄</p>
       </section>
+
+      <!-- 區間記錄：每一筆都可點開看明細 -->
+      <section class="card block">
+        <header class="block__hd">
+          <h2>區間記錄</h2>
+          <span class="tiny muted">{{ st.rows.value.length }} 筆</span>
+        </header>
+        <RecordList
+          :records="st.rows.value"
+          :collapse-after="10"
+          empty-text="這個範圍沒有記錄"
+          @edit="openRecord"
+          @remove="removeRecord"
+        />
+      </section>
     </template>
+
+    <RecordSheet
+      :open="!!editing"
+      :record="editing"
+      @close="editingId = null"
+      @save="saveEdit"
+      @remove="removeRecord"
+    />
   </div>
 </template>
 

@@ -102,10 +102,8 @@ export interface Settings {
   categories: Category[]
   /** 快速記帳的常用清單（使用者自行維護） */
   quickItems: QuickItem[]
-  /** 主頁直接顯示的常用分類（空陣列 = 自動依使用頻率） */
+  /** 主頁直接顯示的常用分類（空陣列 = 全部分類都顯示） */
   favoriteCategories: string[]
-  /** 未指定常用分類時，主頁顯示幾個 */
-  homeCategoryLimit: number
 }
 
 export interface ExportPayload {

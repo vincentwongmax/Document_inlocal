@@ -5,6 +5,7 @@ const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/', name: 'home', component: HomeView },
+    { path: '/records', name: 'records', component: () => import('@/views/RecordsView.vue') },
     { path: '/stats', name: 'stats', component: () => import('@/views/StatsView.vue') },
     { path: '/settings', name: 'settings', component: () => import('@/views/SettingsView.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/' },

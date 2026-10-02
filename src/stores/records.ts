@@ -94,6 +94,12 @@ export const useRecordsStore = defineStore('records', () => {
     }
   }
 
+  /** 刪除後復原（供 toast 的「復原」使用；圖片實體若已清除則只剩縮圖） */
+  function restore(rec: TxRecord) {
+    if (records.value.some((r) => r.id === rec.id)) return
+    records.value.push(rec)
+  }
+
   /** 重置：清空所有記錄與圖片 */
   async function reset() {
     records.value = []
@@ -148,6 +154,7 @@ export const useRecordsStore = defineStore('records', () => {
     add,
     update,
     remove,
+    restore,
     reset,
     mergeImport,
     replaceAll,
