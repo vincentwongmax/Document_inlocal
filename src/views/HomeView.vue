@@ -4,6 +4,7 @@ import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/composables/useToast'
 import Keypad from '@/components/Keypad.vue'
+import QuickAdd from '@/components/QuickAdd.vue'
 import CategoryPicker from '@/components/CategoryPicker.vue'
 import RecordRow from '@/components/RecordRow.vue'
 import EditSheet from '@/components/EditSheet.vue'
@@ -58,6 +59,15 @@ watch(
     curCode.value = v
   },
 )
+
+/** 快速記帳需要的目前表單狀態 */
+const formContext = computed(() => ({
+  type: type.value,
+  amount: amount.value,
+  categoryId: categoryId.value,
+  currency: curCode.value,
+  note: note.value,
+}))
 
 /* ── 鍵盤 ───────────────────────────────────────────────── */
 function press(k: string) {
@@ -226,6 +236,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   >
     <div v-if="dragOver" class="dropzone">放開即可上傳收據</div>
     <div class="home__grid">
+      <!-- 左欄：快速記帳 + 記帳表單 -->
+      <div class="home__left">
+        <QuickAdd :context="formContext" />
+
       <!-- 輸入區 -->
       <section class="card pad">
         <div class="seg">
@@ -295,6 +309,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <p class="tiny muted hint">支援 + − × ÷ 連續運算；Enter 送出、Esc 清空</p>
         </div>
       </section>
+      </div>
 
       <!-- 最近記錄 -->
       <section class="recent">
@@ -348,6 +363,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .home__grid {
   display: grid;
   gap: 18px;
+}
+.home__left {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
 }
 .pad {
   padding: 16px;

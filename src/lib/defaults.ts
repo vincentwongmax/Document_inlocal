@@ -28,5 +28,6 @@ export function defaultSettings(base = 'MOP'): Settings {
     ocrLangs: ['eng', 'chi_sim', 'chi_tra'],
     preferredCurrency: 'MOP',
     categories: JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)) as Category[],
+    quickItems: [],
   }
 }

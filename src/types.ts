@@ -21,6 +21,25 @@ export interface ImageRef {
   name: string
   /** 縮圖 data URL，直接可顯示（小尺寸，避免每次讀 IndexedDB） */
   thumb?: string
+  /** 壓縮後的寬／高（480p） */
+  w?: number
+  h?: number
+  /** 壓縮後實際位元組數 */
+  bytes?: number
+  /** 原始檔案位元組數（供顯示省了多少） */
+  originalBytes?: number
+}
+
+/** 快速記帳的常用項目 */
+export interface QuickItem {
+  id: string
+  /** 顯示名稱（預設為分類名稱，可自訂） */
+  label: string
+  type: TxType
+  categoryId: string
+  amount: number
+  currency: string
+  note: string
 }
 
 export interface AmountCandidate {
@@ -81,6 +100,8 @@ export interface Settings {
   /** 一張圖含多種幣別時，預設採用哪一個 */
   preferredCurrency: string
   categories: Category[]
+  /** 快速記帳的常用清單（使用者自行維護） */
+  quickItems: QuickItem[]
 }
 
 export interface ExportPayload {

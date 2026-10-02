@@ -1,5 +1,6 @@
 import type { ExportPayload, Settings, TxRecord } from '@/types'
-import { blobToDataUrl, getImage, putImage, makeThumb } from './imageDb'
+import { blobToDataUrl, getImage, putImage } from './imageDb'
+import { makeThumb } from './imaging'
 
 /** 匯出：記錄＋設定＋圖片（base64），單一 JSON 檔 */
 export async function buildExport(

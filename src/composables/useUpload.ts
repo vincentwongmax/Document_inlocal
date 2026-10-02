@@ -4,7 +4,8 @@ import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
 import { md5OfFile } from '@/lib/md5'
 import { readShotTime } from '@/lib/exif'
-import { makeThumb, putImage } from '@/lib/imageDb'
+import { putImage } from '@/lib/imageDb'
+import { compressImage, makeOcrImage, makeThumb } from '@/lib/imaging'
 import { recognize } from '@/lib/ocr'
 import { uid } from '@/lib/id'
 import { useToast } from './useToast'
@@ -15,6 +16,11 @@ const progress = ref({ done: 0, total: 0 })
 const duplicates = ref(0)
 const reviewOpen = ref(false)
 const lastAddedIds = ref<string[]>([])
+/** OCR 工作圖（原始尺寸放大版），辨識完即釋放 */
+const ocrSources = new Map<string, Blob>()
+/** 本批壓縮後的圖片總容量，供提示顯示 */
+const savedBytes = ref(0)
+const originalBytes = ref(0)
 
 /** 依幣別偏好挑出預設金額候選 */
 function pickDefault(cands: AmountCandidate[], preferred: string): AmountCandidate | undefined {
@@ -56,6 +62,8 @@ export function useUpload() {
     stage.value = 'prep'
     progress.value = { done: 0, total: images.length }
     duplicates.value = 0
+    savedBytes.value = 0
+    originalBytes.value = 0
 
     const known = new Set(records.knownMd5)
     const batchSeen = new Set<string>()
@@ -71,12 +79,28 @@ export function useUpload() {
       }
       batchSeen.add(md5)
 
+      // 先備一份給 OCR 用的工作圖（原尺寸或長邊 1400），再壓縮存檔
+      const ocrSrc = await makeOcrImage(file)
       const shot = await readShotTime(file)
       const id = uid('img')
-      await putImage(id, file)
-      const thumb = await makeThumb(file)
+      const comp = await compressImage(file)
+      await putImage(id, comp.blob)
+      const thumb = await makeThumb(comp.blob)
+      if (comp.width) ocrSources.set(id, ocrSrc)
+      originalBytes.value += comp.originalBytes || file.size
+      savedBytes.value += comp.bytes
       items.push({
-        img: { id, md5, shotAt: shot.shotAt, name: file.name, thumb },
+        img: {
+          id,
+          md5,
+          shotAt: shot.shotAt,
+          name: file.name,
+          thumb,
+          w: comp.width || undefined,
+          h: comp.height || undefined,
+          bytes: comp.bytes,
+          originalBytes: comp.originalBytes || file.size,
+        },
         shotAt: shot.shotAt,
       })
       progress.value.done++
@@ -120,7 +144,7 @@ export function useUpload() {
     for (const d of todo) {
       d.status = 'ocr'
       try {
-        const blob = await getBlob(d.images[0].id)
+        const blob = ocrSources.get(d.images[0].id) ?? (await getBlob(d.images[0].id))
         if (blob) {
           const res = await recognize(blob, settings.state.ocrLangs)
           d.ocr = {
@@ -142,6 +166,7 @@ export function useUpload() {
         d.status = 'error'
         d.error = e instanceof Error ? e.message : '辨識失敗'
       }
+      ocrSources.delete(d.images[0].id)
       progress.value.done++
     }
     stage.value = 'idle'
@@ -178,6 +203,7 @@ export function useUpload() {
     }
     lastAddedIds.value = added
     drafts.value = []
+    ocrSources.clear()
     reviewOpen.value = false
     toast.push(`已新增 ${added.length} 筆記錄`, 'ok', {
       label: '復原',
@@ -193,6 +219,7 @@ export function useUpload() {
 
   function clear() {
     drafts.value = []
+    ocrSources.clear()
     reviewOpen.value = false
     stage.value = 'idle'
   }
@@ -206,6 +233,8 @@ export function useUpload() {
     readyCount,
     pendingCount,
     lastAddedIds,
+    savedBytes,
+    originalBytes,
     pick,
     addFiles,
     runOcr,

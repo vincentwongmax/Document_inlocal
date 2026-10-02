@@ -6,6 +6,19 @@ import { useSettingsStore } from '@/stores/settings'
 import CategoryPicker from './CategoryPicker.vue'
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { toLocalInput, fromLocalInput, formatFull } from '@/lib/date'
+import { formatBytes } from '@/lib/imaging'
+
+function sizeInfo(d: DraftRecord): string {
+  const im = d.images[0]
+  if (!im) return ''
+  const parts: string[] = []
+  if (im.w && im.h) parts.push(`${im.w}×${im.h}`)
+  if (im.bytes) {
+    const saved = im.originalBytes ? im.originalBytes - im.bytes : 0
+    parts.push(saved > 0 ? `${formatBytes(im.bytes)}（省 ${formatBytes(saved)}）` : formatBytes(im.bytes))
+  }
+  return parts.join(' · ')
+}
 
 const up = useUpload()
 const settings = useSettingsStore()
@@ -67,6 +80,10 @@ function applyDate(d: DraftRecord, iso: string) {
                 <template v-if="up.duplicates.value > 0">
                   · 略過 {{ up.duplicates.value }} 張重複
                 </template>
+                <template v-if="up.savedBytes.value > 0">
+                  · 圖片 {{ formatBytes(up.savedBytes.value) }}（原
+                  {{ formatBytes(up.originalBytes.value) }}）
+                </template>
               </template>
             </p>
           </div>
@@ -92,6 +109,9 @@ function applyDate(d: DraftRecord, iso: string) {
                     拍攝 {{ formatFull(d.images[0].shotAt) }}
                   </template>
                   <template v-else>無拍攝時間資訊</template>
+                </span>
+                <span v-if="sizeInfo(d)" class="tiny muted">
+                  已壓縮 480p · {{ sizeInfo(d) }}
                 </span>
                 <span v-if="d.status === 'error'" class="tag tag--warn">辨識失敗，請手動輸入</span>
                 <span v-else-if="d.status === 'ocr'" class="tag">辨識中…</span>
