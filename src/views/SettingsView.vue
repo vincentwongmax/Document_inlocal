@@ -53,6 +53,22 @@ function addRate(e: Event) {
   ;(e.target as HTMLSelectElement).value = ''
 }
 
+/** 主頁幣別選單：已勾選的幣別（依總表順序） */
+const visibleCurs = computed(() =>
+  CURRENCIES.filter((c) => settings.state.visibleCurrencies.includes(c.code)),
+)
+
+/** 主頁幣別選單：還能加入下拉的幣別 */
+const addableVisible = computed(() =>
+  CURRENCIES.filter((c) => !settings.state.visibleCurrencies.includes(c.code)),
+)
+
+function addVisible(e: Event) {
+  const el = e.target as HTMLSelectElement
+  if (el.value) settings.toggleVisibleCurrency(el.value)
+  el.value = ''
+}
+
 async function refresh() {
   refreshing.value = true
   const ok = await settings.refreshRates()
@@ -287,16 +303,26 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
           <span class="panel__label">記帳幣別選單</span>
           <span class="tiny muted panel__meta">主頁切換幣別時顯示哪幾個；沒選 = 全部</span>
         </div>
-        <div class="chips">
-          <button
-            v-for="c in CURRENCIES"
-            :key="c.code"
-            class="chip"
-            :class="{ 'is-on': settings.state.visibleCurrencies.includes(c.code) }"
-            @click="settings.toggleVisibleCurrency(c.code)"
-          >
+        <div class="chips" v-if="visibleCurs.length">
+          <span v-for="c in visibleCurs" :key="c.code" class="chip chip--sel">
             {{ c.code }}
-          </button>
+            <button
+              class="chip__x"
+              title="從主頁幣別選單移除"
+              @click="settings.toggleVisibleCurrency(c.code)"
+            >
+              ✕
+            </button>
+          </span>
+        </div>
+        <p v-else class="tiny muted">尚未選擇——主頁目前顯示全部幣別</p>
+        <div class="rates__add" v-if="addableVisible.length">
+          <select class="field rates__addsel" :value="''" @change="addVisible($event)">
+            <option value="" disabled>＋ 新增幣別到主頁選單…</option>
+            <option v-for="c in addableVisible" :key="c.code" :value="c.code">
+              {{ c.code }} · {{ c.name }}
+            </option>
+          </select>
         </div>
       </div>
     </section>
@@ -783,6 +809,24 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
 .chip--add {
   color: var(--accent);
   border-style: dashed;
+}
+.chip--sel {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  padding-right: 6px;
+}
+.chip__x {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 9px;
+  color: var(--accent);
+  flex: none;
+}
+.chip__x:hover {
+  background: var(--expense);
+  color: #fff;
 }
 
 /* ── 分類 ─────────────────────────────────────────────── */

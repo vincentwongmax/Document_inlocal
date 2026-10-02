@@ -267,7 +267,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             </button>
             <button class="btn btn--primary btn--save" @click="submit">記錄</button>
           </div>
-          <p class="tiny muted hint">支援 + − × ÷ 與括號；按 = 才會算出答案，Enter 送出、Esc 清空</p>
+          <p class="tiny muted hint">按 = 才會算出答案；Enter 送出、Esc 清空</p>
         </div>
       </section>
     </div>

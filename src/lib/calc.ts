@@ -42,8 +42,16 @@ export function input(s: CalcState, key: string): CalcState {
   if (key === 'C') return initCalc()
 
   if (key === '⌫') {
-    if (!lastToken(next)) return initCalc()
-    next.tokens.pop()
+    if (s.done) return initCalc()
+    if (!next.tokens.length) return next
+    const last = next.tokens[next.tokens.length - 1]!
+    // 數字：只刪最後一個字元；其他 token：整顆移除
+    if (last.t === 'num' && last.v.length > 1 && isFinite(Number(last.v))) {
+      last.v = last.v.slice(0, -1)
+      if (last.v === '' || last.v === '-') next.tokens.pop()
+    } else {
+      next.tokens.pop()
+    }
     return next
   }
 
