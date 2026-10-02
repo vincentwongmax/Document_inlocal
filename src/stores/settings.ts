@@ -16,6 +16,12 @@ function merge(base: Settings, saved: Partial<Settings>): Settings {
     favoriteCategories: Array.isArray(saved.favoriteCategories)
       ? saved.favoriteCategories
       : base.favoriteCategories,
+    visibleCurrencies: Array.isArray(saved.visibleCurrencies)
+      ? saved.visibleCurrencies
+      : base.visibleCurrencies,
+    rateCurrencies: Array.isArray(saved.rateCurrencies)
+      ? saved.rateCurrencies
+      : base.rateCurrencies,
   }
 }
 
@@ -117,6 +123,21 @@ export const useSettingsStore = defineStore('settings', () => {
     else state.value.favoriteCategories.push(id)
   }
 
+  /* ── 幣別顯示 ─────────────────────────────────────────── */
+  const visibleCurrencies = computed(() => state.value.visibleCurrencies)
+
+  function toggleVisibleCurrency(code: string) {
+    const i = state.value.visibleCurrencies.indexOf(code)
+    if (i >= 0) state.value.visibleCurrencies.splice(i, 1)
+    else state.value.visibleCurrencies.push(code)
+  }
+
+  function toggleRateCurrency(code: string) {
+    const i = state.value.rateCurrencies.indexOf(code)
+    if (i >= 0) state.value.rateCurrencies.splice(i, 1)
+    else state.value.rateCurrencies.push(code)
+  }
+
   function restoreDefaults() {
     state.value.categories = JSON.parse(JSON.stringify(defaultSettings().categories))
   }
@@ -141,6 +162,9 @@ export const useSettingsStore = defineStore('settings', () => {
     favoriteCategories,
     isFavorite,
     toggleFavorite,
+    visibleCurrencies,
+    toggleVisibleCurrency,
+    toggleRateCurrency,
     restoreDefaults,
   }
 })

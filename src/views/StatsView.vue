@@ -27,13 +27,15 @@ const records = useRecordsStore()
 const toast = useToast()
 
 /* ── 區間選擇 ───────────────────────────────────────────── */
-const mode = ref<'month' | 'year' | 'custom'>('month')
+const mode = ref<'day' | 'month' | 'year' | 'custom'>('month')
 const month = ref(monthKey(new Date().toISOString()))
 const year = ref(new Date().getFullYear().toString())
+const day = ref(todayKey())
 const start = ref(monthRange(month.value).start)
 const end = ref(monthRange(month.value).end)
 
 const range = computed<DateRange>(() => {
+  if (mode.value === 'day') return { start: day.value, end: day.value }
   if (mode.value === 'month') return monthRange(month.value)
   if (mode.value === 'year') return unitRange('year', year.value)
   return start.value <= end.value
@@ -65,9 +67,14 @@ function shift(delta: number) {
 
 /** 月份／年份下拉與自訂日期互相同步，切換模式不會跳掉 */
 watch(
-  [month, year, mode],
-  ([m, y]) => {
-    const r = mode.value === 'year' ? unitRange('year', y) : monthRange(m)
+  [month, year, day, mode],
+  ([m, y, d]) => {
+    const r =
+      mode.value === 'year'
+        ? unitRange('year', y)
+        : mode.value === 'day'
+          ? { start: d, end: d }
+          : monthRange(m)
     start.value = r.start
     end.value = r.end
   },
@@ -78,6 +85,10 @@ function shiftYear(delta: number) {
   const i = years.value.indexOf(year.value)
   const next = years.value[i + delta]
   if (next) year.value = next
+}
+
+function shiftDay(delta: number) {
+  day.value = addDays(day.value, delta)
 }
 
 function presetRange(key: string): DateRange {
@@ -178,12 +189,20 @@ const mom = computed(() => st.momChange.value)
     <!-- 區間選擇 -->
     <div class="card rangebar">
       <div class="seg2 rangebar__mode">
+        <button :class="{ 'is-on': mode === 'day' }" @click="mode = 'day'">日</button>
         <button :class="{ 'is-on': mode === 'month' }" @click="mode = 'month'">月份</button>
         <button :class="{ 'is-on': mode === 'year' }" @click="mode = 'year'">年份</button>
-        <button :class="{ 'is-on': mode === 'custom' }" @click="mode = 'custom'">自訂範圍</button>
+        <button :class="{ 'is-on': mode === 'custom' }" @click="mode = 'custom'">自訂</button>
       </div>
 
-      <div v-if="mode === 'month'" class="monthbar">
+      <div v-if="mode === 'day'" class="monthbar">
+        <button class="btn btn--ghost btn--sm" @click="shiftDay(-1)">‹</button>
+        <input v-model="day" class="field monthbar__sel" type="date" />
+        <button class="btn btn--ghost btn--sm" @click="shiftDay(1)">›</button>
+        <button class="btn btn--ghost btn--sm monthbar__today" @click="day = todayKey()">今天</button>
+      </div>
+
+      <div v-else-if="mode === 'month'" class="monthbar">
         <button class="btn btn--ghost btn--sm" :disabled="monthIndex <= 0" @click="shift(-1)">
           ‹
         </button>

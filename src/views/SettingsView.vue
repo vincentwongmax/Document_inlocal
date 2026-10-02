@@ -19,12 +19,24 @@ const toast = useToast()
 const refreshing = ref(false)
 const rateDraft = ref<Record<string, string>>({})
 
-const rateRows = computed(() =>
-  CURRENCIES.filter((c) => c.code !== settings.baseCurrency).map((c) => ({
+const rateRows = computed(() => {
+  const list = settings.state.rateCurrencies.length
+    ? CURRENCIES.filter(
+        (c) => settings.state.rateCurrencies.includes(c.code) && c.code !== settings.baseCurrency,
+      )
+    : CURRENCIES.filter((c) => c.code !== settings.baseCurrency)
+  return list.map((c) => ({
     code: c.code,
     name: c.name,
     value: settings.state.rates[c.code] ?? 1,
-  })),
+  }))
+})
+
+/** 匯率表還能新增的幣別 */
+const addableRates = computed(() =>
+  CURRENCIES.filter(
+    (c) => c.code !== settings.baseCurrency && !settings.state.rateCurrencies.includes(c.code),
+  ),
 )
 
 function commitRate(code: string) {
@@ -33,6 +45,12 @@ function commitRate(code: string) {
   const n = Number(raw)
   if (isFinite(n) && n > 0) settings.setRate(code, n)
   delete rateDraft.value[code]
+}
+
+function addRate(e: Event) {
+  const code = (e.target as HTMLSelectElement).value
+  if (code) settings.toggleRateCurrency(code)
+  ;(e.target as HTMLSelectElement).value = ''
 }
 
 async function refresh() {
@@ -234,7 +252,43 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
               @blur="commitRate(r.code)"
               @keyup.enter="commitRate(r.code)"
             />
+            <button
+              class="rate__x"
+              title="從匯率表移除"
+              @click="settings.toggleRateCurrency(r.code)"
+            >
+              ✕
+            </button>
           </div>
+        </div>
+        <div v-if="addableRates.length" class="rates__add">
+          <select class="field rates__addsel" :value="''" @change="addRate($event)">
+            <option value="" disabled>＋ 新增幣別到匯率表…</option>
+            <option v-for="c in addableRates" :key="c.code" :value="c.code">
+              {{ c.code }} · {{ c.name }}
+            </option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 主頁記帳幣別選單 -->
+      <div class="row row--col">
+        <span>
+          記帳幣別選單
+          <small class="tiny muted">
+            主頁右上角切換幣別時顯示哪幾個；沒選任何一個 = 全部顯示
+          </small>
+        </span>
+        <div class="chips">
+          <button
+            v-for="c in CURRENCIES"
+            :key="c.code"
+            class="chip"
+            :class="{ 'is-on': settings.state.visibleCurrencies.includes(c.code) }"
+            @click="settings.toggleVisibleCurrency(c.code)"
+          >
+            {{ c.code }}
+          </button>
         </div>
       </div>
     </section>
@@ -498,6 +552,28 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
   color: var(--text-2);
 }
 .rate__input {
+  height: 36px;
+  font-size: 13px;
+  min-width: 0;
+  flex: 1;
+}
+.rate__x {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.rate__x:hover {
+  background: var(--expense-soft);
+  color: var(--expense);
+}
+.rates__add {
+  margin-top: 10px;
+}
+.rates__addsel {
+  max-width: 260px;
   height: 36px;
   font-size: 13px;
 }

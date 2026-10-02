@@ -123,9 +123,9 @@ export function unitShort(u: RangeUnit, key: string): string {
   return key
 }
 
-/** 單一單位，或含當下共三個單位（前天／昨天／今天） */
+/** 單一單位，或前一個／目前／下一個（昨天／今天／明天） */
 export function unitKeys(u: RangeUnit, key: string, span: 1 | 3): string[] {
-  return span === 3 ? [addUnit(u, key, -2), addUnit(u, key, -1), key] : [key]
+  return span === 3 ? [addUnit(u, key, -1), key, addUnit(u, key, 1)] : [key]
 }
 
 /** 例：2026/09/01 – 09/30（同年省略年份） */

@@ -7,7 +7,7 @@ import Keypad from '@/components/Keypad.vue'
 import CategoryPicker from '@/components/CategoryPicker.vue'
 import ReviewSheet from '@/components/ReviewSheet.vue'
 import { useUpload } from '@/composables/useUpload'
-import { calcText, calcValue, currentNumber, initCalc, input, equals, type CalcState } from '@/lib/calc'
+import { displayMain, displaySub, calcValue, initCalc, input, equals, type CalcState } from '@/lib/calc'
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { fromLocalInput, nowLocalInput } from '@/lib/date'
 import type { TxType } from '@/types'
@@ -29,9 +29,24 @@ const categoryId = ref<string>(saved?.categoryId ?? '')
 const curCode = ref<string>(settings.inputCurrency)
 
 const amount = computed(() => Number(calcValue(calc.value).toFixed(2)))
-const expr = computed(() => calcText(calc.value))
-const display = computed(() => currentNumber(calc.value))
-const converted = computed(() => curCode.value !== settings.baseCurrency)
+const expr = computed(() => displaySub(calc.value))
+const display = computed(() => displayMain(calc.value))
+/** 公式較長時縮小字級 */
+const displayLong = computed(() => display.value.length > 11)
+/** 還沒按 = 之前不顯示換算預覽，答案要按了等於才出現 */
+const converted = computed(() => calc.value.done && curCode.value !== settings.baseCurrency)
+
+/** 記帳幣別選單：設定頁可挑選要顯示哪幾個（沒選 = 全部），目前選用的幣別一律保留 */
+const currencyOptions = computed(() => {
+  const vis = settings.visibleCurrencies
+  if (!vis.length) return CURRENCIES
+  const list = CURRENCIES.filter((c) => vis.includes(c.code))
+  if (list.length && !list.some((c) => c.code === curCode.value)) {
+    const cur = CURRENCIES.find((c) => c.code === curCode.value)
+    if (cur) return [cur, ...list]
+  }
+  return list
+})
 const convertedAmount = computed(() => Number((amount.value * settings.rate(curCode.value)).toFixed(2)))
 
 // 分類預設：上次使用 → 該類型第一個
@@ -97,6 +112,11 @@ function onKey(e: KeyboardEvent) {
   if (e.metaKey || e.ctrlKey || e.altKey) return
 
   const map: Record<string, string> = { '*': '×', '/': '÷', x: '×', X: '×' }
+  if (e.key === '(' || e.key === ')') {
+    press(e.key)
+    e.preventDefault()
+    return
+  }
   if (/^[0-9.]$/.test(e.key)) {
     press(e.key)
     e.preventDefault()
@@ -192,7 +212,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           </button>
           <div class="seg__cur">
             <select v-model="curCode" class="sel" :title="'目前以 ' + curCode + ' 記錄'">
-              <option v-for="c in CURRENCIES" :key="c.code" :value="c.code">
+              <option v-for="c in currencyOptions" :key="c.code" :value="c.code">
                 {{ c.code }}
               </option>
             </select>
@@ -219,11 +239,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           </button>
         </div>
 
-        <div class="amount">
-          <div class="amount__expr num">{{ expr || '0' }}</div>
+          <div class="amount">
+          <div class="amount__expr num">{{ expr || '\u00a0' }}</div>
           <div class="amount__main">
             <span class="amount__sym">{{ currency(curCode).symbol }}</span>
-            <span class="amount__num num">{{ display }}</span>
+            <span class="amount__num num" :class="{ 'is-long': displayLong }">{{ display }}</span>
           </div>
           <div v-if="converted && amount > 0" class="amount__conv num tiny">
             ≈ {{ fmtMoney(convertedAmount, settings.baseCurrency) }}
@@ -247,7 +267,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             </button>
             <button class="btn btn--primary btn--save" @click="submit">記錄</button>
           </div>
-          <p class="tiny muted hint">支援 + − × ÷ 連續運算；Enter 送出、Esc 清空</p>
+          <p class="tiny muted hint">支援 + − × ÷ 與括號；按 = 才會算出答案，Enter 送出、Esc 清空</p>
         </div>
       </section>
     </div>
@@ -380,6 +400,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   font-weight: 600;
   line-height: 1.1;
   letter-spacing: -0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.amount__num.is-long {
+  font-size: 24px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 .amount__conv {
   color: var(--accent);

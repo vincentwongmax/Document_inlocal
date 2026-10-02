@@ -9,7 +9,7 @@ const rows = [
 ]
 
 function kindOf(k: string): string {
-  if (k === '⌫') return 'fn'
+  if (k === '⌫' || k === '(' || k === ')') return 'fn'
   if (['÷', '×', '-', '+'].includes(k)) return 'op'
   return 'num'
 }
@@ -29,7 +29,9 @@ function kindOf(k: string): string {
         {{ k }}
       </button>
     </div>
-    <div class="keypad__row">
+    <div class="keypad__row keypad__row--last">
+      <button class="key key--fn" type="button" @click="$emit('press', '(')">(</button>
+      <button class="key key--fn" type="button" @click="$emit('press', ')')">)</button>
       <button class="key key--fn" type="button" @click="$emit('press', 'C')">C</button>
       <button class="key key--eq" type="button" @click="$emit('press', '=')">=</button>
     </div>
@@ -76,8 +78,7 @@ function kindOf(k: string): string {
   color: var(--text-2);
   font-size: 17px;
 }
-.key--eq {
-  grid-column: span 3;
+.keypad__row--last .key--eq {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;

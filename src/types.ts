@@ -90,6 +90,10 @@ export interface Settings {
   categories: Category[]
   /** 主頁直接顯示的常用分類（空陣列 = 全部分類都顯示） */
   favoriteCategories: string[]
+  /** 主頁記帳幣別選單顯示的幣別（空陣列 = 全部顯示） */
+  visibleCurrencies: string[]
+  /** 匯率表顯示的幣別（空陣列 = 全部顯示；可自行新增） */
+  rateCurrencies: string[]
 }
 
 export interface ExportPayload {
