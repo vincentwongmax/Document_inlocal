@@ -402,17 +402,16 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
               <button class="catchip__name" @click="editingCat = c">{{ c.name }}</button>
               <button class="catchip__x" @click="removeCat(c)">×</button>
             </span>
-            <button class="chip chip--add" @click="newType = g.type; addCat()">＋</button>
           </div>
         </div>
 
         <div class="addcat">
           <input v-model="newName" class="field" placeholder="新分類名稱" maxlength="12" @keyup.enter="addCat" />
-          <select v-model="newType" class="field addcat__type">
-            <option value="expense">支出</option>
-            <option value="income">收入</option>
+          <select v-model="newType" class="field row__ctl addcat__type">
+            <option value="expense">支出分類</option>
+            <option value="income">收入分類</option>
           </select>
-          <input v-model="newColor" class="addcat__color" type="color" />
+          <input v-model="newColor" class="addcat__color" type="color" title="分類顏色" />
           <button class="btn btn--primary" :disabled="!newName.trim()" @click="addCat">新增</button>
         </div>
       </div>
