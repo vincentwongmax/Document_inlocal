@@ -12,6 +12,8 @@ const settings = useSettingsStore()
 const cat = computed(() => settings.category(props.record.categoryId))
 const isExpense = computed(() => props.record.type === 'expense')
 const converted = computed(() => props.record.currency !== props.record.baseCurrency)
+/** 舊資料可能沒有 images 欄位 */
+const imgCount = computed(() => props.record.images?.length ?? 0)
 </script>
 
 <template>
@@ -27,14 +29,17 @@ const converted = computed(() => props.record.currency !== props.record.baseCurr
         >{{ relativeTime(record.occurredAt) }}</span>
       </span>
       <span v-if="record.note" class="row__note tiny muted">{{ record.note }}</span>
-      <span class="row__meta">
-        <span v-for="im in record.images.slice(0, 3)" :key="im.id" class="row__thumb">
-          <img v-if="im.thumb" :src="im.thumb" alt="" />
+      <span v-if="imgCount || record.source === 'image'" class="row__meta">
+        <span v-if="imgCount" class="imtag">
+          <svg class="imtag__ic" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="2.2" y="3.2" width="11.6" height="9.6" rx="2.4" />
+            <circle cx="6.1" cy="6.9" r="1.15" />
+            <path d="M3.6 11.9 6.6 9l2.1 1.9 2-1.8 2.2 2.5" />
+          </svg>
+          <span>有圖片</span>
+          <span v-if="imgCount > 1" class="imtag__n">· {{ imgCount }}</span>
         </span>
-        <span v-if="record.images.length > 3" class="row__more tiny num">
-          +{{ record.images.length - 3 }}
-        </span>
-        <span v-if="record.source === 'image' && !record.images.length" class="tag">收據</span>
+        <span v-else class="imtag imtag--plain">收據</span>
       </span>
     </button>
     <div class="row__amt">
@@ -90,34 +95,49 @@ const converted = computed(() => props.record.currency !== props.record.baseCurr
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.row__more {
-  align-self: center;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--surface-3);
-  color: var(--text-3);
-  font-weight: 700;
-}
 .row__meta {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 2px;
+  margin-top: 3px;
 }
-.row__thumb {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  background: var(--surface-3);
+.imtag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.imtag__ic {
+  width: 13px;
+  height: 13px;
   flex: none;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
-.row__thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
+.imtag__ic circle {
+  fill: var(--accent);
+  stroke: none;
+}
+.imtag__n {
+  color: var(--text-3);
+  font-weight: 700;
+}
+.imtag--plain {
+  border-color: var(--line);
+  color: var(--text-3);
+  font-weight: 550;
 }
 .row__amt {
   display: flex;
