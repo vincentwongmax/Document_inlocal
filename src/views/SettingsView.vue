@@ -9,7 +9,7 @@ import { buildExport, downloadJson, parseImport, restoreImages } from '@/lib/exp
 import { usageBytes } from '@/lib/storage'
 import { clearImages, listImageIds } from '@/lib/imageDb'
 import { offlineReady, updateSW } from '@/lib/pwa'
-import type { Category, Settings, TxType } from '@/types'
+import type { Settings, TxType } from '@/types'
 
 const settings = useSettingsStore()
 const records = useRecordsStore()
@@ -82,32 +82,10 @@ async function changeBase(code: string) {
 }
 
 /* ── 分類管理 ───────────────────────────────────────────── */
-const newName = ref('')
-const newType = ref<TxType>('expense')
-const newColor = ref('#8a857c')
-const editingCat = ref<Category | null>(null)
-
 const grouped = computed(() => [
   { type: 'expense' as TxType, label: '支出分類', list: settings.state.categories.filter((c) => c.type === 'expense') },
   { type: 'income' as TxType, label: '收入分類', list: settings.state.categories.filter((c) => c.type === 'income') },
 ])
-
-function addCat() {
-  const name = newName.value.trim()
-  if (!name) return
-  settings.addCategory(name, newType.value, newColor.value)
-  newName.value = ''
-  toast.push('已新增分類', 'ok')
-}
-
-function removeCat(c: Category) {
-  if (c.builtin) {
-    toast.push('內建分類無法刪除，可改名或改顏色', 'warn')
-    return
-  }
-  settings.removeCategory(c.id)
-  toast.push('已移除分類', 'info')
-}
 
 /* ── 資料管理 ───────────────────────────────────────────── */
 const imageCount = ref(0)
@@ -387,32 +365,9 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
         </span>
         <div class="sec__meta">
           <h2 class="sec__title">分類</h2>
-          <p class="sec__desc">點分類名稱可改名與換色；勾選的分類會固定顯示在主頁</p>
+          <p class="sec__desc">勾選要固定在主頁記帳區的分類；沒勾選任何一個時，主頁顯示全部分類</p>
         </div>
       </header>
-
-      <div class="panel">
-        <div v-for="g in grouped" :key="g.type" class="catgroup">
-          <span class="tiny muted catgroup__label">{{ g.label }}</span>
-          <div class="chips">
-            <span v-for="c in g.list" :key="c.id" class="catchip" :class="{ 'is-off': c.archived }">
-              <span class="catchip__dot" :style="{ background: c.color }" />
-              <button class="catchip__name" @click="editingCat = c">{{ c.name }}</button>
-              <button class="catchip__x" @click="removeCat(c)">×</button>
-            </span>
-          </div>
-        </div>
-
-        <div class="addcat">
-          <input v-model="newName" class="field" placeholder="新分類名稱" maxlength="12" @keyup.enter="addCat" />
-          <select v-model="newType" class="field row__ctl addcat__type">
-            <option value="expense">支出分類</option>
-            <option value="income">收入分類</option>
-          </select>
-          <input v-model="newColor" class="addcat__color" type="color" title="分類顏色" />
-          <button class="btn btn--primary" :disabled="!newName.trim()" @click="addCat">新增</button>
-        </div>
-      </div>
 
       <!-- 主頁常用分類 -->
       <div class="panel">
@@ -551,18 +506,6 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
       · 1 {{ settings.inputCurrency }} ≈
       {{ fmtMoney(settings.rate(settings.inputCurrency), settings.baseCurrency) }}
     </p>
-
-    <!-- 編輯分類 -->
-    <Transition name="fade">
-      <div v-if="editingCat" class="modal" @click.self="editingCat = null">
-        <div class="card modal__box">
-          <h3>編輯分類</h3>
-          <input v-model="editingCat.name" class="field" maxlength="12" />
-          <input v-model="editingCat.color" class="modal__color" type="color" />
-          <button class="btn btn--primary" @click="editingCat = null">完成</button>
-        </div>
-      </div>
-    </Transition>
 
     <ConfirmDialog
       :open="!!pendingImport"
@@ -898,35 +841,6 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
   font-size: 13px;
   font-weight: 550;
 }
-.catchip__x {
-  color: var(--text-3);
-  font-size: 15px;
-  line-height: 1;
-  padding: 0 2px;
-}
-.catchip__x:hover {
-  color: var(--expense);
-}
-.addcat {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-  flex-wrap: wrap;
-}
-.addcat .field {
-  background: var(--surface);
-}
-.addcat__type {
-  width: 88px;
-}
-.addcat__color {
-  width: 42px;
-  height: 42px;
-  padding: 2px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
-  background: var(--surface);
-}
 .favs__hint {
   margin: 0 0 11px;
 }
@@ -1022,34 +936,6 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
 .foot {
   margin-top: 18px;
   text-align: center;
-}
-.modal {
-  position: fixed;
-  inset: 0;
-  z-index: 95;
-  background: rgba(27, 26, 24, 0.34);
-  display: grid;
-  place-items: center;
-  padding: 20px;
-}
-.modal__box {
-  width: 100%;
-  max-width: 320px;
-  padding: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  box-shadow: var(--shadow-3);
-}
-.modal__box h3 {
-  font-size: 15.5px;
-}
-.modal__color {
-  width: 100%;
-  height: 40px;
-  padding: 2px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
 }
 .fade-enter-active,
 .fade-leave-active {
