@@ -81,6 +81,7 @@ const expense = computed(() =>
 const income = computed(() =>
   rows.value.filter((r) => r.type === 'income').reduce((s, r) => s + r.baseAmount, 0),
 )
+const net = computed(() => income.value - expense.value)
 
 function shiftUnit(delta: number) {
   if (unit.value === 'day') key.value = addDays(key.value, delta)
@@ -165,59 +166,82 @@ function removeEditing(id: string) {
 <template>
   <div class="page records">
     <div class="page-head">
-      <div>
-        <h1 class="page-title">記錄</h1>
-        <p class="page-sub rec-meta">
-          <span class="rec-meta__pill rec-meta__pill--date num">
-            {{ rangeText }}
+      <h1 class="page-title">記錄</h1>
+      <p class="page-sub">收支帳目一覽</p>
+    </div>
+
+    <!-- 區間總覽 -->
+    <div class="card sum">
+      <div class="sum__grid">
+        <div class="sum__col">
+          <span class="sum__label"><i class="sum__dot sum__dot--exp"></i>支出</span>
+          <span class="sum__val num is-exp">{{ fmtMoney(expense, settings.baseCurrency) }}</span>
+        </div>
+        <div class="sum__col">
+          <span class="sum__label"><i class="sum__dot sum__dot--inc"></i>收入</span>
+          <span class="sum__val num is-inc">{{ fmtMoney(income, settings.baseCurrency) }}</span>
+        </div>
+        <div class="sum__col">
+          <span class="sum__label">結餘</span>
+          <span class="sum__val num" :class="net >= 0 ? 'is-inc' : 'is-exp'">
+            {{ fmtMoney(net, settings.baseCurrency) }}
           </span>
-          <span class="rec-meta__pill num">{{ rows.length }} 筆</span>
-          <span class="rec-meta__pill rec-meta__pill--exp num">
-            支出 {{ fmtMoney(expense, settings.baseCurrency) }}
-          </span>
-          <span class="rec-meta__pill rec-meta__pill--inc num">
-            收入 {{ fmtMoney(income, settings.baseCurrency) }}
-          </span>
-        </p>
+        </div>
+      </div>
+      <div class="sum__foot">
+        <span class="sum__tag num">{{ rangeText }}</span>
+        <span class="sum__tag num">{{ rows.length }} 筆</span>
       </div>
     </div>
 
     <div class="card rangebar">
       <div class="rangebar__top">
-        <div class="seg2 rangebar__mode">
-          <button :class="{ 'is-on': mode === 'unit' }" @click="mode = 'unit'">依單位</button>
-          <button :class="{ 'is-on': mode === 'custom' }" @click="mode = 'custom'">自訂範圍</button>
+        <div class="grp">
+          <span class="grp__label">檢視</span>
+          <div class="seg2 rangebar__mode">
+            <button :class="{ 'is-on': mode === 'unit' }" @click="mode = 'unit'">依單位</button>
+            <button :class="{ 'is-on': mode === 'custom' }" @click="mode = 'custom'">自訂範圍</button>
+          </div>
         </div>
 
-        <div class="seg2">
-          <button :class="{ 'is-on': typeFilter === 'all' }" @click="typeFilter = 'all'">全部</button>
-          <button
-            :class="{ 'is-on': typeFilter === 'expense' }"
-            class="seg2--exp"
-            @click="typeFilter = 'expense'"
-          >
-            支出
-          </button>
-          <button
-            :class="{ 'is-on': typeFilter === 'income' }"
-            class="seg2--inc"
-            @click="typeFilter = 'income'"
-          >
-            收入
-          </button>
+        <div class="grp">
+          <span class="grp__label">篩選</span>
+          <div class="seg2">
+            <button :class="{ 'is-on': typeFilter === 'all' }" @click="typeFilter = 'all'">全部</button>
+            <button
+              :class="{ 'is-on': typeFilter === 'expense' }"
+              class="seg2--exp"
+              @click="typeFilter = 'expense'"
+            >
+              支出
+            </button>
+            <button
+              :class="{ 'is-on': typeFilter === 'income' }"
+              class="seg2--inc"
+              @click="typeFilter = 'income'"
+            >
+              收入
+            </button>
+          </div>
         </div>
       </div>
 
       <template v-if="mode === 'unit'">
         <div class="ctl">
-          <div class="seg2">
-            <button v-for="u in units" :key="u.key" :class="{ 'is-on': unit === u.key }" @click="unit = u.key">
-              {{ u.label }}
-            </button>
+          <div class="grp">
+            <span class="grp__label">週期</span>
+            <div class="seg2">
+              <button v-for="u in units" :key="u.key" :class="{ 'is-on': unit === u.key }" @click="unit = u.key">
+                {{ u.label }}
+              </button>
+            </div>
           </div>
-          <div class="seg2">
-            <button :class="{ 'is-on': span === 1 }" @click="setSpan(1)">單一</button>
-            <button :class="{ 'is-on': span === 3 }" @click="setSpan(3)">3 個</button>
+          <div class="grp">
+            <span class="grp__label">範圍</span>
+            <div class="seg2">
+              <button :class="{ 'is-on': span === 1 }" @click="setSpan(1)">單一</button>
+              <button :class="{ 'is-on': span === 3 }" @click="setSpan(3)">3 個</button>
+            </div>
           </div>
         </div>
 
@@ -246,11 +270,11 @@ function removeEditing(id: string) {
       <template v-else>
         <div class="custom__dates">
           <label class="custom__date">
-            <span class="tiny muted">從</span>
+            <span class="grp__label">從</span>
             <input v-model="start" class="field" type="date" />
           </label>
           <label class="custom__date">
-            <span class="tiny muted">到</span>
+            <span class="grp__label">到</span>
             <input v-model="end" class="field" type="date" />
           </label>
         </div>
@@ -281,54 +305,98 @@ function removeEditing(id: string) {
 </template>
 
 <style scoped>
-.rec-meta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
+.sum {
+  position: relative;
+  overflow: hidden;
+  padding: 16px 16px 13px;
+  margin-bottom: 14px;
 }
-.rec-meta__pill--date {
-  gap: 6px;
-  color: var(--text-2);
-}
-.rec-meta__pill--date::before {
+.sum::before {
   content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  flex: none;
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--expense));
 }
-.rec-meta__pill {
+.sum__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.sum__col {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.sum__label {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 23px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: var(--surface-3);
-  font-size: 12px;
-  font-weight: 650;
-  color: var(--text-2);
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+.sum__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.sum__dot--exp {
+  background: var(--expense);
+}
+.sum__dot--inc {
+  background: var(--income);
+}
+.sum__val {
+  font-size: 17px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.rec-meta__pill--exp {
-  background: var(--expense-soft);
+.sum__val.is-exp {
   color: var(--expense);
 }
-.rec-meta__pill--exp::before {
-  content: '↓';
-  font-size: 11px;
-  font-weight: 700;
-}
-.rec-meta__pill--inc {
-  background: rgba(44, 110, 91, 0.1);
+.sum__val.is-inc {
   color: var(--income);
 }
-.rec-meta__pill--inc::before {
-  content: '↑';
+.sum__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 13px;
+  padding-top: 11px;
+  border-top: 1px dashed var(--line);
+}
+.sum__tag {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--surface-3);
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+@media (max-width: 519px) {
+  .sum__val {
+    font-size: 15px;
+  }
+}
+
+.grp {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.grp__label {
   font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
 }
 
 .rangebar {

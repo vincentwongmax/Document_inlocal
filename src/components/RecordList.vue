@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import type { TxRecord } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { fmtMoney } from '@/lib/currency'
-import { dayKey, formatDay } from '@/lib/date'
+import { dayKey, dayParts } from '@/lib/date'
 import RecordRow from './RecordRow.vue'
 
 const props = withDefaults(
@@ -33,10 +33,13 @@ const groups = computed(() => {
     .sort((a, b) => (a[0] < b[0] ? 1 : -1))
     .map(([key, list]) => {
       const sorted = [...list].sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1))
+      const exp = sorted.reduce((s, r) => s + (r.type === 'expense' ? r.baseAmount : 0), 0)
+      const inc = sorted.reduce((s, r) => s + (r.type === 'income' ? r.baseAmount : 0), 0)
       return {
         key,
-        label: formatDay(list[0].occurredAt),
-        total: sorted.reduce((s, r) => s + (r.type === 'expense' ? r.baseAmount : -r.baseAmount), 0),
+        parts: dayParts(list[0].occurredAt),
+        exp,
+        inc,
         list: sorted,
       }
     })
@@ -78,8 +81,23 @@ watch(
     <template v-else>
       <div v-for="g in visibleGroups" :key="g.key" class="day">
         <div class="day__head">
-          <span class="day__label">{{ g.label }}</span>
-          <span class="day__total num">{{ fmtMoney(g.total, settings.baseCurrency) }}</span>
+          <span class="day__cal">
+            <b class="day__num num">{{ g.parts.num }}</b>
+            <span class="day__mon">{{ g.parts.mon }}</span>
+          </span>
+          <span class="day__tag" :class="{ 'is-today': g.parts.tag === '今天' }">{{ g.parts.tag }}</span>
+          <span class="day__rule"></span>
+          <span class="day__amt">
+            <span v-if="g.inc > 0" class="day__chip is-inc num">
+              +{{ fmtMoney(g.inc, settings.baseCurrency) }}
+            </span>
+            <span v-if="g.exp > 0" class="day__chip is-exp num">
+              −{{ fmtMoney(g.exp, settings.baseCurrency) }}
+            </span>
+            <span v-if="g.inc === 0 && g.exp === 0" class="day__chip num">
+              {{ fmtMoney(0, settings.baseCurrency) }}
+            </span>
+          </span>
         </div>
         <div class="card day__card">
           <template v-for="(r, i) in g.list" :key="r.id">
@@ -94,10 +112,14 @@ watch(
         </div>
       </div>
 
-      <button v-if="collapsed" class="btn btn--sm more" @click="showAll = true">
+      <button v-if="collapsed" class="btn btn--ghost more" @click="showAll = true">
         顯示全部 {{ total }} 筆
       </button>
-      <button v-else-if="collapseAfter > 0 && total > collapseAfter" class="btn btn--sm more" @click="showAll = false">
+      <button
+        v-else-if="collapseAfter > 0 && total > collapseAfter"
+        class="btn btn--ghost more"
+        @click="showAll = false"
+      >
         只顯示最近 {{ collapseAfter }} 筆
       </button>
     </template>
@@ -106,22 +128,78 @@ watch(
 
 <style scoped>
 .day {
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 .day__head {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 0 4px 6px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 2px 8px;
 }
-.day__label {
-  font-size: 12.5px;
-  font-weight: 650;
-  color: var(--text-2);
+.day__cal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 11px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-1);
+  line-height: 1;
 }
-.day__total {
-  font-size: 12.5px;
+.day__num {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+.day__mon {
+  margin-top: 2px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   color: var(--text-3);
+}
+.day__tag {
+  flex: none;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+  background: var(--surface-3);
+}
+.day__tag.is-today {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.day__rule {
+  flex: 1;
+  min-width: 12px;
+  height: 1px;
+  background: var(--line);
+}
+.day__amt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.day__chip {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.day__chip.is-exp {
+  color: var(--expense);
+}
+.day__chip.is-inc {
+  color: var(--income);
 }
 .day__card {
   overflow: hidden;
@@ -132,6 +210,7 @@ watch(
 }
 .more {
   display: flex;
-  margin: 0 auto;
+  width: 100%;
+  margin: 2px auto 0;
 }
 </style>

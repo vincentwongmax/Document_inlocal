@@ -28,10 +28,13 @@ const converted = computed(() => props.record.currency !== props.record.baseCurr
       </span>
       <span v-if="record.note" class="row__note tiny muted">{{ record.note }}</span>
       <span class="row__meta">
-        <span v-for="im in record.images" :key="im.id" class="row__thumb">
+        <span v-for="im in record.images.slice(0, 3)" :key="im.id" class="row__thumb">
           <img v-if="im.thumb" :src="im.thumb" alt="" />
         </span>
-        <span v-if="record.source === 'image'" class="tag">收據</span>
+        <span v-if="record.images.length > 3" class="row__more tiny num">
+          +{{ record.images.length - 3 }}
+        </span>
+        <span v-if="record.source === 'image' && !record.images.length" class="tag">收據</span>
       </span>
     </button>
     <div class="row__amt">
@@ -50,7 +53,11 @@ const converted = computed(() => props.record.currency !== props.record.baseCurr
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 11px 14px;
+  padding: 12px 14px;
+  transition: background 0.15s ease;
+}
+.row:hover {
+  background: var(--surface-3);
 }
 .row__dot {
   width: 9px;
@@ -73,14 +80,23 @@ const converted = computed(() => props.record.currency !== props.record.baseCurr
   gap: 8px;
 }
 .row__cat {
-  font-weight: 550;
-  font-size: 14.5px;
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.01em;
 }
 .row__note {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.row__more {
+  align-self: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-3);
+  font-weight: 700;
 }
 .row__meta {
   display: flex;

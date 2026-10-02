@@ -157,6 +157,20 @@ export function formatDay(iso: string): string {
   return `${d.getMonth() + 1}月${d.getDate()}日 · ${suffix}`
 }
 
+/** 日曆小卡用：日數 / 月份 / 今天|昨天|週X */
+export function dayParts(iso: string): { num: string; mon: string; tag: string } {
+  const d = new Date(iso)
+  const week = ['日', '一', '二', '三', '四', '五', '六'][d.getDay()]
+  const today = new Date()
+  const diff = Math.round(
+    (new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() -
+      new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) /
+      86400000,
+  )
+  const tag = diff === 0 ? '今天' : diff === 1 ? '昨天' : `週${week}`
+  return { num: String(d.getDate()), mon: `${d.getMonth() + 1}月`, tag }
+}
+
 export function formatTime(iso: string): string {
   const d = new Date(iso)
   return `${p(d.getHours())}:${p(d.getMinutes())}`
