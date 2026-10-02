@@ -440,24 +440,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   color: var(--accent);
   opacity: 0.75;
 }
+/* 日期時間獨佔一列；「清空」與「記錄」自己一列（各佔一半） */
 .pad__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: 1fr 1fr;
   gap: 9px;
 }
-.pad__row .field {
+.pad__row .dt {
+  grid-column: 1 / -1;
   min-width: 0;
-}
-/* 窄螢幕：時間獨佔一行，按鈕並排 */
-@media (max-width: 639px) {
-  .pad__row {
-    grid-template-columns: 1fr 1fr;
-  }
-  /* 日期時間欄位現在包在 .dt 裡，這條要同時涵蓋外層容器，否則欄位會被擠成半寬 */
-  .pad__row .dt,
-  .pad__row .field {
-    grid-column: 1 / -1;
-  }
 }
 .quick {
   display: flex;
