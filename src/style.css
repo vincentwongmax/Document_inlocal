@@ -31,6 +31,9 @@
   --pick-soft: #fbeef2;
   --pick-line: #eccfd9;
 
+  /* 搜尋命中的高亮（黃底＋深字，對比遠高於 4.5:1） */
+  --hl: #ffe066;
+
   --r-sm: 8px;
   --r-md: 12px;
   --r-lg: 16px;

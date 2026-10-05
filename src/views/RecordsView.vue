@@ -7,6 +7,7 @@ import type { DateRange } from '@/composables/useStats'
 import type { TxRecord } from '@/types'
 import RecordList from '@/components/RecordList.vue'
 import RecordSheet from '@/components/RecordSheet.vue'
+import ClearableInput from '@/components/ClearableInput.vue'
 import { fmtMoney } from '@/lib/currency'
 import {
   addDays,
@@ -33,6 +34,16 @@ const end = ref(todayKey())
 
 /** 收支篩選 */
 const typeFilter = ref<'all' | 'expense' | 'income'>('all')
+
+/** 關鍵字搜尋：只比對「備註」與「分類名稱」 */
+const q = ref('')
+/** trim + 轉小寫後的關鍵字（空字串代表沒在搜尋） */
+const kw = computed(() => q.value.trim().toLowerCase())
+
+/** 記錄所屬分類的顯示名稱（未分類也要能被搜尋到，所以用同一個 fallback） */
+function catNameOf(categoryId: string) {
+  return settings.category(categoryId)?.name ?? '未分類'
+}
 
 watch(unit, (u) => {
   key.value = todayUnit(u)
@@ -71,9 +82,19 @@ const rows = computed(() =>
     .filter((r) => {
       const k = dayKey(r.occurredAt)
       if (k < range.value.start || k > range.value.end) return false
-      return typeFilter.value === 'all' || r.type === typeFilter.value
+      if (typeFilter.value !== 'all' && r.type !== typeFilter.value) return false
+      if (!kw.value) return true
+      const note = r.note ?? ''
+      return (
+        note.toLowerCase().includes(kw.value) || catNameOf(r.categoryId).toLowerCase().includes(kw.value)
+      )
     })
     .sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1)),
+)
+
+/** 有在搜尋時，空列表的文案要帶出關鍵字，否則看不出是「找不到」還是「這個範圍本來就沒有」 */
+const emptyText = computed(() =>
+  kw.value ? `找不到符合「${q.value.trim()}」的記錄` : '這個範圍沒有記錄',
 )
 
 const expense = computed(() =>
@@ -215,6 +236,15 @@ function removeEditing(id: string) {
         </div>
       </div>
 
+      <!-- 關鍵字搜尋：只比對備註與分類名稱，命中文字會在下方列表以黃底標示 -->
+      <div class="search">
+        <svg class="search__ic" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="10.8" cy="10.8" r="6.4" />
+          <path d="M15.6 15.6 20 20" />
+        </svg>
+        <ClearableInput v-model="q" placeholder="搜尋備註或分類" :maxlength="40" />
+      </div>
+
       <template v-if="mode === 'unit'">
         <div class="ctl">
           <div class="grp">
@@ -267,7 +297,8 @@ function removeEditing(id: string) {
     <RecordList
       :records="rows"
       :show-time="true"
-      empty-text="這個範圍沒有記錄"
+      :empty-text="emptyText"
+      :highlight="kw"
       @edit="editingId = $event"
       @remove="removeEditing($event)"
     />
@@ -373,6 +404,27 @@ function removeEditing(id: string) {
   justify-content: space-between;
   gap: 8px;
   flex-wrap: wrap;
+}
+.search {
+  position: relative;
+  margin-top: 11px;
+}
+.search__ic {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: var(--text-3);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+/* 左側讓開放大鏡；右側 ClearableInput 已自留 40px 給清空鈕 */
+.search :deep(.cf__in) {
+  padding-left: 36px;
 }
 .ctl {
   display: flex;

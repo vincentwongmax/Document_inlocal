@@ -7,8 +7,17 @@ import { formatFull, relativeTime } from '@/lib/date'
 import { iconForCategory } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
 import CategoryIcon from './CategoryIcon.vue'
+import HighlightText from './HighlightText.vue'
 
-const props = defineProps<{ record: TxRecord; showTime?: boolean }>()
+const props = withDefaults(
+  defineProps<{
+    record: TxRecord
+    showTime?: boolean
+    /** 搜尋關鍵字（已 trim 並轉小寫）：命中處在分類名與備註上以黃底標示 */
+    highlight?: string
+  }>(),
+  { showTime: false, highlight: '' },
+)
 const emit = defineEmits<{ edit: [id: string]; remove: [id: string] }>()
 const settings = useSettingsStore()
 
@@ -30,7 +39,9 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
     </span>
     <button class="row__main" type="button" @click="emit('edit', record.id)">
       <span class="row__top">
-        <span class="row__cat">{{ cat?.name ?? '未分類' }}</span>
+        <span class="row__cat">
+          <HighlightText :text="cat?.name ?? '未分類'" :query="highlight" />
+        </span>
         <span v-if="showTime" class="ttag" :title="formatFull(record.occurredAt)">
           <svg class="ttag__ic" viewBox="0 0 16 16" aria-hidden="true">
             <circle class="ttag__face" cx="8" cy="8" r="6.3" />
@@ -49,7 +60,9 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
         </span>
         <span v-else-if="record.source === 'image'" class="imtag imtag--plain">收據</span>
       </span>
-      <span v-if="record.note" class="row__note tiny muted">{{ record.note }}</span>
+      <span v-if="record.note" class="row__note tiny muted">
+        <HighlightText :text="record.note" :query="highlight" />
+      </span>
     </button>
     <div class="row__amt">
       <strong class="num" :class="isExpense ? 'is-exp' : 'is-inc'">

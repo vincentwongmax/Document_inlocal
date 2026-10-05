@@ -58,3 +58,6 @@ App 是 PWA，`registerType: 'autoUpdate'`，Service Worker 會預快取整個 d
 - 「輸入框內嵌小按鈕」的統一樣式：26×26、radius 8px、`right: 5px` 垂直置中、
   底色 `--accent-soft` + 圖示 `--accent`、hover 反白（`--accent` 底 + 白圖示）；
   輸入框一律 `padding-right: 40px` 讓開（datetime 還需容納 Chromium 原生日曆選擇器）
+- `HighlightText.vue`：把文字按關鍵字切成片段、命中處包 `<mark class="hl">`（黃底 `--hl: #ffe066`）。
+  不用 RegExp、不分大小寫、保留原文大小寫；多根 fragment 輸出不影響外層 ellipsis。
+  目前用於 `RecordRow` 的分類名與備註（`highlight` prop 由 RecordsView 搜尋框傳入）

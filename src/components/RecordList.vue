@@ -14,8 +14,10 @@ const props = withDefaults(
     /** 一開始只顯示前 N 筆，其餘用「顯示全部」展開（0 = 全部） */
     collapseAfter?: number
     emptyText?: string
+    /** 搜尋關鍵字（已 trim 並轉小寫），往下傳給 RecordRow 做黃底高亮 */
+    highlight?: string
   }>(),
-  { showTime: true, collapseAfter: 0, emptyText: '這個範圍沒有記錄' },
+  { showTime: true, collapseAfter: 0, emptyText: '這個範圍沒有記錄', highlight: '' },
 )
 const emit = defineEmits<{ edit: [id: string]; remove: [id: string] }>()
 
@@ -105,6 +107,7 @@ watch(
             <RecordRow
               :record="r"
               :show-time="showTime"
+              :highlight="highlight"
               @edit="emit('edit', $event)"
               @remove="emit('remove', $event)"
             />
