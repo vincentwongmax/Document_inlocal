@@ -4,7 +4,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
 import { useToast } from '@/composables/useToast'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
-import CategoryAddModal from '@/components/CategoryAddModal.vue'
+import CategoryManageModal from '@/components/CategoryManageModal.vue'
 import CategoryIcon from '@/components/CategoryIcon.vue'
 import { iconForCategory } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
@@ -86,17 +86,40 @@ async function changeBase(code: string) {
 }
 
 /* ── 分類管理 ───────────────────────────────────────────── */
+// 只列出未封存的：刪除後的分類不該還留在清單上
 const grouped = computed(() => [
-  { type: 'expense' as TxType, label: '支出分類', list: settings.state.categories.filter((c) => c.type === 'expense') },
-  { type: 'income' as TxType, label: '收入分類', list: settings.state.categories.filter((c) => c.type === 'income') },
+  { type: 'expense' as TxType, label: '支出分類', list: settings.categories.filter((c) => c.type === 'expense') },
+  { type: 'income' as TxType, label: '收入分類', list: settings.categories.filter((c) => c.type === 'income') },
 ])
 
-/** 主頁常用分類：右側「＋ 新增」開啟新增分類彈窗 */
-const showAddCat = ref(false)
-function onAddCat(p: { name: string; color: string; type: TxType; icon: string }) {
+/** 管理分類彈窗的下拉清單：支出＋收入全部列出 */
+const manageCats = computed(() => [
+  ...settings.categories.filter((c) => c.type === 'expense'),
+  ...settings.categories.filter((c) => c.type === 'income'),
+])
+
+/** 每個分類被幾筆記錄使用（刪除前提醒用） */
+const catUsage = computed(() => {
+  const m: Record<string, number> = {}
+  for (const r of records.records) m[r.categoryId] = (m[r.categoryId] ?? 0) + 1
+  return m
+})
+
+/** 主頁常用分類：右側「管理分類」可新增、修改、刪除分類 */
+const showCatMgr = ref(false)
+function onCreateCat(p: { name: string; color: string; type: TxType; icon: string }) {
   settings.addCategory(p.name, p.type, p.color, p.icon)
-  showAddCat.value = false
+  showCatMgr.value = false
   toast.push('已新增分類', 'ok')
+}
+function onSaveCat(p: { id: string; name: string; color: string; type: TxType; icon: string }) {
+  settings.updateCategory(p.id, { name: p.name, color: p.color, type: p.type, icon: p.icon })
+  showCatMgr.value = false
+  toast.push('已儲存分類', 'ok')
+}
+function onRemoveCat(id: string) {
+  const ok = settings.removeCategory(id)
+  toast.push(ok ? '已刪除分類' : '找不到這個分類', ok ? 'ok' : 'warn')
 }
 
 /* ── 資料管理 ───────────────────────────────────────────── */
@@ -386,7 +409,7 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
         <div class="panel__hd">
           <span class="panel__label">主頁常用分類</span>
           <span class="tiny muted panel__meta">已選 {{ settings.favoriteCategories.length }} 個</span>
-          <button class="btn btn--sm" type="button" @click="showAddCat = true">＋ 新增</button>
+          <button class="btn btn--sm" type="button" @click="showCatMgr = true">管理分類</button>
         </div>
         <p class="tiny muted favs__hint">
           勾選幾個，主頁就只顯示那幾個，其餘收進「更多」；沒有勾選任何一個時，主頁顯示全部分類。
@@ -544,7 +567,15 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
       @cancel="askReset = false"
     />
 
-    <CategoryAddModal :open="showAddCat" @close="showAddCat = false" @create="onAddCat" />
+    <CategoryManageModal
+      :open="showCatMgr"
+      :categories="manageCats"
+      :usage="catUsage"
+      @close="showCatMgr = false"
+      @create="onCreateCat"
+      @save="onSaveCat"
+      @remove="onRemoveCat"
+    />
   </div>
 </template>
 

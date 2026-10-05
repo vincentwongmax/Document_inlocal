@@ -126,11 +126,17 @@ export const useSettingsStore = defineStore('settings', () => {
     if (patch.icon !== undefined) c.icon = patch.icon
   }
 
+  /**
+   * 刪除分類（內建分類也可刪）。
+   * 一律改為封存而非真的從陣列移除，避免既有記錄指向不存在的分類。
+   */
   function removeCategory(id: string) {
     const c = state.value.categories.find((x) => x.id === id)
-    if (!c || c.builtin) return false
-    // 已被使用的自訂分類改為封存，避免記錄指向空分類
+    if (!c || c.archived) return false
     c.archived = true
+    // 同時從常用分類移除，否則常用清單會留下一個已經看不見的分類
+    const i = state.value.favoriteCategories.indexOf(id)
+    if (i >= 0) state.value.favoriteCategories.splice(i, 1)
     return true
   }
 
