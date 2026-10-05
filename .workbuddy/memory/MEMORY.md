@@ -113,6 +113,11 @@ App 是 PWA，`registerType: 'autoUpdate'`，Service Worker 會預快取整個 d
   - 兩處實作都在 `CategoryPicker.vue`：`.cat.is-on`（chips）與 `.pop__item.is-on`（自訂下拉）
 - 字體：`--font` = Noto Sans TC，`--font-display` = Noto Serif TC（Google Fonts，CJK subset 按需載入）
 - 圖示一律用描邊線性圖示（24×24 網格、`currentColor`），不要混用 emoji 或填充圖示
+- ⚠ **「標籤 + 說明文字」那一列不要用 flex**（`CategoryManageModal` 的 `.lb > span` 踩過）：
+  裸文字標籤是匿名彈性項目，`flex-shrink: 1` + `min-width: auto`，而中文可在任何字之間斷行
+  （min-content 只有 1 個字）→ 說明一長就會把標籤壓到剩 3 個字（「所屬分」／「類」兩行，看似懸掛縮排）。
+  改用 `display: grid; grid-template-columns: max-content minmax(0, 1fr)`：標籤永不壓縮，
+  說明在**自己的欄位內**換行（各行左緣對齊）。說明可再加 `text-wrap: pretty` 避免尾行只剩一個字
 - 元件在被多處共用時（例如 `RecordList` 同時用於記錄頁與統計頁），改動要一併回歸測試
 - 共用元件：`DateTimeField`（`datetime-local` 輸入框，右側內嵌「設為現在」小按鈕，v-model 為
   `YYYY-MM-DDTHH:mm` 本地字串）用於記帳頁、記錄明細、收據複核三處；

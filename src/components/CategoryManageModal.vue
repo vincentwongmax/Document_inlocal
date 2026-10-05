@@ -340,7 +340,7 @@ function confirmRemove() {
           <div class="lb">
             <span>
               所屬分類
-              <em class="lb__hint">選一個就變成它的子分類；選「無」則是最上層的大類</em>
+              <em class="lb__hint">選了就變成它的子分類；選「無」是最上層大類</em>
             </span>
             <CategorySelect
               v-model="parentSel"
@@ -529,8 +529,17 @@ function confirmRemove() {
   flex-direction: column;
   gap: 7px;
 }
+/**
+ * 標籤列 = 兩欄格線，不是 flex。
+ * flex 之下「標籤」與「提示」都是可壓縮的彈性項目，提示一長就會把標籤壓到剩 3 個字
+ * （「所屬分」／「類」斷成兩行，看起來像懸掛縮排）。改成格線後：
+ *   第 1 欄 max-content → 標籤拿到自己剛好的寬度，永遠不會被壓縮或斷行
+ *   第 2 欄 minmax(0, 1fr) → 提示吃掉剩下的寬度，並在自己的欄位內換行（左緣彼此對齊）
+ * align-items: baseline 讓 12.5px 的標籤與 11px 的提示坐在同一條基線上。
+ */
 .lb > span {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: baseline;
   gap: 7px;
   font-size: 12.5px;
@@ -542,6 +551,8 @@ function confirmRemove() {
   font-style: normal;
   font-weight: 500;
   color: var(--text-3);
+  /* 避免最後一行只剩一個字（例如提示差 1px 就放得下時） */
+  text-wrap: pretty;
 }
 .seg {
   display: flex;
