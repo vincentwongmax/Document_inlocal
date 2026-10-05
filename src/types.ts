@@ -11,6 +11,11 @@ export interface Category {
   /** 內建分類不可刪除，但可改名 */
   builtin: boolean
   archived: boolean
+  /**
+   * 上層分類 id；null／省略代表是頂層大類。
+   * 子分類本身還可以有子分類（多層），但收支類型一律沿用整條路徑的根分類。
+   */
+  parentId?: string | null
 }
 
 export interface ImageRef {

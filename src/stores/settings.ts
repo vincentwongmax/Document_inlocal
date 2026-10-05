@@ -56,9 +56,69 @@ export const useSettingsStore = defineStore('settings', () => {
   const categoriesByType = computed(() => (type: TxType) =>
     state.value.categories.filter((c) => !c.archived && c.type === type),
   )
+  /** 某個收支類型的頂層大類（子分類不算） */
+  const topCategoriesByType = computed(() => (type: TxType) =>
+    state.value.categories.filter((c) => !c.archived && c.type === type && !c.parentId),
+  )
 
   function category(id: string): Category | undefined {
     return state.value.categories.find((c) => c.id === id)
+  }
+
+  /* ── 分類樹（子分類） ─────────────────────────────────── */
+  /** 直接子分類（未封存，照原始順序） */
+  function childrenOf(id: string | null): Category[] {
+    return state.value.categories.filter((c) => !c.archived && (c.parentId ?? null) === id)
+  }
+
+  function hasChildren(id: string): boolean {
+    return state.value.categories.some((c) => !c.archived && c.parentId === id)
+  }
+
+  /**
+   * 從根到自己的路徑（含自己）。
+   * 用 visited 防止資料異常造成的無限迴圈。
+   */
+  function pathOf(id: string): Category[] {
+    const out: Category[] = []
+    const seen = new Set<string>()
+    let cur = category(id)
+    while (cur && !seen.has(cur.id)) {
+      seen.add(cur.id)
+      out.unshift(cur)
+      cur = cur.parentId ? category(cur.parentId) : undefined
+    }
+    return out
+  }
+
+  /** 自己＋所有後代（多層）的 id */
+  function descendantIds(id: string): string[] {
+    const out: string[] = []
+    const walk = (pid: string) => {
+      for (const c of state.value.categories) {
+        if (c.archived || c.parentId !== pid) continue
+        out.push(c.id)
+        walk(c.id)
+      }
+    }
+    walk(id)
+    return out
+  }
+
+  /** 「餐飲 › 早餐」這種完整路徑名稱（下拉、搜尋用） */
+  function fullNameOf(id: string): string {
+    return pathOf(id)
+      .map((c) => c.name)
+      .join(' › ')
+  }
+
+  /** 能否刪除：有子分類時要先處理完子分類 */
+  function canRemove(id: string): { ok: boolean; reason: string } {
+    const c = category(id)
+    if (!c || c.archived) return { ok: false, reason: '找不到這個分類' }
+    const n = childrenOf(id).length
+    if (n > 0) return { ok: false, reason: `還有 ${n} 個子分類，請先刪除或移出子分類` }
+    return { ok: true, reason: '' }
   }
 
   function rate(code: string): number {
@@ -100,15 +160,27 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   /* ── 分類管理 ─────────────────────────────────────────── */
-  function addCategory(name: string, type: TxType, color: string, icon?: string) {
+  /**
+   * 新增分類。給 parentId 就是建立子分類：
+   * 收支類型與顏色預設沿用上層，整條路徑才會一致。
+   */
+  function addCategory(
+    name: string,
+    type: TxType,
+    color: string,
+    icon?: string,
+    parentId: string | null = null,
+  ) {
+    const parent = parentId ? category(parentId) : undefined
     const c: Category = {
       id: uid('c'),
       name: name.trim(),
-      type,
-      color,
+      type: parent ? parent.type : type,
+      color: parent ? parent.color : color,
       icon: icon || iconForCategory({ id: '', name }),
       builtin: false,
       archived: false,
+      parentId: parent ? parent.id : null,
     }
     state.value.categories.push(c)
     return c
@@ -116,23 +188,41 @@ export const useSettingsStore = defineStore('settings', () => {
 
   function updateCategory(
     id: string,
-    patch: Partial<Pick<Category, 'name' | 'color' | 'type' | 'icon'>>,
+    patch: Partial<Pick<Category, 'name' | 'color' | 'type' | 'icon' | 'parentId'>>,
   ) {
     const c = state.value.categories.find((x) => x.id === id)
     if (!c) return
     if (patch.name !== undefined) c.name = patch.name.trim() || c.name
     if (patch.color !== undefined) c.color = patch.color
-    if (patch.type !== undefined) c.type = patch.type
     if (patch.icon !== undefined) c.icon = patch.icon
+
+    // 換上層：不能是自己、不能是自己的後代（會形成環），且類型要一致
+    if (patch.parentId !== undefined) {
+      const next = patch.parentId ?? null
+      if (next !== id && !(next && descendantIds(id).includes(next))) {
+        const p = next ? category(next) : undefined
+        if (!next || (p && !p.archived)) c.parentId = next
+      }
+    }
+
+    // 改類型要連整條子樹一起改，否則會出現「支出大類底下掛收入子分類」
+    if (patch.type !== undefined && patch.type !== c.type) {
+      for (const d of descendantIds(id)) {
+        const sub = category(d)
+        if (sub) sub.type = patch.type
+      }
+      c.type = patch.type
+    }
   }
 
   /**
-   * 刪除分類（內建分類也可刪）。
+   * 刪除分類（內建分類也可刪），但底下還有子分類時不給刪。
    * 一律改為封存而非真的從陣列移除，避免既有記錄指向不存在的分類。
    */
-  function removeCategory(id: string) {
-    const c = state.value.categories.find((x) => x.id === id)
-    if (!c || c.archived) return false
+  function removeCategory(id: string): boolean {
+    if (!canRemove(id).ok) return false
+    const c = category(id)
+    if (!c) return false
     c.archived = true
     // 同時從常用分類移除，否則常用清單會留下一個已經看不見的分類
     const i = state.value.favoriteCategories.indexOf(id)
@@ -178,7 +268,14 @@ export const useSettingsStore = defineStore('settings', () => {
     inputCurrency,
     categories,
     categoriesByType,
+    topCategoriesByType,
     category,
+    childrenOf,
+    hasChildren,
+    pathOf,
+    descendantIds,
+    fullNameOf,
+    canRemove,
     rate,
     preferredCurrency,
     setPreferredCurrency,
