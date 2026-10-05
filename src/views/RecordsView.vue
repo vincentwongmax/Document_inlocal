@@ -108,7 +108,16 @@ const byCat = ref(false)
 /** 切成分類檢視後，把日期分組收掉，避免兩種分組互相打架 */
 const byCatOpen = ref<Set<string>>(new Set())
 
+/** 某個分類底下掛著的金額（用來做子分類小計） */
+interface SubTotal {
+  id: string
+  name: string
+  exp: number
+  inc: number
+}
+
 interface CatGroup {
+  /** 大類（根分類）的 id */
   id: string
   name: string
   color: string
@@ -116,33 +125,62 @@ interface CatGroup {
   exp: number
   inc: number
   list: TxRecord[]
+  /** 子分類小計；大類自己身上的金額以「未細分」放在最後 */
+  subs: SubTotal[]
 }
 
-/** 同一個分類的記錄集中在同一塊，依金額（支出＋收入）由多到少排 */
-const catGroups = computed<CatGroup[]>(() =>
-  [...rows.value.reduce((m, r) => {
-    const list = m.get(r.categoryId)
+/**
+ * 依「大類」分組：子分類的記錄一律歸到它最上層的大類去，
+ * 所以「交通」與「交通 › 巴士」會在同一組，不會被拆開。
+ */
+const catGroups = computed<CatGroup[]>(() => {
+  const m = new Map<string, TxRecord[]>()
+  for (const r of rows.value) {
+    // 沒有上層就是自己；資料異常查不到時退回自己的 id，至少不會消失
+    const root = settings.pathOf(r.categoryId)[0]?.id ?? r.categoryId
+    const list = m.get(root)
     if (list) list.push(r)
-    else m.set(r.categoryId, [r])
-    return m
-  }, new Map<string, TxRecord[]>())]
-    .map(([id, list]) => {
-      const c = settings.category(id)
+    else m.set(root, [r])
+  }
+
+  return [...m.entries()]
+    .map(([rootId, list]) => {
+      const c = settings.category(rootId)
       const sorted = [...list].sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1))
-      const sum = (t: TxRecord['type']) =>
-        sorted.reduce((s, r) => s + (r.type === t ? r.baseAmount : 0), 0)
+
+      // 先把每一筆按它自己的分類累加，才知道各子分類佔多少
+      const per = new Map<string, { exp: number; inc: number }>()
+      for (const r of sorted) {
+        const cur = per.get(r.categoryId) ?? { exp: 0, inc: 0 }
+        if (r.type === 'expense') cur.exp += r.baseAmount
+        else cur.inc += r.baseAmount
+        per.set(r.categoryId, cur)
+      }
+      const sumOf = (pick: (v: { exp: number; inc: number }) => number) =>
+        [...per.values()].reduce((s, v) => s + pick(v), 0)
+
+      const subs: SubTotal[] = [...per.entries()]
+        .filter(([id]) => id !== rootId)
+        .map(([id, v]) => ({ id, name: settings.category(id)?.name ?? '未分類', ...v }))
+        .sort((a, b) => b.exp + b.inc - (a.exp + a.inc))
+
+      // 直接記在大類上的金額：有子分類時補一列「未細分」放最後，數字才對得起來
+      const own = per.get(rootId)
+      if (own && subs.length) subs.push({ id: rootId + '__own', name: '未細分', ...own })
+
       return {
-        id,
-        name: catNameOf(id),
+        id: rootId,
+        name: c?.name ?? '未分類',
         color: c?.color ?? '#8a857c',
         icon: c ? iconForCategory(c) : iconForCategory({ id: '', name: '' }),
-        exp: sum('expense'),
-        inc: sum('income'),
+        exp: sumOf((v) => v.exp),
+        inc: sumOf((v) => v.inc),
         list: sorted,
+        subs,
       }
     })
-    .sort((a, b) => b.exp + b.inc - (a.exp + a.inc)),
-)
+    .sort((a, b) => b.exp + b.inc - (a.exp + a.inc))
+})
 
 /** 每組預設只露前 3 筆，想看全部再展開（同一個分類可能幾十筆） */
 const CAT_PREVIEW = 3
@@ -418,6 +456,19 @@ function removeEditing(id: string) {
           </span>
         </div>
 
+        <!-- 子分類明細：一眼看出這個大類的錢花在哪個子分類 -->
+        <div v-if="g.subs.length" class="catgrp__subs">
+          <span v-for="s in g.subs" :key="s.id" class="subchip">
+            <span class="subchip__n"><HighlightText :text="s.name" :query="kw" /></span>
+            <span v-if="s.exp > 0" class="subchip__v num is-exp">
+              −{{ fmtMoney(s.exp, settings.baseCurrency) }}
+            </span>
+            <span v-if="s.inc > 0" class="subchip__v num is-inc">
+              +{{ fmtMoney(s.inc, settings.baseCurrency) }}
+            </span>
+          </span>
+        </div>
+
         <div class="card catgrp__card">
           <template v-for="(r, i) in visibleCat(g)" :key="r.id">
             <hr v-if="i > 0" class="divider" />
@@ -639,6 +690,41 @@ function removeEditing(id: string) {
   color: var(--expense);
 }
 .catgrp__chip.is-inc {
+  color: var(--income);
+}
+/* 子分類小計：標題下方一行 chips，超出就換行 */
+.catgrp__subs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 2px 9px;
+}
+.subchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.subchip__n {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.subchip__v {
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.subchip__v.is-exp {
+  color: var(--expense);
+}
+.subchip__v.is-inc {
   color: var(--income);
 }
 .catgrp__card {
