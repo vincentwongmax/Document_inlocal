@@ -15,10 +15,8 @@ const props = withDefaults(
     allowEmpty?: boolean
     /** 每一項右側顯示「支出／收入」標籤（清單同時含兩種類型時用） */
     showType?: boolean
-    /** 依分類層級縮排，看得出子分類掛在哪個大類底下 */
-    indent?: boolean
   }>(),
-  { placeholder: '選擇分類', allowEmpty: false, showType: false, indent: false },
+  { placeholder: '選擇分類', allowEmpty: false, showType: false },
 )
 const emit = defineEmits<{ 'update:modelValue': [id: string] }>()
 
@@ -40,35 +38,6 @@ const selectedIcon = computed(() =>
 const items = computed(() =>
   props.allowEmpty ? [{ id: '', name: props.placeholder } as Category, ...props.options] : props.options,
 )
-
-/**
- * 每一項的層級（頂層大類 = 0），只用來縮排。
- * 沿著 parentId 往上數，上層不在這份清單裡就停住 —— 這樣「上層已被過濾掉」時
- * 子分類也只會被當成頂層，不會莫名縮排。
- */
-const depths = computed(() => {
-  const m = new Map<string, number>()
-  if (!props.indent) return m
-  const byId = new Map(props.options.map((c) => [c.id, c]))
-  for (const c of props.options) {
-    let d = 0
-    const seen = new Set<string>([c.id])
-    let cur = c
-    while (cur.parentId && byId.has(cur.parentId) && !seen.has(cur.parentId)) {
-      seen.add(cur.parentId)
-      d++
-      cur = byId.get(cur.parentId)!
-    }
-    m.set(c.id, d)
-  }
-  return m
-})
-
-/** 縮排後的左內距（`.pop__item` 原本是 9px，每往下一層多 14px） */
-function itemPad(id: string): string | undefined {
-  const d = depths.value.get(id)
-  return d ? `${9 + d * 14}px` : undefined
-}
 
 /**
  * 彈層以 fixed 定位並跟隨觸發鈕：
@@ -233,7 +202,6 @@ watch(
             type="button"
             class="pop__item"
             :class="{ 'is-on': c.id === modelValue, 'is-active': i === active }"
-            :style="{ paddingLeft: itemPad(c.id) }"
             role="option"
             :aria-selected="c.id === modelValue"
             @mouseenter="active = i"

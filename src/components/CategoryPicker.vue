@@ -155,7 +155,6 @@ watch(
       :model-value="modelValue"
       :options="selectList"
       placeholder="選擇分類"
-      indent
       @update:model-value="emit('update:modelValue', $event)"
     />
 

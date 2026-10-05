@@ -245,7 +245,6 @@ function confirmRemove() {
             placeholder="新增分類"
             allow-empty
             show-type
-            indent
             @update:model-value="choose"
           />
         </div>
@@ -287,7 +286,6 @@ function confirmRemove() {
             placeholder="無（最上層大類）"
             allow-empty
             show-type
-            indent
           />
         </div>
 
