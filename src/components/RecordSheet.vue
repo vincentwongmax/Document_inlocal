@@ -56,6 +56,36 @@ const typeLabel = computed(() => (isExpense.value ? '支出' : '收入'))
 const urls = ref<Record<string, string>>({})
 const lightbox = ref<string | null>(null)
 
+/* ── 圖片檢視的縮放 ─────────────────────────────────────── */
+/** 1 = 原始大小（已等比縮進畫面），往上每階 ×1.4 */
+const zoom = ref(1)
+const ZOOM_MIN = 1
+const ZOOM_MAX = 5
+const ZOOM_STEP = 1.4
+const zoomIn = computed(() => zoom.value < ZOOM_MAX)
+const zoomOut = computed(() => zoom.value > ZOOM_MIN)
+/** 倍率一律落在 [ZOOM_MIN, ZOOM_MAX] 內：連乘時最後一階會跨過上限（1.4^4=3.84 → 5.376），不夾住的話
+ *  最大倍率會變成奇怪的 538%，倍率鈕也因此永遠停在啟用狀態 */
+const clampZoom = (v: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v))
+const roundZoom = (v: number) => Math.round(v * 100) / 100
+
+function zoomInStep() {
+  if (zoomIn.value) zoom.value = clampZoom(roundZoom(zoom.value * ZOOM_STEP))
+}
+function zoomOutStep() {
+  if (zoomOut.value) zoom.value = clampZoom(roundZoom(zoom.value / ZOOM_STEP))
+}
+/** 回到原始大小（倍率文字本身就是這顆鈕，避免連點好幾次才能縮回去） */
+function zoomReset() {
+  zoom.value = 1
+}
+
+/** 關閉圖片：關掉時要把倍率歸位，下次開才不會維持上次的放大 */
+function closeLightbox() {
+  lightbox.value = null
+  zoom.value = 1
+}
+
 /** 明細中可編輯的圖片（含本次新上傳、尚未儲存的） */
 const images = ref<ImageRef[]>([])
 /** 載入時的原始圖片，儲存時用來清掉被移除者 */
@@ -68,11 +98,13 @@ const fileInput = ref<HTMLInputElement | null>(null)
 function releaseUrls() {
   for (const u of Object.values(urls.value)) URL.revokeObjectURL(u)
   urls.value = {}
-  lightbox.value = null
+  closeLightbox()
 }
 
 async function openImage(im: ImageRef) {
   if (urls.value[im.id]) {
+    // 每次開圖都回到原始大小，不會被上一張的縮放狀態影響
+    zoom.value = 1
     lightbox.value = urls.value[im.id]
     return
   }
@@ -83,6 +115,7 @@ async function openImage(im: ImageRef) {
   }
   const url = URL.createObjectURL(blob)
   urls.value[im.id] = url
+  zoom.value = 1
   lightbox.value = url
 }
 
@@ -347,11 +380,61 @@ function save() {
     </div>
   </Transition>
 
-  <!-- 圖片放大 -->
+  <!-- 圖片放大：點黑色背景關閉；圖片本身不關閉，才能安心放大慢慢看 -->
   <Transition name="fade">
-    <div v-if="lightbox" class="lightbox" @click="lightbox = null">
-      <img :src="lightbox" alt="" />
-      <button class="lightbox__x" @click="lightbox = null">✕</button>
+    <div v-if="lightbox" class="lightbox" @click="closeLightbox">
+      <div class="lightbox__stage">
+        <img
+          :src="lightbox"
+          alt=""
+          :style="{ transform: `scale(${zoom})` }"
+          @click.stop
+        />
+      </div>
+
+      <div class="lightbox__bar" @click.stop>
+        <button
+          class="lbbtn"
+          type="button"
+          title="縮小"
+          aria-label="縮小"
+          :disabled="!zoomOut"
+          @click="zoomOutStep"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="10.6" cy="10.6" r="6.3" />
+            <path d="M15.3 15.3 20 20" />
+            <path d="M8.3 10.6h4.6" />
+          </svg>
+        </button>
+        <button
+          class="lbzoom num"
+          type="button"
+          title="回到原始大小"
+          :disabled="zoom === 1"
+          @click="zoomReset"
+        >
+          {{ Math.round(zoom * 100) }}%
+        </button>
+        <button
+          class="lbbtn"
+          type="button"
+          title="放大"
+          aria-label="放大"
+          :disabled="!zoomIn"
+          @click="zoomInStep"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="10.6" cy="10.6" r="6.3" />
+            <path d="M15.3 15.3 20 20" />
+            <path d="M8.3 10.6h4.6M10.6 8.3v4.6" />
+          </svg>
+        </button>
+      </div>
+
+      <button class="lightbox__x" type="button" title="關閉" aria-label="關閉" @click="closeLightbox">
+        ✕
+      </button>
     </div>
   </Transition>
 </template>
@@ -669,14 +752,84 @@ function save() {
   inset: 0;
   z-index: 90;
   background: rgba(20, 19, 17, 0.9);
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+}
+/* 可捲動的檢視區：放大超過畫面時能四處拖動看細節。
+   置中用 margin:auto 而不是 grid place-items:center ——
+   後者在內容超出容器時會把上半／左半裁掉且捲不到（unreachable overflow）。 */
+.lightbox__stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 20px;
 }
-.lightbox img {
+.lightbox__stage img {
+  margin: auto;
   max-width: 100%;
   max-height: 100%;
   border-radius: 10px;
+  transform-origin: center center;
+  transition: transform 0.14s ease;
+}
+/* 工具列固定在底部，不隨圖片捲動 */
+.lightbox__bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 16px calc(14px + var(--safe-b));
+}
+.lbbtn {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+.lbbtn svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.lbbtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.28);
+}
+.lbbtn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.lbbtn:disabled {
+  opacity: 0.34;
+  cursor: default;
+}
+/* 倍率本身也是顆鈕：點一下回到原始大小 */
+.lbzoom {
+  min-width: 62px;
+  height: 42px;
+  padding: 0 12px;
+  flex: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 650;
+}
+.lbzoom:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.28);
+}
+.lbzoom:disabled {
+  cursor: default;
 }
 .lightbox__x {
   position: absolute;
@@ -688,6 +841,9 @@ function save() {
   background: rgba(255, 255, 255, 0.16);
   color: #fff;
   font-size: 15px;
+  /* 放大後圖片會蓋到右上角：抬高層級並加深底，避免白圖上看不見關閉鈕 */
+  z-index: 2;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.45);
 }
 
 .sheet-enter-active,
