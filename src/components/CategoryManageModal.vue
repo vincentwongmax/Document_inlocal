@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { Category, TxType } from '@/types'
-import { ICON_KEYS, CATEGORY_ICONS, DEFAULT_ICON, guessIcon } from '@/lib/icons'
+import { ICON_KEYS, CATEGORY_ICONS, DEFAULT_ICON, guessIcon, iconForCategory } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
 import CategoryIcon from './CategoryIcon.vue'
 import CategorySelect from './CategorySelect.vue'
@@ -131,11 +131,33 @@ function fill(c: Category) {
   iconPicked.value = true
 }
 
-/** 在目前編輯的分類底下新增一層子分類 */
+/**
+ * 切換「要修改哪個分類」。
+ * 刻意不用 watch(pickedId)：watch 是非同步的，addChild() 同步指定好上層之後
+ * 監聽器才跑，會把上層又清回「無」，變成子分類掉到最上層。
+ */
+function choose(id: string) {
+  pickedId.value = id
+  const c = props.categories.find((x) => x.id === id)
+  if (c) fill(c)
+  else resetNew()
+}
+
+/** 在目前編輯的分類底下新增一層子分類（上層直接帶好） */
 function addChild() {
+  // 一定要先把上層記下來：choose(NEW) 之後 editing 就變 null 了
   const parent = editing.value?.id ?? null
-  pickedId.value = NEW
+  choose(NEW)
   resetNew(parent)
+}
+
+/** 目前編輯的分類底下已有的直接子分類 */
+const kids = computed(() =>
+  editing.value ? props.categories.filter((c) => c.parentId === editing.value!.id) : [],
+)
+/** 某個分類底下還有幾個子分類（清單上用 +N 提示還能再往下） */
+function subCount(id: string): number {
+  return props.categories.filter((c) => c.parentId === id).length
 }
 
 function pick(c: string) {
@@ -156,13 +178,6 @@ watch(name, (v) => {
   if (!iconPicked.value) icon.value = guessIcon(v)
 })
 
-// 選到某個分類 → 載入它；選回「新增分類」→ 清成空白
-watch(pickedId, (id) => {
-  const c = props.categories.find((x) => x.id === id)
-  if (c) fill(c)
-  else resetNew()
-})
-
 // 選了上層分類：類型與顏色直接沿用，整條路徑才會一致
 watch(parentSel, (v) => {
   const p = v === TOP ? undefined : byId.value.get(v)
@@ -176,9 +191,8 @@ watch(
   () => props.open,
   (v) => {
     if (v) {
-      pickedId.value = NEW
+      choose(NEW)
       askRemove.value = false
-      resetNew()
     }
   },
 )
@@ -200,8 +214,7 @@ function confirmRemove() {
   if (!editing.value) return
   emit('remove', editing.value.id)
   askRemove.value = false
-  pickedId.value = NEW
-  resetNew()
+  choose(NEW)
 }
 </script>
 
@@ -217,16 +230,36 @@ function confirmRemove() {
             <em class="lb__hint">選一個現有分類可修改或刪除；維持「新增分類」則建立新的</em>
           </span>
           <CategorySelect
-            v-model="pickedId"
+            :model-value="pickedId"
             :options="pickOptions"
             placeholder="新增分類"
             allow-empty
             show-type
+            @update:model-value="choose"
           />
         </div>
 
         <div v-if="isEdit" class="lb">
-          <span>子分類</span>
+          <span>
+            子分類
+            <em class="lb__hint">可以一層一層往下加（餐飲 › 早餐 › 飯）</em>
+          </span>
+          <!-- 已有的子分類：點一下就切過去編輯，不用回最上面重選 -->
+          <div v-if="kids.length" class="kidlist">
+            <button
+              v-for="k in kids"
+              :key="k.id"
+              type="button"
+              class="kid"
+              @click="choose(k.id)"
+            >
+              <span class="kid__ic" :style="{ '--c': k.color, '--bg': withAlpha(k.color, 0.14) }">
+                <CategoryIcon :name="iconForCategory(k)" :size="13" :stroke="1.9" />
+              </span>
+              <span class="kid__name">{{ k.name }}</span>
+              <span v-if="subCount(k.id)" class="kid__more">+{{ subCount(k.id) }}</span>
+            </button>
+          </div>
           <button class="btn btn--sm btn--ghost kidadd" type="button" @click="addChild">
             ＋ 在「{{ editing?.name }}」底下新增子分類
           </button>
@@ -494,6 +527,53 @@ function confirmRemove() {
   height: auto;
   padding: 7px 11px;
   line-height: 1.35;
+}
+/* 已有的子分類：點一下就切過去編輯 */
+.kidlist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.kid {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 13px;
+}
+.kid:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.kid__ic {
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 6px;
+  color: var(--c);
+  background: var(--bg);
+  flex: none;
+}
+.kid__name {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kid__more {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 650;
 }
 .igrid {
   display: grid;
