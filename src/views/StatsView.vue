@@ -680,8 +680,10 @@ const mom = computed(() => st.momChange.value)
   .cats {
     flex: 1;
   }
+  /* 第一欄要跟 .cat__ic 的尺寸一致（22px）；寫 9px 的話 22px 的圖示會溢出，
+     右緣壓到分類名稱上 4px（同一行佈局才有的問題，窄版走上方的 22px 規則） */
   .cat {
-    grid-template-columns: 9px 100px 1fr auto 40px;
+    grid-template-columns: 22px 100px 1fr auto 40px;
   }
   .sums {
     gap: 14px;
