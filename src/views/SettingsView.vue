@@ -455,7 +455,6 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
               :key="row.cat.id"
               class="catchip catchip--pick"
               :class="{ 'is-on': settings.isFavorite(row.cat.id), 'is-sub': row.depth > 0 }"
-              :style="{ marginLeft: row.depth * 14 + 'px' }"
               @click="settings.toggleFavorite(row.cat.id)"
             >
               <span v-if="row.depth > 0" class="catchip__branch" aria-hidden="true">└</span>
@@ -908,17 +907,17 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
 .catchip--pick:hover {
   border-color: var(--accent);
 }
-/* 子分類：縮排由模板的 marginLeft 給，這裡補一棵樹的引導記號 */
+/* 子分類：**不做逐層縮排** —— 縮排會在列內留下大小不一的空洞，看起來很亂。
+   改成跟大類同高、同一個左緣，只靠「└」記號辨識（順序本身就是樹狀順序）。
+   記號佔固定寬度，同一列的標籤文字才會落在同一個起點。 */
 .catchip__branch {
   flex: none;
-  margin-left: -4px;
+  width: 10px;
+  margin-left: -3px;
   color: var(--text-3);
   font-size: 12px;
   line-height: 1;
-}
-.catchip.is-sub {
-  height: 30px;
-  font-size: 13px;
+  text-align: center;
 }
 .catchip--pick.is-on {
   background: var(--accent-soft);
