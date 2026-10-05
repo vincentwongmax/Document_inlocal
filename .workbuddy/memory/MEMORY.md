@@ -1,7 +1,8 @@
 # 記帳本（mop-ledger）— 專案長期備忘
 
 Vue 3 + TypeScript + Pinia + vue-router（hash routing）+ Vite + vite-plugin-pwa 的個人記帳 PWA。
-Repo 根目錄：`c:\Users\user\Desktop\AI\`，分支 `main`。
+Repo 根目錄：**`E:\AI\`**（2026-10-06 從 `C:\Users\user\Desktop\AI` 整體搬過來，C: 上不再保留），
+分支 `main`。**所有指令都要在 `E:\AI` 下跑**。
 
 ## 怎麼啟動 / 打開這個程序
 
@@ -16,31 +17,39 @@ Repo 根目錄：`c:\Users\user\Desktop\AI\`，分支 `main`。
 - **`localhost:4173` 與 `localhost:5173` 的 localStorage 是分開的**（同源包含埠），
   真實資料只會在其中一邊，不要隨便換埠否則會看到空帳本。
 
-## 執行環境：C 槽只有 60GB，重產物都在 E:
+## 執行環境：整個專案都在 `E:\AI`
 
-C: 總共 60GB，很容易被 node_modules／npm cache／測試截圖塞爆（曾剩 1.2GB，導致整批回歸
-**靜默失敗、完全沒輸出**）。所以下列東西都搬到 E: 並在原路徑留 **junction**（對程式透明）：
+C: 總共只有 60GB，很容易被 node_modules／npm cache／測試截圖塞爆（曾剩 1.2GB，導致整批回歸
+**靜默失敗、完全沒輸出**）。**2026-10-06 已把整個專案搬到 `E:\AI`**，C: 上不保留任何東西。
+目前還在 C: 上留連結的只剩一項：
 
 | C: 路徑 | 實際位置 | 大小 |
 |---|---|---|
-| `Desktop\AI\node_modules` | `E:\Moved\Desktop-AI\node_modules` | 144MB |
-| `Desktop\AI\.smoke` | `E:\Moved\Desktop-AI\.smoke` | 24MB |
 | `AppData\Local\npm-cache` | `E:\Moved\npm-cache` | 261MB |
 
-- 搬移工具放在 `E:\wb-run\`（`move-to-e.mjs` / `junction-to-e.mjs`）；**不要用 `fs.cpSync`**，
-  大檔會 segfault，要用 `fs.copyFileSync`（走 OS 的 CopyFileEx）
+- 專案本體很小（本機約 39MB）；`node_modules`（144MB）與 `.smoke`（24MB）
+  **現在就是 `E:\AI` 裡的實體目錄**，不再是連結
+- 搬移工具放在 `E:\wb-run\`（`move-to-e.mjs` / `junction-to-e.mjs` / `move-project.mjs`
+  / `purge-c-project.mjs`）；**不要用 `fs.cpSync`**，大檔會 segfault，
+  要用 `fs.copyFileSync`（走 OS 的 CopyFileEx）
+- 跨槽搬目錄＝複製再刪除，**沒有原子性**；腳本要寫成**可重跑**（目標檔存在且大小相同就略過），
+  且**一律先驗證 byte 數再刪來源**
+- ⚠ 搬移含 junction 的目錄時，**先拆 junction 再刪來源**：`fs.rmdirSync(連結)` 只移除連結本身、
+  **不會遞迴進目標**；反之對整個目錄 `rm -rf` 可能跟進 junction，把 E: 的檔案一起砍掉
 - 建連結用 Node：`fs.symlinkSync(目標, 原路徑, 'junction')`，**不需管理員權限**；
   Git Bash 的 `mklink /J` 會被路徑轉換搞爛，別用
 - **`TEMP`/`TMP` 已 `setx` 指向 `E:\Temp`**（也備有 `E:\wb-tmp`）
   - ⚠ 只對**之後新開的行程**生效；既有殼層仍是舊值，所以**跑測試一律明寫**
-    `TEMP='E:\wb-tmp' TMP='E:\wb-tmp'`，並且 `cd /e/wb-run` 執行
-    （測試檔用絕對路徑 `/e/Moved/Desktop-AI/.smoke/vNN.mjs`，截圖等相對產出就落在 E:）
+    `TEMP='E:\wb-tmp' TMP='E:\wb-tmp'`，並且 `cd /e/AI` 執行
+    （截圖等相對產出就落在 `E:\AI\.smoke\`）
   - `AppData\Local\Temp` 本身**沒辦法**改成 junction：有行程佔用，`rename` 會 EPERM
     （`E:\wb-run\redirect-temp.mjs` 會乾淨放棄，不會留半套狀態）
 
 ⚠ 沙箱限制（常遇到，別浪費時間重試）：
 - `reg.exe` 在程式黑名單 → `reg query` 一律被擋
 - 從 Bash 叫 `powershell.exe` 被擋；PowerShell 工具本身**不回 stdout**（只回 exit code 0）
+- **桌面等個人目錄的刪除會被攔**：`fs.rmSync` 被導向資源回收桶（可能失敗），
+  `cmd rd /s /q` 直接被安全策略擋掉。**遇到就回報使用者，不要一直換招硬刪**
 - 驗證請用 **Node 寫檔／讀檔** 或直接看檔案系統
 
 ## 快取陷阱（很重要）
