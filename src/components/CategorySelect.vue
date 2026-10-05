@@ -4,6 +4,7 @@ import type { Category } from '@/types'
 import { iconForCategory, DEFAULT_ICON } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
 import CategoryIcon from './CategoryIcon.vue'
+import PathLabel from './PathLabel.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -178,9 +179,11 @@ watch(
       >
         <CategoryIcon :name="selectedIcon" :size="14" :stroke="1.9" />
       </span>
-      <span class="selwrap__name" :class="{ 'is-empty': !selected }">
-        {{ selected?.name ?? placeholder }}
-      </span>
+      <PathLabel
+        class="selwrap__name"
+        :class="{ 'is-empty': !selected }"
+        :path="selected?.name ?? placeholder"
+      />
       <svg class="selwrap__caret" :class="{ 'is-open': open }" viewBox="0 0 24 24" aria-hidden="true">
         <path d="M6 9l6 6 6-6" />
       </svg>
@@ -220,7 +223,7 @@ watch(
                 <path d="M12 5v14M5 12h14" />
               </svg>
             </span>
-            <span class="pop__name">{{ c.name }}</span>
+            <PathLabel class="pop__name" :path="c.name" />
             <span v-if="showType && c.id" class="pop__type tiny">{{ c.type === 'expense' ? '支出' : '收入' }}</span>
             <svg v-if="c.id === modelValue" class="pop__tick" viewBox="0 0 24 24">
               <path d="M5 13.2 9.2 17.4 19 7.6" />

@@ -47,6 +47,16 @@ App 是 PWA，`registerType: 'autoUpdate'`，Service Worker 會預快取整個 d
     `CategoryPicker.selectList`（下拉模式）
   - **下拉不做層級縮排**（使用者明確要求）：每一項都跟大類左對齊，靠「餐飲 › 午餐」這種
     路徑名稱表達階層就好
+- **路徑太長時只留頭尾**：`src/components/PathLabel.vue`（`<PathLabel :path="…" />`）把
+  「餐飲美食 › 早餐時段 › … › 飯麵類」折成「餐飲美食 › … › 飯麵類」；
+  CSS 的 `text-overflow` 只會砍尾巴，會把最關鍵的「哪一層」砍掉，所以要用這個
+  - 判斷方式是比對 `scrollWidth > clientWidth`（真的用瀏覽器排版），不用 canvas 猜字型寬度；
+    `ResizeObserver` 處理變寬變窄，`watch(path)` 處理路徑變動
+  - 三階退讓：完整路徑 → 「頭 › … › 尾」→「… › 尾」（連頭都放不下時）；
+    只有 1～2 段的路徑沒有中間可省，維持原樣交給 CSS 的 ellipsis
+  - ⚠ **只能放在「寬度由版面決定」的容器**（`.pop__name`、`.selwrap__name` 都是
+    `flex: 1; min-width: 0`）。若元素寬度被內容撐開就永遠不會 overflow，這裡就永遠不會動
+  - 用在哪：`CategorySelect` 的清單項目與觸發鈕（管理彈窗兩個下拉、記錄明細的分類下拉）
 - 記錄頁的「分類」檢視**只依大類分組**：分組鍵是 `pathOf(categoryId)[0]?.id`（根分類），
   所以「交通」與「交通 › 巴士」在同一組；但**記錄列仍顯示完整路徑**。
   組標題下方有子分類小計 chips（只取分類名、不取路徑），大類自己身上的金額補一列「未細分」
