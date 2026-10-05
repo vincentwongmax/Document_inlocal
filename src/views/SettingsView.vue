@@ -13,7 +13,7 @@ import { buildExport, downloadJson, parseImport, restoreImages } from '@/lib/exp
 import { usageBytes } from '@/lib/storage'
 import { clearImages, listImageIds } from '@/lib/imageDb'
 import { offlineReady, updateSW } from '@/lib/pwa'
-import type { Settings, TxType } from '@/types'
+import type { Category, Settings, TxType } from '@/types'
 
 const settings = useSettingsStore()
 const records = useRecordsStore()
@@ -87,9 +87,22 @@ async function changeBase(code: string) {
 
 /* ── 分類管理 ───────────────────────────────────────────── */
 // 只列出未封存的：刪除後的分類不該還留在清單上
+// 子分類展開成同一層、用 depth 做縮排，才能整棵樹一起勾常用
+function flatTree(type: TxType) {
+  const out: { cat: Category; depth: number }[] = []
+  const walk = (parentId: string | null, depth: number) => {
+    for (const c of settings.childrenOf(parentId)) {
+      if (c.type !== type) continue
+      out.push({ cat: c, depth })
+      walk(c.id, depth + 1)
+    }
+  }
+  walk(null, 0)
+  return out
+}
 const grouped = computed(() => [
-  { type: 'expense' as TxType, label: '支出分類', list: settings.categories.filter((c) => c.type === 'expense') },
-  { type: 'income' as TxType, label: '收入分類', list: settings.categories.filter((c) => c.type === 'income') },
+  { type: 'expense' as TxType, label: '支出分類', list: flatTree('expense') },
+  { type: 'income' as TxType, label: '收入分類', list: flatTree('income') },
 ])
 
 /** 管理分類彈窗的下拉清單：支出＋收入全部列出 */
@@ -107,19 +120,39 @@ const catUsage = computed(() => {
 
 /** 主頁常用分類：右側「管理分類」可新增、修改、刪除分類 */
 const showCatMgr = ref(false)
-function onCreateCat(p: { name: string; color: string; type: TxType; icon: string }) {
-  settings.addCategory(p.name, p.type, p.color, p.icon)
-  showCatMgr.value = false
-  toast.push('已新增分類', 'ok')
+type CatForm = {
+  name: string
+  color: string
+  type: TxType
+  icon: string
+  parentId: string | null
 }
-function onSaveCat(p: { id: string; name: string; color: string; type: TxType; icon: string }) {
-  settings.updateCategory(p.id, { name: p.name, color: p.color, type: p.type, icon: p.icon })
+function onCreateCat(p: CatForm) {
+  const c = settings.addCategory(p.name, p.type, p.color, p.icon, p.parentId)
+  showCatMgr.value = false
+  const under = p.parentId ? settings.category(p.parentId)?.name : ''
+  toast.push(under ? `已在「${under}」底下新增子分類` : '已新增分類', 'ok')
+  return c
+}
+function onSaveCat(p: CatForm & { id: string }) {
+  settings.updateCategory(p.id, {
+    name: p.name,
+    color: p.color,
+    type: p.type,
+    icon: p.icon,
+    parentId: p.parentId,
+  })
   showCatMgr.value = false
   toast.push('已儲存分類', 'ok')
 }
 function onRemoveCat(id: string) {
+  const check = settings.canRemove(id)
+  if (!check.ok) {
+    toast.push(check.reason, 'warn')
+    return
+  }
   const ok = settings.removeCategory(id)
-  toast.push(ok ? '已刪除分類' : '找不到這個分類', ok ? 'ok' : 'warn')
+  toast.push(ok ? '已刪除分類' : '刪除失敗', ok ? 'ok' : 'warn')
 }
 
 /* ── 資料管理 ───────────────────────────────────────────── */
@@ -418,16 +451,21 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
           <span class="tiny muted catgroup__label">{{ g.label }}</span>
           <div class="chips">
             <button
-              v-for="c in g.list"
-              :key="c.id"
+              v-for="row in g.list"
+              :key="row.cat.id"
               class="catchip catchip--pick"
-              :class="{ 'is-on': settings.isFavorite(c.id), 'is-off': c.archived }"
-              @click="settings.toggleFavorite(c.id)"
+              :class="{ 'is-on': settings.isFavorite(row.cat.id), 'is-sub': row.depth > 0 }"
+              :style="{ marginLeft: row.depth * 14 + 'px' }"
+              @click="settings.toggleFavorite(row.cat.id)"
             >
-              <span class="catchip__ic" :style="{ '--c': c.color, '--bg': withAlpha(c.color, 0.14) }">
-                <CategoryIcon :name="iconForCategory(c)" :size="15" :stroke="1.9" />
+              <span v-if="row.depth > 0" class="catchip__branch" aria-hidden="true">└</span>
+              <span
+                class="catchip__ic"
+                :style="{ '--c': row.cat.color, '--bg': withAlpha(row.cat.color, 0.14) }"
+              >
+                <CategoryIcon :name="iconForCategory(row.cat)" :size="15" :stroke="1.9" />
               </span>
-              <span class="catchip__name">{{ c.name }}</span>
+              <span class="catchip__name">{{ row.cat.name }}</span>
             </button>
           </div>
         </div>
@@ -869,6 +907,18 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
 }
 .catchip--pick:hover {
   border-color: var(--accent);
+}
+/* 子分類：縮排由模板的 marginLeft 給，這裡補一棵樹的引導記號 */
+.catchip__branch {
+  flex: none;
+  margin-left: -4px;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1;
+}
+.catchip.is-sub {
+  height: 30px;
+  font-size: 13px;
 }
 .catchip--pick.is-on {
   background: var(--accent-soft);

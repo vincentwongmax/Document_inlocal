@@ -20,12 +20,22 @@ const props = withDefaults(
 )
 const emit = defineEmits<{
   close: []
-  create: [payload: { name: string; color: string; type: TxType; icon: string }]
-  save: [payload: { id: string; name: string; color: string; type: TxType; icon: string }]
+  create: [payload: { name: string; color: string; type: TxType; icon: string; parentId: string | null }]
+  save: [
+    payload: {
+      id: string
+      name: string
+      color: string
+      type: TxType
+      icon: string
+      parentId: string | null
+    },
+  ]
   remove: [id: string]
 }>()
 
 const NEW = '' // 下拉的「新增分類」佔位值
+const TOP = '__top__' // 「所屬分類」下拉代表「頂層大類」的佔位值
 const PRESETS = ['#e0795b', '#3f9b6e', '#4a8fd4', '#d4a13f', '#9b6bd4', '#d45b8c', '#5bb0c4']
 
 const pickedId = ref(NEW)
@@ -33,24 +43,80 @@ const name = ref('')
 const color = ref(PRESETS[0])
 const catType = ref<TxType>('expense')
 const icon = ref<string>(DEFAULT_ICON)
+/** 上層分類；TOP 代表「沒有上層＝頂層大類」 */
+const parentSel = ref(TOP)
 /** 使用者手動挑過圖示後，就不再依名稱自動推薦 */
 const iconPicked = ref(false)
 const custom = ref(false)
 const askRemove = ref(false)
+
+const parentId = computed(() => {
+  const v = parentSel.value
+  return !v || v === TOP ? null : v
+})
+const byId = computed(() => new Map(props.categories.map((c) => [c.id, c])))
+
+/** 「餐飲 › 早餐」這種完整路徑名稱，下拉才看得出層級 */
+function pathName(c: Category): string {
+  const chain: string[] = []
+  const seen = new Set<string>()
+  let cur: Category | undefined = c
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id)
+    chain.unshift(cur.name)
+    cur = cur.parentId ? byId.value.get(cur.parentId) : undefined
+  }
+  return chain.join(' › ')
+}
+
+/** 選擇要修改／刪除的分類：名稱換成完整路徑 */
+const pickOptions = computed<Category[]>(() =>
+  props.categories.map((c) => ({ ...c, name: pathName(c) })),
+)
+
+/** 可以當上層的分類：排除自己與自己的所有後代，否則會形成環 */
+const parentOptions = computed<Category[]>(() => {
+  const banned = new Set<string>()
+  if (isEdit.value && editing.value) {
+    banned.add(editing.value.id)
+    const walk = (id: string) => {
+      for (const c of props.categories) {
+        if (c.parentId === id) {
+          banned.add(c.id)
+          walk(c.id)
+        }
+      }
+    }
+    walk(editing.value.id)
+  }
+  return props.categories
+    .filter((c) => !banned.has(c.id))
+    .map((c) => ({ ...c, name: pathName(c) }))
+})
 
 /** 目前正在編輯的分類；null 表示「新增」模式 */
 const editing = computed(() => props.categories.find((c) => c.id === pickedId.value) ?? null)
 const isEdit = computed(() => !!editing.value)
 const usedCount = computed(() => (pickedId.value ? props.usage[pickedId.value] ?? 0 : 0))
 
-/** 回到「新增」模式的空白表單 */
-function resetNew() {
+/** 編輯中的分類有幾個直接子分類：有就不能刪，得先處理子分類 */
+const kidCount = computed(() =>
+  editing.value ? props.categories.filter((c) => c.parentId === editing.value!.id).length : 0,
+)
+/** 掛在上層底下時，收支類型一律沿用上層，不給改 */
+const typeLocked = computed(() => !!parentId.value)
+const parentCat = computed(() => (parentId.value ? byId.value.get(parentId.value) : undefined))
+
+/** 回到「新增」模式的空白表單（可指定要掛在哪個分類底下） */
+function resetNew(under: string | null = null) {
   name.value = ''
-  color.value = PRESETS[0]
-  catType.value = props.defaultType
+  const p = under ? byId.value.get(under) : undefined
+  color.value = p ? p.color : PRESETS[0]
+  catType.value = p ? p.type : props.defaultType
   icon.value = DEFAULT_ICON
   iconPicked.value = false
   custom.value = false
+  parentSel.value = under ?? TOP
 }
 
 /** 把表單填成某個分類的現況 */
@@ -60,8 +126,16 @@ function fill(c: Category) {
   catType.value = c.type
   icon.value = c.icon || DEFAULT_ICON
   custom.value = !PRESETS.includes(c.color)
+  parentSel.value = c.parentId ?? TOP
   // 編輯既有分類時，打字不該把使用者原本挑好的圖示換掉
   iconPicked.value = true
+}
+
+/** 在目前編輯的分類底下新增一層子分類 */
+function addChild() {
+  const parent = editing.value?.id ?? null
+  pickedId.value = NEW
+  resetNew(parent)
 }
 
 function pick(c: string) {
@@ -89,6 +163,15 @@ watch(pickedId, (id) => {
   else resetNew()
 })
 
+// 選了上層分類：類型與顏色直接沿用，整條路徑才會一致
+watch(parentSel, (v) => {
+  const p = v === TOP ? undefined : byId.value.get(v)
+  if (!p) return
+  catType.value = p.type
+  color.value = p.color
+  custom.value = !PRESETS.includes(p.color)
+})
+
 watch(
   () => props.open,
   (v) => {
@@ -107,6 +190,7 @@ function submit() {
     color: color.value,
     type: catType.value,
     icon: icon.value,
+    parentId: parentId.value,
   }
   if (isEdit.value && editing.value) emit('save', { id: editing.value.id, ...payload })
   else emit('create', payload)
@@ -134,8 +218,29 @@ function confirmRemove() {
           </span>
           <CategorySelect
             v-model="pickedId"
-            :options="categories"
+            :options="pickOptions"
             placeholder="新增分類"
+            allow-empty
+            show-type
+          />
+        </div>
+
+        <div v-if="isEdit" class="lb">
+          <span>子分類</span>
+          <button class="btn btn--sm btn--ghost kidadd" type="button" @click="addChild">
+            ＋ 在「{{ editing?.name }}」底下新增子分類
+          </button>
+        </div>
+
+        <div class="lb">
+          <span>
+            所屬分類
+            <em class="lb__hint">選一個就變成它的子分類；選「無」則是最上層的大類</em>
+          </span>
+          <CategorySelect
+            v-model="parentSel"
+            :options="parentOptions"
+            placeholder="無（最上層大類）"
             allow-empty
             show-type
           />
@@ -151,12 +256,18 @@ function confirmRemove() {
         </div>
 
         <div class="lb">
-          <span>類型</span>
-          <div class="seg">
+          <span>
+            類型
+            <em v-if="typeLocked" class="lb__hint">
+              子分類沿用上層「{{ parentCat?.name }}」的類型
+            </em>
+          </span>
+          <div class="seg" :class="{ 'is-locked': typeLocked }">
             <button
               type="button"
               class="seg__btn"
               :class="{ 'is-on': catType === 'expense' }"
+              :disabled="typeLocked"
               @click="catType = 'expense'"
             >
               支出
@@ -165,6 +276,7 @@ function confirmRemove() {
               type="button"
               class="seg__btn"
               :class="{ 'is-on': catType === 'income' }"
+              :disabled="typeLocked"
               @click="catType = 'income'"
             >
               收入
@@ -230,7 +342,10 @@ function confirmRemove() {
           </div>
         </div>
 
-        <p v-if="isEdit && usedCount" class="used">
+        <p v-if="isEdit && kidCount" class="used">
+          底下還有 {{ kidCount }} 個子分類，要刪掉這個分類請先處理它的子分類。
+        </p>
+        <p v-else-if="isEdit && usedCount" class="used">
           已被 {{ usedCount }} 筆記錄使用，修改後這些記錄會一起更新。
         </p>
 
@@ -239,6 +354,8 @@ function confirmRemove() {
             v-if="isEdit"
             class="btn btn--danger btn--sm foot__del"
             type="button"
+            :disabled="kidCount > 0"
+            :title="kidCount ? `還有 ${kidCount} 個子分類，請先刪除子分類` : '刪除這個分類'"
             @click="askRemove = true"
           >
             刪除
@@ -360,6 +477,23 @@ function confirmRemove() {
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--shadow-1);
+}
+/* 類型被上層鎖住：整組變淡但仍看得出目前值 */
+.seg.is-locked {
+  opacity: 0.62;
+}
+.seg__btn:disabled {
+  cursor: not-allowed;
+}
+/* 「在 X 底下新增子分類」：整顆按鈕靠左、文字可縮 */
+.kidadd {
+  align-self: flex-start;
+  max-width: 100%;
+  text-align: left;
+  white-space: normal;
+  height: auto;
+  padding: 7px 11px;
+  line-height: 1.35;
 }
 .igrid {
   display: grid;
