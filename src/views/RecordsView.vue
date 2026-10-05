@@ -180,8 +180,20 @@ function removeEditing(id: string) {
 <template>
   <div class="page records">
     <div class="page-head">
-      <h1 class="page-title">記錄</h1>
-      <p class="page-sub">收支帳目一覽</p>
+      <!-- 標題與副標包成一塊垂直排列，搜尋框才推得到最右邊（副標才不會卡在中間） -->
+      <div class="page-head__txt">
+        <h1 class="page-title">記錄</h1>
+        <p class="page-sub">收支帳目一覽</p>
+      </div>
+
+      <!-- 關鍵字搜尋：只比對備註與分類名稱，命中文字會在下方列表以黃底標示 -->
+      <div class="search">
+        <svg class="search__ic" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="10.8" cy="10.8" r="6.4" />
+          <path d="M15.6 15.6 20 20" />
+        </svg>
+        <ClearableInput v-model="q" placeholder="搜尋備註或分類" :maxlength="40" />
+      </div>
     </div>
 
     <!-- 區間總覽 -->
@@ -234,15 +246,6 @@ function removeEditing(id: string) {
             </button>
           </div>
         </div>
-      </div>
-
-      <!-- 關鍵字搜尋：只比對備註與分類名稱，命中文字會在下方列表以黃底標示 -->
-      <div class="search">
-        <svg class="search__ic" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="10.8" cy="10.8" r="6.4" />
-          <path d="M15.6 15.6 20 20" />
-        </svg>
-        <ClearableInput v-model="q" placeholder="搜尋備註或分類" :maxlength="40" />
       </div>
 
       <template v-if="mode === 'unit'">
@@ -405,9 +408,23 @@ function removeEditing(id: string) {
   gap: 8px;
   flex-wrap: wrap;
 }
+/* 搜尋框移到標題列：靠右、與左邊的標題塊垂直居中 */
+.page-head {
+  align-items: center;
+}
+.page-head__txt {
+  min-width: 0;
+}
+/* <p> 的 UA 預設下邊距會讓標題塊底部多 13px，置中的搜尋框看起來會偏低；
+   只消掉最後一個元素的 margin-bottom，標題與副標之間的間距維持原樣 */
+.page-head__txt > :last-child {
+  margin-bottom: 0;
+}
 .search {
   position: relative;
-  margin-top: 11px;
+  flex: 1;
+  max-width: 280px;
+  min-width: 0;
 }
 .search__ic {
   position: absolute;
