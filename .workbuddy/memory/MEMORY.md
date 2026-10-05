@@ -16,6 +16,33 @@ Repo 根目錄：`c:\Users\user\Desktop\AI\`，分支 `main`。
 - **`localhost:4173` 與 `localhost:5173` 的 localStorage 是分開的**（同源包含埠），
   真實資料只會在其中一邊，不要隨便換埠否則會看到空帳本。
 
+## 執行環境：C 槽只有 60GB，重產物都在 E:
+
+C: 總共 60GB，很容易被 node_modules／npm cache／測試截圖塞爆（曾剩 1.2GB，導致整批回歸
+**靜默失敗、完全沒輸出**）。所以下列東西都搬到 E: 並在原路徑留 **junction**（對程式透明）：
+
+| C: 路徑 | 實際位置 | 大小 |
+|---|---|---|
+| `Desktop\AI\node_modules` | `E:\Moved\Desktop-AI\node_modules` | 144MB |
+| `Desktop\AI\.smoke` | `E:\Moved\Desktop-AI\.smoke` | 24MB |
+| `AppData\Local\npm-cache` | `E:\Moved\npm-cache` | 261MB |
+
+- 搬移工具放在 `E:\wb-run\`（`move-to-e.mjs` / `junction-to-e.mjs`）；**不要用 `fs.cpSync`**，
+  大檔會 segfault，要用 `fs.copyFileSync`（走 OS 的 CopyFileEx）
+- 建連結用 Node：`fs.symlinkSync(目標, 原路徑, 'junction')`，**不需管理員權限**；
+  Git Bash 的 `mklink /J` 會被路徑轉換搞爛，別用
+- **`TEMP`/`TMP` 已 `setx` 指向 `E:\Temp`**（也備有 `E:\wb-tmp`）
+  - ⚠ 只對**之後新開的行程**生效；既有殼層仍是舊值，所以**跑測試一律明寫**
+    `TEMP='E:\wb-tmp' TMP='E:\wb-tmp'`，並且 `cd /e/wb-run` 執行
+    （測試檔用絕對路徑 `/e/Moved/Desktop-AI/.smoke/vNN.mjs`，截圖等相對產出就落在 E:）
+  - `AppData\Local\Temp` 本身**沒辦法**改成 junction：有行程佔用，`rename` 會 EPERM
+    （`E:\wb-run\redirect-temp.mjs` 會乾淨放棄，不會留半套狀態）
+
+⚠ 沙箱限制（常遇到，別浪費時間重試）：
+- `reg.exe` 在程式黑名單 → `reg query` 一律被擋
+- 從 Bash 叫 `powershell.exe` 被擋；PowerShell 工具本身**不回 stdout**（只回 exit code 0）
+- 驗證請用 **Node 寫檔／讀檔** 或直接看檔案系統
+
 ## 快取陷阱（很重要）
 
 App 是 PWA，`registerType: 'autoUpdate'`，Service Worker 會預快取整個 dist。
