@@ -26,6 +26,10 @@ const catColor = computed(() => cat.value?.color ?? '#8a857c')
 const catIcon = computed(() =>
   cat.value ? iconForCategory(cat.value) : iconForCategory({ id: '', name: '' }),
 )
+/** 子分類顯示成「餐飲 › 早餐」，才看得出它是掛在哪個大類底下 */
+const catName = computed(() =>
+  cat.value ? settings.fullNameOf(props.record.categoryId) : '未分類',
+)
 const isExpense = computed(() => props.record.type === 'expense')
 const converted = computed(() => props.record.currency !== props.record.baseCurrency)
 /** 舊資料可能沒有 images 欄位 */
@@ -40,7 +44,7 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
     <button class="row__main" type="button" @click="emit('edit', record.id)">
       <span class="row__top">
         <span class="row__cat">
-          <HighlightText :text="cat?.name ?? '未分類'" :query="highlight" />
+          <HighlightText :text="catName" :query="highlight" />
         </span>
         <span v-if="showTime" class="ttag" :title="formatFull(record.occurredAt)">
           <svg class="ttag__ic" viewBox="0 0 16 16" aria-hidden="true">

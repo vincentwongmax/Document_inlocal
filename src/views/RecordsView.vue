@@ -41,8 +41,9 @@ const q = ref('')
 const kw = computed(() => q.value.trim().toLowerCase())
 
 /** 記錄所屬分類的顯示名稱（未分類也要能被搜尋到，所以用同一個 fallback） */
+/** 子分類顯示成「餐飲 › 早餐」，搜尋時打大類或子類都找得到 */
 function catNameOf(categoryId: string) {
-  return settings.category(categoryId)?.name ?? '未分類'
+  return settings.category(categoryId) ? settings.fullNameOf(categoryId) : '未分類'
 }
 
 watch(unit, (u) => {

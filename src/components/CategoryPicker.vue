@@ -47,6 +47,32 @@ const all = computed<Category[]>(() => {
 /** 含子分類的完整清單：常用可能勾到子分類，要能查得到 */
 const allWithSubs = computed<Category[]>(() => settings.categoriesByType(props.type))
 
+/** 「餐飲 › 早餐」這種完整路徑名稱 */
+function pathName(c: Category): string {
+  const chain: string[] = []
+  const seen = new Set<string>()
+  let cur: Category | undefined = c
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id)
+    chain.unshift(cur.name)
+    cur = cur.parentId ? allWithSubs.value.find((x) => x.id === cur!.parentId) : undefined
+  }
+  return chain.join(' › ')
+}
+
+/**
+ * 下拉模式的選項：整棵樹列出來，子分類緊接在自己的大類後面（而不是依使用頻率打散），
+ * 名稱換成完整路徑才看得出層級。
+ */
+const selectList = computed<Category[]>(() => {
+  const flatten = (parentId: string | null): Category[] => {
+    const kids = allWithSubs.value.filter((c) => (c.parentId ?? null) === parentId)
+    const sorted = props.usageOrder ? byUsage(kids) : kids
+    return sorted.flatMap((c) => [c, ...flatten(c.id)])
+  }
+  return flatten(null).map((c) => (c.parentId ? { ...c, name: pathName(c) } : c))
+})
+
 /** 使用者勾選的常用分類（限目前收支類型，可含子分類），照勾選順序 */
 const favorites = computed<Category[]>(() =>
   settings.favoriteCategories
@@ -129,7 +155,7 @@ watch(
     <CategorySelect
       v-if="variant === 'select'"
       :model-value="modelValue"
-      :options="list"
+      :options="selectList"
       placeholder="選擇分類"
       @update:model-value="emit('update:modelValue', $event)"
     />
