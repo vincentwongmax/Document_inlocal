@@ -16,10 +16,8 @@ const props = withDefaults(
     allowEmpty?: boolean
     /** 那一顆佔位項要顯示的文字（預設跟 placeholder 一樣，但兩者常常需要不同） */
     emptyLabel?: string
-    /** 每一項右側顯示「支出／收入」標籤（清單同時含兩種類型時用） */
-    showType?: boolean
   }>(),
-  { placeholder: '選擇分類', allowEmpty: false, showType: false },
+  { placeholder: '選擇分類', allowEmpty: false },
 )
 const emit = defineEmits<{ 'update:modelValue': [id: string] }>()
 
@@ -241,7 +239,6 @@ watch(
               </svg>
             </span>
             <PathLabel class="pop__name" :path="c.name" />
-            <span v-if="showType && c.id" class="pop__type tiny">{{ c.type === 'expense' ? '支出' : '收入' }}</span>
             <svg v-if="c.id === modelValue" class="pop__tick" viewBox="0 0 24 24">
               <path d="M5 13.2 9.2 17.4 19 7.6" />
             </svg>
@@ -379,16 +376,6 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-/* 同時列出支出與收入時用來區分 */
-.pop__type {
-  flex: none;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: var(--surface-3);
-  color: var(--text-3);
-  font-size: 11px;
-  font-weight: 650;
 }
 .pop__tick {
   flex: none;

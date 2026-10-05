@@ -83,6 +83,12 @@ App 是 PWA，`registerType: 'autoUpdate'`，Service Worker 會預快取整個 d
   - 刪除後 `choose(PICK)` 回到未決定，不是回到「新增」
   - `resetNew(under, type)` 的第二個參數是「沿用目前的收支」，`choose()` 走
     `resetNew(null, catType.value)`，否則使用者先點「收入」再開新分類會被重設回支出
+- **「類型」在彈窗最上面，兩個下拉都只列那一種收支**（使用者要求「只顯示支出或收入，不要一起顯示」）：
+  `typeTree = flattenCategories(categories.filter(c => c.type === catType))`，`pickOptions` 用它，
+  `parentOptions` 也加同樣的條件（子分類一定跟自己的上層同類型）
+  - 切類型走**同步的 `setType(t)`**，不要用 `watch(catType)`；編輯中切到另一種會 `choose(PICK)`
+    回到「還沒選」（否則下拉寫「請選擇分類」、下面卻還留著舊分類）
+  - ⚠ **副作用**：既有分類的收支類型不能再從這個彈窗改（切類型＝換清單，不是改這顆的 type）
 - `CategorySelect` 的 `placeholder`／`emptyLabel` 是兩件事：
   `placeholder`＝還沒選時觸發鈕的文字（「請選擇分類」）；
   `emptyLabel`＝清單第一項（空字串佔位項）的文字（「新增分類」）。

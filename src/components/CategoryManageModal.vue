@@ -36,7 +36,7 @@ const emit = defineEmits<{
 }>()
 
 const NEW = '' // 下拉的「新增分類」佔位值
-/** 剛打開、什麼都還沒選的狀態：只露出「選擇分類」與「類型」 */
+/** 剛打開、什麼都還沒選的狀態：只露出「類型」與「選擇分類」 */
 const PICK = '__pick__'
 const TOP = '__top__' // 「所屬分類」下拉代表「頂層大類」的佔位值
 const PRESETS = ['#e0795b', '#3f9b6e', '#4a8fd4', '#d4a13f', '#9b6bd4', '#d45b8c', '#5bb0c4']
@@ -79,12 +79,22 @@ function pathName(c: Category): string {
  */
 const treeOrder = computed(() => flattenCategories(props.categories))
 
-/** 選擇要修改／刪除的分類：名稱換成完整路徑 */
-const pickOptions = computed<Category[]>(() =>
-  treeOrder.value.map((c) => ({ ...c, name: pathName(c) })),
+/**
+ * 目前這一種收支底下的分類，並且排成樹狀順序。
+ * 兩個下拉都只列同一種收支（上面「類型」選的那一種）：
+ * 子分類一定跟自己的上層同類型，所以把另一種混進來不但沒用，
+ * 還會讓人以為可以把支出的分類掛到收入底下。
+ */
+const typeTree = computed(() =>
+  flattenCategories(props.categories.filter((c) => c.type === catType.value)),
 )
 
-/** 可以當上層的分類：排除自己與自己的所有後代，否則會形成環 */
+/** 選擇要修改／刪除的分類：只列目前類型，名稱換成完整路徑 */
+const pickOptions = computed<Category[]>(() =>
+  typeTree.value.map((c) => ({ ...c, name: pathName(c) })),
+)
+
+/** 可以當上層的分類：同樣只限目前類型，再排除自己與自己的所有後代（否則會形成環） */
 const parentOptions = computed<Category[]>(() => {
   const banned = new Set<string>()
   if (isEdit.value && editing.value) {
@@ -102,13 +112,13 @@ const parentOptions = computed<Category[]>(() => {
   // 先排好樹狀順序再濾掉不能選的；被濾掉的一定是「自己＋自己的後代」整段，
   // 不會留下孤零零的子分類
   return treeOrder.value
-    .filter((c) => !banned.has(c.id))
+    .filter((c) => c.type === catType.value && !banned.has(c.id))
     .map((c) => ({ ...c, name: pathName(c) }))
 })
 
 /**
  * 使用者做過決定了沒。
- * 剛打開時只露出「選擇分類」與「類型」，其餘欄位等選完再出現 ——
+ * 剛打開時只露出「類型」與「選擇分類」，其餘欄位等選完再出現 ——
  * 不然一開就是一大張表，看不出「要先選要新增還是要改」。
  */
 const decided = computed(() => pickedId.value !== PICK)
@@ -169,6 +179,18 @@ function choose(id: string) {
   }
   // 「新增分類」或回到未決定：沿用剛剛在「類型」選的收支，不要被重設回預設值
   resetNew(null, catType.value)
+}
+
+/**
+ * 切換收支類型。兩個下拉都只列同一種類型，所以一換整批選項就換掉了：
+ * 若正在編輯另一種類型的分類，那份表單已經不在清單裡了，回到「還沒選」，
+ * 免得變成「下拉寫著『請選擇分類』、下面的欄位卻還留著舊分類」的鬼狀態。
+ * （刻意寫成同步的處理函式，不用 watch(catType)：watch 是非同步的，容易蓋掉剛設好的值）
+ */
+function setType(t: TxType) {
+  if (t === catType.value) return
+  catType.value = t
+  if (isEdit.value && editing.value?.type !== t) choose(PICK)
 }
 
 /** 在目前編輯的分類底下新增一層子分類（上層直接帶好） */
@@ -260,6 +282,37 @@ function confirmRemove() {
       <div class="card box">
         <h3>{{ title }}</h3>
 
+        <!-- 類型放最上面：它決定下面兩個下拉各會列出哪些分類（只列同一種收支） -->
+        <div class="lb">
+          <span>
+            類型
+            <em v-if="typeLocked" class="lb__hint">
+              子分類沿用上層「{{ parentCat?.name }}」的類型
+            </em>
+            <em v-else class="lb__hint">下面只會列出這一種的分類</em>
+          </span>
+          <div class="seg" :class="{ 'is-locked': typeLocked }">
+            <button
+              type="button"
+              class="seg__btn"
+              :class="{ 'is-on': catType === 'expense' }"
+              :disabled="typeLocked"
+              @click="setType('expense')"
+            >
+              支出
+            </button>
+            <button
+              type="button"
+              class="seg__btn"
+              :class="{ 'is-on': catType === 'income' }"
+              :disabled="typeLocked"
+              @click="setType('income')"
+            >
+              收入
+            </button>
+          </div>
+        </div>
+
         <div class="lb">
           <span>
             選擇分類
@@ -273,40 +326,8 @@ function confirmRemove() {
             placeholder="請選擇分類"
             empty-label="新增分類"
             allow-empty
-            show-type
             @update:model-value="choose"
           />
-        </div>
-
-        <!-- 類型留在外面：還沒決定要新增還是要改之前，這是唯一得先選的東西 -->
-        <div class="lb">
-          <span>
-            類型
-            <em v-if="typeLocked" class="lb__hint">
-              子分類沿用上層「{{ parentCat?.name }}」的類型
-            </em>
-            <em v-else-if="!decided" class="lb__hint">新增的話，先挑是支出還是收入</em>
-          </span>
-          <div class="seg" :class="{ 'is-locked': typeLocked }">
-            <button
-              type="button"
-              class="seg__btn"
-              :class="{ 'is-on': catType === 'expense' }"
-              :disabled="typeLocked"
-              @click="catType = 'expense'"
-            >
-              支出
-            </button>
-            <button
-              type="button"
-              class="seg__btn"
-              :class="{ 'is-on': catType === 'income' }"
-              :disabled="typeLocked"
-              @click="catType = 'income'"
-            >
-              收入
-            </button>
-          </div>
         </div>
 
         <!-- 選完之後才把其餘欄位露出來 -->
@@ -347,7 +368,6 @@ function confirmRemove() {
               :options="parentOptions"
               placeholder="無（最上層大類）"
               allow-empty
-              show-type
             />
           </div>
 
