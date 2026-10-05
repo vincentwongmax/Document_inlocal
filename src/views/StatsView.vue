@@ -61,10 +61,15 @@ const base = computed(() => settings.baseCurrency)
 
 const months = computed(() => st.monthList(24))
 const monthIndex = computed(() => months.value.indexOf(month.value))
+/**
+ * 月份下拉是由「新到舊」排列（`recentMonths(24).reverse()`），所以往更早 = 往清單後面走。
+ * 這裡讓 ‹ 代表更早、› 代表更晚，與日模式和記錄頁一致；
+ * 直接寫 i + delta 的話 ‹ 會變成往更晚，而且在最新一個月時 ‹ 會失效、永遠回不了上個月。
+ */
 function shift(delta: number) {
   const i = monthIndex.value
   if (i < 0) return
-  const next = months.value[i + delta]
+  const next = months.value[i - delta]
   if (next) month.value = next
 }
 
@@ -84,14 +89,30 @@ watch(
   { immediate: true },
 )
 
+/** 同 monthbar 的月份邏輯：years 是由新到舊，往更早 = 往清單後面走 */
 function shiftYear(delta: number) {
   const i = years.value.indexOf(year.value)
-  const next = years.value[i + delta]
+  const next = years.value[i - delta]
   if (next) year.value = next
 }
 
 function shiftDay(delta: number) {
   day.value = addDays(day.value, delta)
+}
+
+/**
+ * 捷徑鈕：回到今天／本月／今年，比照模式的當前單位。
+ * 目標值一定存在於選項裡 —— recentMonths 以當月結尾、years 也必定含今年，
+ * 所以不必擔心 <select> 出現找不到對應 option 的空值。
+ */
+function goDay() {
+  day.value = todayKey()
+}
+function goMonth() {
+  month.value = monthKey(new Date().toISOString())
+}
+function goYear() {
+  year.value = String(new Date().getFullYear())
 }
 
 function presetRange(key: string): DateRange {
@@ -202,11 +223,11 @@ const mom = computed(() => st.momChange.value)
         <button class="btn btn--ghost btn--sm" @click="shiftDay(-1)">‹</button>
         <input v-model="day" class="field monthbar__sel" type="date" />
         <button class="btn btn--ghost btn--sm" @click="shiftDay(1)">›</button>
-        <button class="btn btn--ghost btn--sm monthbar__today" @click="day = todayKey()">今天</button>
+        <button class="btn btn--ghost btn--sm monthbar__now" @click="goDay">今天</button>
       </div>
 
       <div v-else-if="mode === 'month'" class="monthbar">
-        <button class="btn btn--ghost btn--sm" :disabled="monthIndex <= 0" @click="shift(-1)">
+        <button class="btn btn--ghost btn--sm" :disabled="monthIndex >= months.length - 1" @click="shift(-1)">
           ‹
         </button>
         <select v-model="month" class="field monthbar__sel">
@@ -214,17 +235,18 @@ const mom = computed(() => st.momChange.value)
         </select>
         <button
           class="btn btn--ghost btn--sm"
-          :disabled="monthIndex >= months.length - 1"
+          :disabled="monthIndex <= 0"
           @click="shift(1)"
         >
           ›
         </button>
+        <button class="btn btn--ghost btn--sm monthbar__now" @click="goMonth">本月</button>
       </div>
 
       <div v-else-if="mode === 'year'" class="monthbar">
         <button
           class="btn btn--ghost btn--sm"
-          :disabled="years.indexOf(year) <= 0"
+          :disabled="years.indexOf(year) >= years.length - 1"
           @click="shiftYear(-1)"
         >
           ‹
@@ -234,11 +256,12 @@ const mom = computed(() => st.momChange.value)
         </select>
         <button
           class="btn btn--ghost btn--sm"
-          :disabled="years.indexOf(year) >= years.length - 1"
+          :disabled="years.indexOf(year) <= 0"
           @click="shiftYear(1)"
         >
           ›
         </button>
+        <button class="btn btn--ghost btn--sm monthbar__now" @click="goYear">今年</button>
       </div>
 
       <div v-else class="custom">
@@ -462,6 +485,10 @@ const mom = computed(() => st.momChange.value)
   height: 38px;
   max-width: 180px;
   font-weight: 600;
+}
+/* 捷徑鈕（今天／本月／今年）：維持自然寬度，不要被窄版的 select 擠到變形 */
+.monthbar__now {
+  flex: none;
 }
 
 .sums {
