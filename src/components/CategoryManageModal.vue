@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import type { Category, TxType } from '@/types'
 import { ICON_KEYS, CATEGORY_ICONS, DEFAULT_ICON, guessIcon, iconForCategory } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
+import { flattenCategories } from '@/lib/tree'
 import CategoryIcon from './CategoryIcon.vue'
 import CategorySelect from './CategorySelect.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
@@ -69,9 +70,16 @@ function pathName(c: Category): string {
   return chain.join(' › ')
 }
 
+/**
+ * 兩個下拉共用的排序：依大類依次排，子分類緊接在自己的大類後面
+ * （餐飲、餐飲 › 午餐、餐飲 › 晚餐、旅行、旅行 › 中國…），
+ * 而不是照「建立先後」把子分類全擠到清單最後。
+ */
+const treeOrder = computed(() => flattenCategories(props.categories))
+
 /** 選擇要修改／刪除的分類：名稱換成完整路徑 */
 const pickOptions = computed<Category[]>(() =>
-  props.categories.map((c) => ({ ...c, name: pathName(c) })),
+  treeOrder.value.map((c) => ({ ...c, name: pathName(c) })),
 )
 
 /** 可以當上層的分類：排除自己與自己的所有後代，否則會形成環 */
@@ -89,7 +97,9 @@ const parentOptions = computed<Category[]>(() => {
     }
     walk(editing.value.id)
   }
-  return props.categories
+  // 先排好樹狀順序再濾掉不能選的；被濾掉的一定是「自己＋自己的後代」整段，
+  // 不會留下孤零零的子分類
+  return treeOrder.value
     .filter((c) => !banned.has(c.id))
     .map((c) => ({ ...c, name: pathName(c) }))
 })
@@ -235,6 +245,7 @@ function confirmRemove() {
             placeholder="新增分類"
             allow-empty
             show-type
+            indent
             @update:model-value="choose"
           />
         </div>
@@ -276,6 +287,7 @@ function confirmRemove() {
             placeholder="無（最上層大類）"
             allow-empty
             show-type
+            indent
           />
         </div>
 

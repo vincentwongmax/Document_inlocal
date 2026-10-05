@@ -40,6 +40,13 @@ App 是 PWA，`registerType: 'autoUpdate'`，Service Worker 會預快取整個 d
 - 統計頁：分類佔比每列的金額含整棵子樹，點箭頭展開看子分類；展開後的百分比是「佔上一層」，
   大類自己身上的金額會補一列「未細分」
 - 常用分類可以勾到子分類，記帳頁第一列會直接出現（展開「更多」時會補回來，不會消失）
+- **下拉清單一律走樹狀順序**：`src/lib/tree.ts` 的 `flattenCategories(list, sortSiblings?)` 深度優先攤平，
+  子分類緊接在自己的上層後面（餐飲、餐飲 › 午餐、餐飲 › 午餐 › 麵、旅行…）。
+  ⚠ 不要直接 `categories.map()` 餵給下拉——`settings.categories` 是建立順序，子分類會全擠到最後
+  - 用在哪：`CategoryManageModal` 的「選擇分類」／「所屬分類」（`treeOrder`）、
+    `CategoryPicker.selectList`（下拉模式）
+  - `CategorySelect` 加 `indent` 就會依層級縮排（每層 +14px，基準 9px）；層級是在「這份清單內」
+    沿 parentId 往上數，上層不在清單裡就停住，所以被過濾掉時不會莫名縮排
 - 記錄頁的「分類」檢視**只依大類分組**：分組鍵是 `pathOf(categoryId)[0]?.id`（根分類），
   所以「交通」與「交通 › 巴士」在同一組；但**記錄列仍顯示完整路徑**。
   組標題下方有子分類小計 chips（只取分類名、不取路徑），大類自己身上的金額補一列「未細分」

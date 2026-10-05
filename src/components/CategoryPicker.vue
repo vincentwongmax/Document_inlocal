@@ -4,6 +4,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
 import { iconForCategory } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
+import { flattenCategories } from '@/lib/tree'
 import CategoryIcon from './CategoryIcon.vue'
 import CategorySelect from './CategorySelect.vue'
 import { computed, ref, watch } from 'vue'
@@ -64,14 +65,11 @@ function pathName(c: Category): string {
  * 下拉模式的選項：整棵樹列出來，子分類緊接在自己的大類後面（而不是依使用頻率打散），
  * 名稱換成完整路徑才看得出層級。
  */
-const selectList = computed<Category[]>(() => {
-  const flatten = (parentId: string | null): Category[] => {
-    const kids = allWithSubs.value.filter((c) => (c.parentId ?? null) === parentId)
-    const sorted = props.usageOrder ? byUsage(kids) : kids
-    return sorted.flatMap((c) => [c, ...flatten(c.id)])
-  }
-  return flatten(null).map((c) => (c.parentId ? { ...c, name: pathName(c) } : c))
-})
+const selectList = computed<Category[]>(() =>
+  flattenCategories(allWithSubs.value, props.usageOrder ? byUsage : undefined).map((c) =>
+    c.parentId ? { ...c, name: pathName(c) } : c,
+  ),
+)
 
 /** 使用者勾選的常用分類（限目前收支類型，可含子分類），照勾選順序 */
 const favorites = computed<Category[]>(() =>
@@ -157,6 +155,7 @@ watch(
       :model-value="modelValue"
       :options="selectList"
       placeholder="選擇分類"
+      indent
       @update:model-value="emit('update:modelValue', $event)"
     />
 
