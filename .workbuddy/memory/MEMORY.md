@@ -40,6 +40,10 @@ App 是 PWA，`registerType: 'autoUpdate'`，Service Worker 會預快取整個 d
 - 統計頁：分類佔比每列的金額含整棵子樹，點箭頭展開看子分類；展開後的百分比是「佔上一層」，
   大類自己身上的金額會補一列「未細分」
 - 常用分類可以勾到子分類，記帳頁第一列會直接出現（展開「更多」時會補回來，不會消失）
+- ⚠ `CategoryManageModal` 的表單載入**不要用 `watch(pickedId)`**：watch 是非同步的，
+  會蓋掉同步設定好的值（曾因此讓「＋ 在 X 底下新增子分類」的上層被清空、只能建兩層）。
+  改用 CategorySelect 的 `@update:model-value="choose"`；`addChild()` 也要先把
+  `editing.value?.id` 存下來再 `choose(NEW)`，因為 choose 之後 editing 就變 null 了
 
 ## 資料存放位置
 
