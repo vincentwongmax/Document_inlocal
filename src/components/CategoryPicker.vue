@@ -2,10 +2,11 @@
 import type { Category, TxType } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
-import { iconForCategory, DEFAULT_ICON } from '@/lib/icons'
+import { iconForCategory } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
 import CategoryIcon from './CategoryIcon.vue'
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import CategorySelect from './CategorySelect.vue'
+import { computed, ref, watch } from 'vue'
 
 const props = withDefaults(
   defineProps<{
@@ -27,14 +28,6 @@ const emit = defineEmits<{ 'update:modelValue': [id: string] }>()
 const settings = useSettingsStore()
 const records = useRecordsStore()
 const expanded = ref(false)
-
-/* ── 自訂下拉的狀態 ─────────────────────────────────────── */
-/** 原生 <select> 的展開清單無法渲染 SVG，改用自訂彈層才能讓每一項都帶分類圖示 */
-const open = ref(false)
-const active = ref(0)
-const triggerEl = ref<HTMLButtonElement | null>(null)
-const popEl = ref<HTMLElement | null>(null)
-const popStyle = ref<Record<string, string>>({})
 
 const usage = computed(() => {
   const m = new Map<string, number>()
@@ -94,206 +87,27 @@ function pick(id: string) {
   emit('update:modelValue', id)
   // 從展開的全部清單選了非常用分類後自動收起，維持介面精簡
   if (expanded.value) expanded.value = false
-  closePop()
 }
 
-/** 下拉模式：目前選中的分類 */
-const selected = computed<Category | undefined>(() =>
-  all.value.find((c) => c.id === props.modelValue),
-)
-
-/** 下拉欄位一律顯示圖示；尚未選到分類時用中性佔位圖示 */
-const selectedIcon = computed(() =>
-  selected.value ? iconForCategory(selected.value) : DEFAULT_ICON,
-)
-
-/* ── 自訂下拉：定位 / 開關 / 鍵盤操作 ───────────────────── */
-
-/**
- * 彈層以 fixed 定位並跟隨觸發鈕：
- * 這樣才能跳脫記錄明細（.sheet__body 有 overflow）的裁切，
- * 空間不足時自動往上翻。
- */
-function place() {
-  const t = triggerEl.value
-  if (!t) return
-  const r = t.getBoundingClientRect()
-  const gap = 6
-  const width = Math.max(r.width, 210)
-  const below = window.innerHeight - r.bottom - gap
-  const above = r.top - gap
-  const up = below < 200 && above > below
-  const avail = up ? above : below
-  const style: Record<string, string> = {
-    left: `${Math.max(8, Math.min(r.left, window.innerWidth - width - 8))}px`,
-    width: `${width}px`,
-    maxHeight: `${Math.max(96, Math.min(avail, 296))}px`,
-  }
-  if (up) style.bottom = `${window.innerHeight - r.top + gap}px`
-  else style.top = `${r.bottom + gap}px`
-  popStyle.value = style
-}
-
-function onDocDown(e: Event) {
-  const t = e.target as Node
-  if (triggerEl.value?.contains(t) || popEl.value?.contains(t)) return
-  closePop()
-}
-
-function scrollActive() {
-  popEl.value?.querySelector<HTMLElement>('.pop__item.is-active')?.scrollIntoView({
-    block: 'nearest',
-  })
-}
-
-function openPop() {
-  if (!list.value.length) return
-  const i = list.value.findIndex((c) => c.id === props.modelValue)
-  active.value = i >= 0 ? i : 0
-  open.value = true
-  void nextTick(() => {
-    place()
-    scrollActive()
-  })
-  window.addEventListener('scroll', place, true)
-  window.addEventListener('resize', place)
-  document.addEventListener('pointerdown', onDocDown, true)
-}
-
-function closePop() {
-  if (!open.value) return
-  open.value = false
-  window.removeEventListener('scroll', place, true)
-  window.removeEventListener('resize', place)
-  document.removeEventListener('pointerdown', onDocDown, true)
-}
-
-function togglePop() {
-  if (open.value) closePop()
-  else openPop()
-}
-
-function moveTo(delta: number) {
-  if (!open.value) {
-    openPop()
-    return
-  }
-  const n = list.value.length
-  if (!n) return
-  active.value = (active.value + delta + n) % n
-  void nextTick(scrollActive)
-}
-
-function chooseActive() {
-  const c = list.value[active.value]
-  if (c) pick(c.id)
-}
-
-function onKey(e: KeyboardEvent) {
-  if (e.key === 'ArrowDown') {
-    e.preventDefault()
-    moveTo(1)
-  } else if (e.key === 'ArrowUp') {
-    e.preventDefault()
-    moveTo(-1)
-  } else if (e.key === 'Enter' || e.key === ' ') {
-    e.preventDefault()
-    if (open.value) chooseActive()
-    else openPop()
-  } else if (e.key === 'Escape') {
-    if (open.value) {
-      e.preventDefault()
-      closePop()
-    }
-  } else if (e.key === 'Tab') {
-    closePop()
-  }
-}
-
-onBeforeUnmount(closePop)
-
-// 換收支類型時收起，避免分類暴增
+// 換收支類型時收起標籤列的展開，避免分類暴增
 watch(
   () => props.type,
   () => {
     expanded.value = false
-    closePop()
   },
 )
 </script>
 
 <template>
   <div class="picker">
-    <!-- 下拉清單模式（自訂彈層，展開後每項都帶分類圖示） -->
-    <template v-if="variant === 'select'">
-      <div class="selwrap">
-        <button
-          ref="triggerEl"
-          type="button"
-          class="field selwrap__btn"
-          :class="{ 'is-open': open }"
-          aria-haspopup="listbox"
-          :aria-expanded="open"
-          @click="togglePop"
-          @keydown="onKey"
-        >
-          <span
-            class="selwrap__ic"
-            :class="{ 'is-empty': !selected }"
-            :style="
-              selected ? { '--c': selected.color, '--bg': withAlpha(selected.color, 0.14) } : undefined
-            "
-            aria-hidden="true"
-          >
-            <CategoryIcon :name="selectedIcon" :size="14" :stroke="1.9" />
-          </span>
-          <span class="selwrap__name" :class="{ 'is-empty': !selected }">
-            {{ selected?.name ?? '選擇分類' }}
-          </span>
-          <svg class="selwrap__caret" :class="{ 'is-open': open }" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M6 9l6 6 6-6" />
-          </svg>
-        </button>
-      </div>
-
-      <Teleport to="body">
-        <Transition name="pop">
-          <div
-            v-if="open"
-            ref="popEl"
-            class="pop"
-            :style="popStyle"
-            role="listbox"
-            aria-label="分類"
-          >
-            <button
-              v-for="(c, i) in list"
-              :key="c.id"
-              type="button"
-              class="pop__item"
-              :class="{ 'is-on': c.id === modelValue, 'is-active': i === active }"
-              role="option"
-              :aria-selected="c.id === modelValue"
-              @mouseenter="active = i"
-              @click="pick(c.id)"
-            >
-              <span
-                class="pop__ic"
-                :style="{ '--c': c.color, '--bg': withAlpha(c.color, 0.14) }"
-                aria-hidden="true"
-              >
-                <CategoryIcon :name="iconForCategory(c)" :size="16" :stroke="1.9" />
-              </span>
-              <span class="pop__name">{{ c.name }}</span>
-              <svg v-if="c.id === modelValue" class="pop__tick" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M5 13.2 9.2 17.4 19 7.6" />
-              </svg>
-            </button>
-            <p v-if="!list.length" class="pop__empty">尚無分類，請到設定頁新增</p>
-          </div>
-        </Transition>
-      </Teleport>
-    </template>
+    <!-- 下拉清單模式（共用 CategorySelect：自訂彈層，每一項都帶分類圖示） -->
+    <CategorySelect
+      v-if="variant === 'select'"
+      :model-value="modelValue"
+      :options="list"
+      placeholder="選擇分類"
+      @update:model-value="emit('update:modelValue', $event)"
+    />
 
     <!-- 標籤模式 -->
     <div v-else class="cats">
@@ -356,150 +170,6 @@ watch(
 .picker {
   min-width: 0;
 }
-/* ── 下拉模式 ── */
-.selwrap {
-  display: block;
-  max-width: 240px;
-  min-width: 160px;
-}
-.selwrap__btn {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 28px 0 8px;
-  text-align: left;
-}
-.selwrap__btn.is-open {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-.selwrap__ic {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 21px;
-  height: 21px;
-  border-radius: 7px;
-  color: var(--c);
-  background: var(--bg);
-}
-/* 尚未選到分類：中性佔位圖示，避免欄位看起來空空的 */
-.selwrap__ic.is-empty {
-  color: var(--text-3);
-  background: var(--surface-3);
-}
-.selwrap__name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.selwrap__name.is-empty {
-  color: var(--text-3);
-}
-.selwrap__caret {
-  position: absolute;
-  top: 50%;
-  right: 9px;
-  width: 15px;
-  height: 15px;
-  transform: translateY(-50%);
-  fill: none;
-  stroke: var(--text-3);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transition: transform 0.16s;
-}
-.selwrap__caret.is-open {
-  transform: translateY(-50%) rotate(180deg);
-  stroke: var(--accent);
-}
-
-/* ── 下拉彈層（Teleport 到 body，fixed 定位）── */
-.pop {
-  position: fixed;
-  z-index: 95;
-  padding: 6px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-3);
-}
-.pop__item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  height: 38px;
-  padding: 0 9px;
-  border-radius: 9px;
-  font-size: 14px;
-  font-weight: 550;
-  color: var(--text-2);
-  text-align: left;
-}
-.pop__item.is-active {
-  background: var(--surface-3);
-}
-.pop__item.is-on {
-  background: var(--pick-soft);
-  color: var(--pick);
-  font-weight: 650;
-}
-.pop__ic {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
-  color: var(--c);
-  background: var(--bg);
-}
-.pop__item.is-on .pop__ic {
-  box-shadow: inset 0 0 0 1px var(--pick-line);
-}
-.pop__name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.pop__tick {
-  flex: none;
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: var(--pick);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.pop__empty {
-  margin: 0;
-  padding: 10px 9px;
-  font-size: 13px;
-  color: var(--text-3);
-}
-.pop-enter-active,
-.pop-leave-active {
-  transition:
-    opacity 0.13s,
-    transform 0.13s;
-}
-.pop-enter-from,
-.pop-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
-}
-
 /* ── 標籤模式 ── */
 .cats {
   display: flex;
