@@ -75,8 +75,19 @@ const list = computed<Category[]>(() => {
   return fav
 })
 
+/**
+ * 能否展開／收起：只有在「主頁模式且確實有勾選常用分類」時才有東西可多、可收。
+ * 沒勾選常用分類時一律全部顯示，此時兩顆鈕都不該出現。
+ */
+const expandable = computed(
+  () =>
+    props.collapsed && favorites.value.length > 0 && all.value.length > favorites.value.length,
+)
+
 const hiddenCount = computed(() =>
-  props.collapsed && !expanded.value ? Math.max(0, all.value.length - list.value.length) : 0,
+  props.collapsed && !expanded.value
+    ? Math.max(0, all.value.length - favorites.value.length)
+    : 0,
 )
 
 function pick(id: string) {
@@ -304,16 +315,35 @@ watch(
         <span class="cat__name">{{ c.name }}</span>
       </button>
 
+      <!-- 「更多」與「收起」刻意分成兩顆：
+           原本共用一顆時，展開後 list 等於全部、顯示條件不成立，按鈕會消失導致收不回來 -->
       <button
-        v-if="collapsed && all.length > list.length"
+        v-if="expandable && !expanded"
         type="button"
         class="cat-more"
-        :title="expanded ? '收起全部分類' : `更多分類（隱藏 ${hiddenCount} 個）`"
-        :aria-expanded="expanded"
-        @click="expanded = !expanded"
+        :title="`更多分類（還有 ${hiddenCount} 個）`"
+        aria-label="展開更多分類"
+        :aria-expanded="false"
+        @click="expanded = true"
       >
-        <svg class="cat-more__icon" :class="{ 'is-up': expanded }" viewBox="0 0 24 24" aria-hidden="true">
+        <svg class="cat-more__icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+
+      <!-- 收起：圖示用「向上箭頭＋上方橫線」，與更多的單一向下箭頭明顯區隔 -->
+      <button
+        v-if="expandable && expanded"
+        type="button"
+        class="cat-more cat-more--up"
+        title="收起分類"
+        aria-label="收起分類"
+        :aria-expanded="true"
+        @click="expanded = false"
+      >
+        <svg class="cat-more__icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M5.4 6.6h13.2" />
+          <path d="M6.9 13.4 12 8.3l5.1 5.1" />
         </svg>
       </button>
 
@@ -533,6 +563,17 @@ watch(
   border-color: var(--accent);
   background: var(--accent-soft);
 }
+/* 收起鈕：墨綠淡底，跟「更多」的白底做出區隔，一眼看得出是另一顆 */
+.cat-more--up {
+  background: var(--accent-soft);
+  border-color: rgba(44, 110, 91, 0.28);
+  color: var(--accent);
+}
+.cat-more--up:hover {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent-hover);
+}
 .cat-more__icon {
   width: 16px;
   height: 16px;
@@ -541,9 +582,8 @@ watch(
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
-  transition: transform 0.15s;
 }
-.cat-more__icon.is-up {
-  transform: rotate(180deg);
+.cat-more--up .cat-more__icon {
+  stroke-width: 1.9;
 }
 </style>
