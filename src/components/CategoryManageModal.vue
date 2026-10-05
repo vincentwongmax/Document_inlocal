@@ -36,10 +36,12 @@ const emit = defineEmits<{
 }>()
 
 const NEW = '' // 下拉的「新增分類」佔位值
+/** 剛打開、什麼都還沒選的狀態：只露出「選擇分類」與「類型」 */
+const PICK = '__pick__'
 const TOP = '__top__' // 「所屬分類」下拉代表「頂層大類」的佔位值
 const PRESETS = ['#e0795b', '#3f9b6e', '#4a8fd4', '#d4a13f', '#9b6bd4', '#d45b8c', '#5bb0c4']
 
-const pickedId = ref(NEW)
+const pickedId = ref(PICK)
 const name = ref('')
 const color = ref(PRESETS[0])
 const catType = ref<TxType>('expense')
@@ -104,10 +106,21 @@ const parentOptions = computed<Category[]>(() => {
     .map((c) => ({ ...c, name: pathName(c) }))
 })
 
-/** 目前正在編輯的分類；null 表示「新增」模式 */
-const editing = computed(() => props.categories.find((c) => c.id === pickedId.value) ?? null)
+/**
+ * 使用者做過決定了沒。
+ * 剛打開時只露出「選擇分類」與「類型」，其餘欄位等選完再出現 ——
+ * 不然一開就是一大張表，看不出「要先選要新增還是要改」。
+ */
+const decided = computed(() => pickedId.value !== PICK)
+
+/** 目前正在編輯的分類；null 表示「新增」模式（或還沒選） */
+const editing = computed(() =>
+  pickedId.value && pickedId.value !== PICK
+    ? (props.categories.find((c) => c.id === pickedId.value) ?? null)
+    : null,
+)
 const isEdit = computed(() => !!editing.value)
-const usedCount = computed(() => (pickedId.value ? props.usage[pickedId.value] ?? 0 : 0))
+const usedCount = computed(() => (isEdit.value ? props.usage[pickedId.value] ?? 0 : 0))
 
 /** 編輯中的分類有幾個直接子分類：有就不能刪，得先處理子分類 */
 const kidCount = computed(() =>
@@ -117,12 +130,13 @@ const kidCount = computed(() =>
 const typeLocked = computed(() => !!parentId.value)
 const parentCat = computed(() => (parentId.value ? byId.value.get(parentId.value) : undefined))
 
-/** 回到「新增」模式的空白表單（可指定要掛在哪個分類底下） */
-function resetNew(under: string | null = null) {
+/** 回到「新增」模式的空白表單（可指定要掛在哪個分類底下、以及預設收支） */
+function resetNew(under: string | null = null, type: TxType = props.defaultType) {
   name.value = ''
   const p = under ? byId.value.get(under) : undefined
   color.value = p ? p.color : PRESETS[0]
-  catType.value = p ? p.type : props.defaultType
+  // 掛到上層底下時一律沿用上層；否則保留使用者剛剛在「類型」選的收支
+  catType.value = p ? p.type : type
   icon.value = DEFAULT_ICON
   iconPicked.value = false
   custom.value = false
@@ -149,8 +163,12 @@ function fill(c: Category) {
 function choose(id: string) {
   pickedId.value = id
   const c = props.categories.find((x) => x.id === id)
-  if (c) fill(c)
-  else resetNew()
+  if (c) {
+    fill(c)
+    return
+  }
+  // 「新增分類」或回到未決定：沿用剛剛在「類型」選的收支，不要被重設回預設值
+  resetNew(null, catType.value)
 }
 
 /** 在目前編輯的分類底下新增一層子分類（上層直接帶好） */
@@ -201,14 +219,21 @@ watch(
   () => props.open,
   (v) => {
     if (v) {
-      choose(NEW)
+      // 每次打開都回到「還沒選」的狀態，類型回到預設讓使用者自己選
+      catType.value = props.defaultType
+      choose(PICK)
       askRemove.value = false
     }
   },
 )
 
+/** 標題跟著目前狀態走（還沒選的時候不要自稱「新增分類」） */
+const title = computed(() =>
+  !decided.value ? '新增或修改分類' : isEdit.value ? '修改分類' : '新增分類',
+)
+
 function submit() {
-  if (!name.value.trim()) return
+  if (!decided.value || !name.value.trim()) return
   const payload = {
     name: name.value.trim(),
     color: color.value,
@@ -224,7 +249,8 @@ function confirmRemove() {
   if (!editing.value) return
   emit('remove', editing.value.id)
   askRemove.value = false
-  choose(NEW)
+  // 刪完回到「還沒選」，讓使用者重新挑一個
+  choose(PICK)
 }
 </script>
 
@@ -232,78 +258,34 @@ function confirmRemove() {
   <Transition name="fade">
     <div v-if="open" class="mask" @click.self="emit('close')">
       <div class="card box">
-        <h3>{{ isEdit ? '修改分類' : '新增分類' }}</h3>
+        <h3>{{ title }}</h3>
 
         <div class="lb">
           <span>
             選擇分類
-            <em class="lb__hint">選一個現有分類可修改或刪除；維持「新增分類」則建立新的</em>
+            <em class="lb__hint">
+              {{ decided ? '換一個就切過去修改或刪除' : '先選一個，或選「新增分類」建立新的' }}
+            </em>
           </span>
           <CategorySelect
             :model-value="pickedId"
             :options="pickOptions"
-            placeholder="新增分類"
+            placeholder="請選擇分類"
+            empty-label="新增分類"
             allow-empty
             show-type
             @update:model-value="choose"
           />
         </div>
 
-        <div v-if="isEdit" class="lb">
-          <span>
-            子分類
-            <em class="lb__hint">可以一層一層往下加（餐飲 › 早餐 › 飯）</em>
-          </span>
-          <!-- 已有的子分類：點一下就切過去編輯，不用回最上面重選 -->
-          <div v-if="kids.length" class="kidlist">
-            <button
-              v-for="k in kids"
-              :key="k.id"
-              type="button"
-              class="kid"
-              @click="choose(k.id)"
-            >
-              <span class="kid__ic" :style="{ '--c': k.color, '--bg': withAlpha(k.color, 0.14) }">
-                <CategoryIcon :name="iconForCategory(k)" :size="13" :stroke="1.9" />
-              </span>
-              <span class="kid__name">{{ k.name }}</span>
-              <span v-if="subCount(k.id)" class="kid__more">+{{ subCount(k.id) }}</span>
-            </button>
-          </div>
-          <button class="btn btn--sm btn--ghost kidadd" type="button" @click="addChild">
-            ＋ 在「{{ editing?.name }}」底下新增子分類
-          </button>
-        </div>
-
-        <div class="lb">
-          <span>
-            所屬分類
-            <em class="lb__hint">選一個就變成它的子分類；選「無」則是最上層的大類</em>
-          </span>
-          <CategorySelect
-            v-model="parentSel"
-            :options="parentOptions"
-            placeholder="無（最上層大類）"
-            allow-empty
-            show-type
-          />
-        </div>
-
-        <!-- 即時預覽 -->
-        <div class="prev">
-          <span class="prev__ic" :style="{ color, background: withAlpha(color, 0.14) }">
-            <CategoryIcon :name="icon" :size="20" />
-          </span>
-          <span class="prev__name" :style="{ color }">{{ name.trim() || '新分類' }}</span>
-          <span v-if="isEdit && editing?.builtin" class="prev__tag">內建</span>
-        </div>
-
+        <!-- 類型留在外面：還沒決定要新增還是要改之前，這是唯一得先選的東西 -->
         <div class="lb">
           <span>
             類型
             <em v-if="typeLocked" class="lb__hint">
               子分類沿用上層「{{ parentCat?.name }}」的類型
             </em>
+            <em v-else-if="!decided" class="lb__hint">新增的話，先挑是支出還是收入</em>
           </span>
           <div class="seg" :class="{ 'is-locked': typeLocked }">
             <button
@@ -327,70 +309,124 @@ function confirmRemove() {
           </div>
         </div>
 
-        <label class="lb">
-          <span>名稱</span>
-          <input
-            v-model="name"
-            class="field"
-            maxlength="12"
-            placeholder="分類名稱"
-            @keyup.enter="submit"
-          />
-        </label>
-
-        <div class="lb">
-          <span>
-            圖示
-            <em class="lb__hint">輸入名稱會自動推薦，也可自己挑</em>
-          </span>
-          <div class="igrid">
-            <button
-              v-for="k in ICON_KEYS"
-              :key="k"
-              type="button"
-              class="ic"
-              :class="{ 'is-on': icon === k }"
-              :style="icon === k ? { color, borderColor: color, background: withAlpha(color, 0.14) } : undefined"
-              :title="CATEGORY_ICONS[k].label"
-              :aria-label="CATEGORY_ICONS[k].label"
-              @click="pickIcon(k)"
-            >
-              <CategoryIcon :name="k" :size="19" />
+        <!-- 選完之後才把其餘欄位露出來 -->
+        <template v-if="decided">
+          <div v-if="isEdit" class="lb">
+            <span>
+              子分類
+              <em class="lb__hint">可以一層一層往下加（餐飲 › 早餐 › 飯）</em>
+            </span>
+            <!-- 已有的子分類：點一下就切過去編輯，不用回最上面重選 -->
+            <div v-if="kids.length" class="kidlist">
+              <button
+                v-for="k in kids"
+                :key="k.id"
+                type="button"
+                class="kid"
+                @click="choose(k.id)"
+              >
+                <span class="kid__ic" :style="{ '--c': k.color, '--bg': withAlpha(k.color, 0.14) }">
+                  <CategoryIcon :name="iconForCategory(k)" :size="13" :stroke="1.9" />
+                </span>
+                <span class="kid__name">{{ k.name }}</span>
+                <span v-if="subCount(k.id)" class="kid__more">+{{ subCount(k.id) }}</span>
+              </button>
+            </div>
+            <button class="btn btn--sm btn--ghost kidadd" type="button" @click="addChild">
+              ＋ 在「{{ editing?.name }}」底下新增子分類
             </button>
           </div>
-        </div>
 
-        <div class="lb">
-          <span>顏色</span>
-          <div class="swatches">
-            <button
-              v-for="c in PRESETS"
-              :key="c"
-              type="button"
-              class="sw"
-              :class="{ 'is-on': !custom && color === c }"
-              :style="{ background: c }"
-              :title="c"
-              @click="pick(c)"
+          <div class="lb">
+            <span>
+              所屬分類
+              <em class="lb__hint">選一個就變成它的子分類；選「無」則是最上層的大類</em>
+            </span>
+            <CategorySelect
+              v-model="parentSel"
+              :options="parentOptions"
+              placeholder="無（最上層大類）"
+              allow-empty
+              show-type
             />
-            <label
-              class="sw sw--palette"
-              :class="{ 'is-on': custom }"
-              :style="{ background: custom ? color : '' }"
-              title="調色盤"
-            >
-              <input type="color" :value="color" class="sw__input" @input="onPalette" />
-              <span class="sw__plus">＋</span>
-            </label>
           </div>
-        </div>
 
-        <p v-if="isEdit && kidCount" class="used">
-          底下還有 {{ kidCount }} 個子分類，要刪掉這個分類請先處理它的子分類。
-        </p>
-        <p v-else-if="isEdit && usedCount" class="used">
-          已被 {{ usedCount }} 筆記錄使用，修改後這些記錄會一起更新。
-        </p>
+          <!-- 即時預覽 -->
+          <div class="prev">
+            <span class="prev__ic" :style="{ color, background: withAlpha(color, 0.14) }">
+              <CategoryIcon :name="icon" :size="20" />
+            </span>
+            <span class="prev__name" :style="{ color }">{{ name.trim() || '新分類' }}</span>
+            <span v-if="isEdit && editing?.builtin" class="prev__tag">內建</span>
+          </div>
+
+          <label class="lb">
+            <span>名稱</span>
+            <input
+              v-model="name"
+              class="field"
+              maxlength="12"
+              placeholder="分類名稱"
+              @keyup.enter="submit"
+            />
+          </label>
+
+          <div class="lb">
+            <span>
+              圖示
+              <em class="lb__hint">輸入名稱會自動推薦，也可自己挑</em>
+            </span>
+            <div class="igrid">
+              <button
+                v-for="k in ICON_KEYS"
+                :key="k"
+                type="button"
+                class="ic"
+                :class="{ 'is-on': icon === k }"
+                :style="
+                  icon === k ? { color, borderColor: color, background: withAlpha(color, 0.14) } : undefined
+                "
+                :title="CATEGORY_ICONS[k].label"
+                :aria-label="CATEGORY_ICONS[k].label"
+                @click="pickIcon(k)"
+              >
+                <CategoryIcon :name="k" :size="19" />
+              </button>
+            </div>
+          </div>
+
+          <div class="lb">
+            <span>顏色</span>
+            <div class="swatches">
+              <button
+                v-for="c in PRESETS"
+                :key="c"
+                type="button"
+                class="sw"
+                :class="{ 'is-on': !custom && color === c }"
+                :style="{ background: c }"
+                :title="c"
+                @click="pick(c)"
+              />
+              <label
+                class="sw sw--palette"
+                :class="{ 'is-on': custom }"
+                :style="{ background: custom ? color : '' }"
+                title="調色盤"
+              >
+                <input type="color" :value="color" class="sw__input" @input="onPalette" />
+                <span class="sw__plus">＋</span>
+              </label>
+            </div>
+          </div>
+
+          <p v-if="isEdit && kidCount" class="used">
+            底下還有 {{ kidCount }} 個子分類，要刪掉這個分類請先處理它的子分類。
+          </p>
+          <p v-else-if="isEdit && usedCount" class="used">
+            已被 {{ usedCount }} 筆記錄使用，修改後這些記錄會一起更新。
+          </p>
+        </template>
 
         <div class="foot">
           <button
@@ -404,7 +440,13 @@ function confirmRemove() {
             刪除
           </button>
           <button class="btn btn--ghost" type="button" @click="emit('close')">取消</button>
-          <button class="btn btn--primary" type="button" :disabled="!name.trim()" @click="submit">
+          <button
+            v-if="decided"
+            class="btn btn--primary"
+            type="button"
+            :disabled="!name.trim()"
+            @click="submit"
+          >
             {{ isEdit ? '儲存' : '新增' }}
           </button>
         </div>

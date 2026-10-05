@@ -14,6 +14,8 @@ const props = withDefaults(
     placeholder?: string
     /** 清單最前面放一顆「清空／回到佔位」的選項（值為空字串） */
     allowEmpty?: boolean
+    /** 那一顆佔位項要顯示的文字（預設跟 placeholder 一樣，但兩者常常需要不同） */
+    emptyLabel?: string
     /** 每一項右側顯示「支出／收入」標籤（清單同時含兩種類型時用） */
     showType?: boolean
   }>(),
@@ -34,10 +36,25 @@ const selected = computed(() => props.options.find((c) => c.id === props.modelVa
 const selectedIcon = computed(() =>
   selected.value ? iconForCategory(selected.value) : DEFAULT_ICON,
 )
+/** allowEmpty 那一顆的文字（不給就沿用 placeholder） */
+const emptyText = computed(() => props.emptyLabel || props.placeholder)
+
+/**
+ * 觸發鈕要顯示什麼：
+ * 選到真的分類→它的名稱；選了 allowEmpty 的佔位項（空字串）→佔位項自己的文字
+ * （例如「新增分類」）；還沒選→placeholder（例如「請選擇分類」）。
+ */
+const triggerName = computed(() => {
+  if (selected.value) return selected.value.name
+  if (props.allowEmpty && props.modelValue === '') return emptyText.value
+  return props.placeholder
+})
 
 /** 清單項目：allowEmpty 時最前面多一顆佔位項 */
 const items = computed(() =>
-  props.allowEmpty ? [{ id: '', name: props.placeholder } as Category, ...props.options] : props.options,
+  props.allowEmpty
+    ? [{ id: '', name: emptyText.value } as Category, ...props.options]
+    : props.options,
 )
 
 /**
@@ -182,7 +199,7 @@ watch(
       <PathLabel
         class="selwrap__name"
         :class="{ 'is-empty': !selected }"
-        :path="selected?.name ?? placeholder"
+        :path="triggerName"
       />
       <svg class="selwrap__caret" :class="{ 'is-open': open }" viewBox="0 0 24 24" aria-hidden="true">
         <path d="M6 9l6 6 6-6" />

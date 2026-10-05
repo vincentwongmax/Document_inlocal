@@ -72,7 +72,22 @@ App 是 PWA，`registerType: 'autoUpdate'`，Service Worker 會預快取整個 d
 - ⚠ `CategoryManageModal` 的表單載入**不要用 `watch(pickedId)`**：watch 是非同步的，
   會蓋掉同步設定好的值（曾因此讓「＋ 在 X 底下新增子分類」的上層被清空、只能建兩層）。
   改用 CategorySelect 的 `@update:model-value="choose"`；`addChild()` 也要先把
-  `editing.value?.id` 存下來再 `choose(NEW)`，因為 choose 之後 editing 就變 null 了
+  `editing.value?.id` 存下來再 `choose(id)`，因為 choose 之後 editing 就變 null 了
+- **`CategoryManageModal` 是分段展開的**（使用者要求）：打開時只露出「選擇分類」與「類型」，
+  其餘欄位全包在 `<template v-if="decided">` 裡
+  - 哨兵 `const PICK = '__pick__'`（`pickedId` 的初始值）；`decided = pickedId !== PICK`
+  - `editing` 必須排除 `PICK`（`pickedId && pickedId !== PICK ? find(…) ?? null : null`）；
+    `usedCount` 看 `isEdit` 而不是 `pickedId` 非空（`PICK` 不是空字串，會誤判）
+  - 標題未決定時是「新增或修改分類」；頁尾的「新增／儲存」按鈕 `v-if="decided"`，
+    未決定時只剩「取消」；`submit()` 也有 `if (!decided) return` 保險
+  - 刪除後 `choose(PICK)` 回到未決定，不是回到「新增」
+  - `resetNew(under, type)` 的第二個參數是「沿用目前的收支」，`choose()` 走
+    `resetNew(null, catType.value)`，否則使用者先點「收入」再開新分類會被重設回支出
+- `CategorySelect` 的 `placeholder`／`emptyLabel` 是兩件事：
+  `placeholder`＝還沒選時觸發鈕的文字（「請選擇分類」）；
+  `emptyLabel`＝清單第一項（空字串佔位項）的文字（「新增分類」）。
+  觸發鈕文字走 `triggerName` computed：選到分類→名稱；選了空字串且 `allowEmpty`→`emptyLabel`；
+  其他查不到的值（如 `PICK`）→`placeholder`
 
 ## 資料存放位置
 
