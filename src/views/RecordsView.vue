@@ -6,9 +6,14 @@ import { useToast } from '@/composables/useToast'
 import type { DateRange } from '@/composables/useStats'
 import type { TxRecord } from '@/types'
 import RecordList from '@/components/RecordList.vue'
+import RecordRow from '@/components/RecordRow.vue'
 import RecordSheet from '@/components/RecordSheet.vue'
 import ClearableInput from '@/components/ClearableInput.vue'
+import CategoryIcon from '@/components/CategoryIcon.vue'
+import HighlightText from '@/components/HighlightText.vue'
 import { fmtMoney } from '@/lib/currency'
+import { iconForCategory } from '@/lib/icons'
+import { withAlpha } from '@/lib/color'
 import {
   addDays,
   dayKey,
@@ -97,6 +102,65 @@ const rows = computed(() =>
 const emptyText = computed(() =>
   kw.value ? `找不到符合「${q.value.trim()}」的記錄` : '這個範圍沒有記錄',
 )
+
+/* ── 檢視方式：逐筆 / 依分類 ────────────────────────────── */
+const byCat = ref(false)
+/** 切成分類檢視後，把日期分組收掉，避免兩種分組互相打架 */
+const byCatOpen = ref<Set<string>>(new Set())
+
+interface CatGroup {
+  id: string
+  name: string
+  color: string
+  icon: string
+  exp: number
+  inc: number
+  list: TxRecord[]
+}
+
+/** 同一個分類的記錄集中在同一塊，依金額（支出＋收入）由多到少排 */
+const catGroups = computed<CatGroup[]>(() =>
+  [...rows.value.reduce((m, r) => {
+    const list = m.get(r.categoryId)
+    if (list) list.push(r)
+    else m.set(r.categoryId, [r])
+    return m
+  }, new Map<string, TxRecord[]>())]
+    .map(([id, list]) => {
+      const c = settings.category(id)
+      const sorted = [...list].sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1))
+      const sum = (t: TxRecord['type']) =>
+        sorted.reduce((s, r) => s + (r.type === t ? r.baseAmount : 0), 0)
+      return {
+        id,
+        name: catNameOf(id),
+        color: c?.color ?? '#8a857c',
+        icon: c ? iconForCategory(c) : iconForCategory({ id: '', name: '' }),
+        exp: sum('expense'),
+        inc: sum('income'),
+        list: sorted,
+      }
+    })
+    .sort((a, b) => b.exp + b.inc - (a.exp + a.inc)),
+)
+
+/** 每組預設只露前 3 筆，想看全部再展開（同一個分類可能幾十筆） */
+const CAT_PREVIEW = 3
+function catOpen(id: string): boolean {
+  return byCatOpen.value.has(id)
+}
+function toggleCatGroup(id: string) {
+  if (byCatOpen.value.has(id)) byCatOpen.value.delete(id)
+  else byCatOpen.value.add(id)
+}
+function visibleCat(row: CatGroup): TxRecord[] {
+  return catOpen(row.id) ? row.list : row.list.slice(0, CAT_PREVIEW)
+}
+
+// 換範圍／篩選／關鍵字時把展開狀態清掉，免得殘留不相關的分類
+watch([range, typeFilter, kw], () => {
+  byCatOpen.value.clear()
+})
 
 const expense = computed(() =>
   rows.value.filter((r) => r.type === 'expense').reduce((s, r) => s + r.baseAmount, 0),
@@ -221,9 +285,28 @@ function removeEditing(id: string) {
       <div class="rangebar__top">
         <div class="grp">
           <span class="grp__label">檢視</span>
+          <!-- .grp 是直向排列，所以按鈕與段控要自己包一列才排得成橫的 -->
+          <div class="grp__row">
+          <!-- 依分類檢視的切換鈕：擺在「依單位／自訂範圍」左邊，跟範圍設定分開（兩者互不影響） -->
+          <button
+            type="button"
+            class="bycat"
+            :class="{ 'is-on': byCat }"
+            :aria-pressed="byCat"
+            :title="byCat ? '改為逐筆列出' : '改為依分類分組'"
+            @click="byCat = !byCat"
+          >
+            <svg class="bycat__ic" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3 3 7.5l9 4.5 9-4.5L12 3Z" />
+              <path d="m3 12.4 9 4.5 9-4.5" />
+              <path d="m3 16.9 9 4.5 9-4.5" />
+            </svg>
+            分類
+          </button>
           <div class="seg2 rangebar__mode">
             <button :class="{ 'is-on': mode === 'unit' }" @click="mode = 'unit'">依單位</button>
             <button :class="{ 'is-on': mode === 'custom' }" @click="mode = 'custom'">自訂範圍</button>
+          </div>
           </div>
         </div>
 
@@ -298,7 +381,9 @@ function removeEditing(id: string) {
       </template>
     </div>
 
+    <!-- 逐筆（依日期分組） -->
     <RecordList
+      v-if="!byCat"
       :records="rows"
       :show-time="true"
       :empty-text="emptyText"
@@ -306,6 +391,55 @@ function removeEditing(id: string) {
       @edit="editingId = $event"
       @remove="removeEditing($event)"
     />
+
+    <!-- 依分類分組：每組顯示筆數與收支小計，預設只露前幾筆 -->
+    <template v-else>
+      <div v-if="!catGroups.length" class="empty card">
+        <p class="muted">{{ emptyText }}</p>
+      </div>
+
+      <div v-for="g in catGroups" :key="g.id" class="catgrp">
+        <div class="catgrp__head">
+          <span class="catgrp__ic" :style="{ '--c': g.color, '--bg': withAlpha(g.color, 0.14) }">
+            <CategoryIcon :name="g.icon" :size="15" :stroke="1.9" />
+          </span>
+          <span class="catgrp__name">
+            <HighlightText :text="g.name" :query="kw" />
+          </span>
+          <span class="catgrp__n tiny muted">{{ g.list.length }} 筆</span>
+          <span class="catgrp__rule"></span>
+          <span class="catgrp__amt">
+            <span v-if="g.inc > 0" class="catgrp__chip is-inc num">
+              +{{ fmtMoney(g.inc, settings.baseCurrency) }}
+            </span>
+            <span v-if="g.exp > 0" class="catgrp__chip is-exp num">
+              −{{ fmtMoney(g.exp, settings.baseCurrency) }}
+            </span>
+          </span>
+        </div>
+
+        <div class="card catgrp__card">
+          <template v-for="(r, i) in visibleCat(g)" :key="r.id">
+            <hr v-if="i > 0" class="divider" />
+            <RecordRow
+              :record="r"
+              :show-time="true"
+              :highlight="kw"
+              @edit="editingId = $event"
+              @remove="removeEditing($event)"
+            />
+          </template>
+        </div>
+
+        <button
+          v-if="g.list.length > CAT_PREVIEW"
+          class="btn btn--ghost btn--sm catgrp__more"
+          @click="toggleCatGroup(g.id)"
+        >
+          {{ catOpen(g.id) ? '收合' : `顯示全部 ${g.list.length} 筆` }}
+        </button>
+      </div>
+    </template>
 
     <RecordSheet
       :open="!!editing"
@@ -399,8 +533,126 @@ function removeEditing(id: string) {
   padding: 12px 14px 13px;
   margin-bottom: 14px;
 }
+/* 檢視那一組：切換鈕與「依單位／自訂範圍」橫向並排 */
+.grp__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.grp__row .rangebar__mode {
+  align-self: auto;
+}
 .rangebar__mode {
   align-self: flex-start;
+}
+/* 「分類」切換鈕：外觀對齊 .seg2 的外框（3px 內距 → 高 34px），
+   開啟時用墨綠淡底，一眼看得出目前是分類檢視 */
+.bycat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+.bycat:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.bycat.is-on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.bycat__ic {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ── 依分類分組 ────────────────────────────────────────── */
+.catgrp {
+  margin-bottom: 16px;
+}
+.catgrp__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px 8px;
+}
+.catgrp__ic {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 8px;
+  color: var(--c);
+  background: var(--bg);
+}
+.catgrp__name {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.catgrp__n {
+  flex: none;
+}
+.catgrp__rule {
+  flex: 1;
+  min-width: 10px;
+  height: 1px;
+  background: var(--line);
+}
+.catgrp__amt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+}
+.catgrp__chip {
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.catgrp__chip.is-exp {
+  color: var(--expense);
+}
+.catgrp__chip.is-inc {
+  color: var(--income);
+}
+.catgrp__card {
+  overflow: hidden;
+}
+.catgrp__more {
+  display: flex;
+  width: 100%;
+  margin: 8px auto 0;
+}
+/* 與 RecordList 的 .empty 一致（那份是 scoped，這裡要自己一份） */
+.empty {
+  padding: 30px 18px;
+  text-align: center;
 }
 .rangebar__top {
   display: flex;
