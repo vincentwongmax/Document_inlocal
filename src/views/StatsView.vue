@@ -192,6 +192,72 @@ const donutItems = computed(() =>
 )
 const donutTotal = computed(() => donutItems.value.reduce((s, i) => s + i.total, 0))
 
+/* ── 分類佔比：展開看子分類 ─────────────────────────────── */
+/** 已展開的分類 id（展開後才會列出它的子分類，多層就一直往下點） */
+const openCats = ref<Set<string>>(new Set())
+function toggleCat(id: string) {
+  if (openCats.value.has(id)) openCats.value.delete(id)
+  else openCats.value.add(id)
+}
+// 換收支類型時全部收合，避免上次的展開狀態對應到不存在的分類
+watch(donutType, () => openCats.value.clear())
+
+interface CatRow {
+  id: string
+  name: string
+  color: string
+  /** 分類圖示鍵值（從真正的 Category 查，子分類才會用自己的圖示） */
+  icon: string
+  total: number
+  ratio: number
+  depth: number
+  hasKids: boolean
+  open: boolean
+  /** 「未細分」那一列不是真的分類，不能點 */
+  pseudo?: boolean
+}
+
+/** 把樹攤平成一個陣列，depth 用來縮排；沒展開的分支不會出現 */
+const donutRows = computed<CatRow[]>(() => {
+  const out: CatRow[] = []
+  const walk = (list: typeof donutItems.value, depth: number) => {
+    for (const n of list) {
+      const hasKids = n.children.length > 0
+      const open = hasKids && openCats.value.has(n.id)
+      out.push({
+        id: n.id,
+        name: n.name,
+        color: n.color,
+        icon: iconForCategory(settings.category(n.id) ?? { id: n.id, name: n.name }),
+        total: n.total,
+        ratio: n.parentRatio,
+        depth,
+        hasKids,
+        open,
+      })
+      if (!open) continue
+      walk(n.children, depth + 1)
+      // 大類自己身上也有金額時，補一列「未細分」在最後，數字才對得起來
+      if (n.own > 0) {
+        out.push({
+          id: n.id + '__own',
+          name: '未細分',
+          color: n.color,
+          icon: '',
+          total: n.own,
+          ratio: n.own / (n.total || 1),
+          depth: depth + 1,
+          hasKids: false,
+          open: false,
+          pseudo: true,
+        })
+      }
+    }
+  }
+  walk(donutItems.value, 0)
+  return out
+})
+
 const dailyPoints = computed(() => st.daily.value)
 const dailyTitle = computed(() => (st.granularity.value === 'month' ? '每月收支' : '每日收支'))
 
@@ -351,16 +417,45 @@ const mom = computed(() => st.momChange.value)
           </div>
 
           <ul class="cats">
-            <li v-for="c in donutItems" :key="c.id" class="cat">
-              <span class="cat__ic" :style="{ '--c': c.color, '--bg': withAlpha(c.color, 0.14) }">
-                <CategoryIcon :name="iconForCategory(c)" :size="14" :stroke="1.9" />
+            <li
+              v-for="r in donutRows"
+              :key="r.id"
+              class="cat"
+              :class="{ 'is-sub': r.depth > 0, 'is-pseudo': r.pseudo }"
+              :style="{ paddingLeft: r.depth * 14 + 'px' }"
+            >
+              <!-- 有子分類才給展開鈕；沒有就用等寬的空白維持對齊 -->
+              <button
+                v-if="r.hasKids"
+                type="button"
+                class="cat__tw"
+                :aria-expanded="r.open"
+                :aria-label="`${r.open ? '收合' : '展開'}${r.name}的子分類`"
+                @click="toggleCat(r.id)"
+              >
+                <svg class="cat__chev" :class="{ 'is-open': r.open }" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 6l6 6-6 6" />
+                </svg>
+              </button>
+              <span v-else class="cat__tw cat__tw--empty" aria-hidden="true" />
+
+              <span
+                class="cat__ic"
+                :class="{ 'cat__ic--pseudo': r.pseudo }"
+                :style="{ '--c': r.color, '--bg': withAlpha(r.color, 0.14) }"
+              >
+                <CategoryIcon v-if="!r.pseudo" :name="r.icon" :size="14" :stroke="1.9" />
               </span>
-              <span class="cat__name">{{ c.name }}</span>
+
+              <span class="cat__name">{{ r.name }}</span>
               <span class="cat__bar">
-                <span class="cat__fill" :style="{ width: `${Math.max(2, c.ratio * 100)}%`, background: c.color }" />
+                <span
+                  class="cat__fill"
+                  :style="{ width: `${Math.max(2, r.ratio * 100)}%`, background: r.color }"
+                />
               </span>
-              <span class="cat__val num">{{ fmtMoney(c.total, base) }}</span>
-              <span class="cat__pct num tiny muted">{{ (c.ratio * 100).toFixed(0) }}%</span>
+              <span class="cat__val num">{{ fmtMoney(r.total, base) }}</span>
+              <span class="cat__pct num tiny muted">{{ (r.ratio * 100).toFixed(0) }}%</span>
             </li>
           </ul>
         </div>
@@ -598,9 +693,48 @@ const mom = computed(() => st.momChange.value)
 }
 .cat {
   display: grid;
-  grid-template-columns: 22px 84px 1fr auto 34px;
+  grid-template-columns: 16px 22px 78px 1fr auto 34px;
   align-items: center;
   gap: 9px;
+}
+/* 展開／收合子分類的小箭頭；沒有子分類時用等寬空白維持對齊 */
+.cat__tw {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-3);
+}
+.cat__tw:hover {
+  background: var(--surface-3);
+  color: var(--accent);
+}
+.cat__tw--empty {
+  pointer-events: none;
+}
+.cat__chev {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.15s;
+}
+.cat__chev.is-open {
+  transform: rotate(90deg);
+}
+.cat.is-pseudo .cat__name {
+  color: var(--text-3);
+  font-weight: 500;
+}
+.cat__ic--pseudo {
+  background: var(--surface-3);
 }
 .cat__ic {
   display: grid;
@@ -708,9 +842,10 @@ const mom = computed(() => st.momChange.value)
     flex: 1;
   }
   /* 第一欄要跟 .cat__ic 的尺寸一致（22px）；寫 9px 的話 22px 的圖示會溢出，
-     右緣壓到分類名稱上 4px（同一行佈局才有的問題，窄版走上方的 22px 規則） */
+     右緣壓到分類名稱上 4px（同一行佈局才有的問題，窄版走上方的 22px 規則）
+     最前面 16px 是子分類的展開箭頭 */
   .cat {
-    grid-template-columns: 22px 100px 1fr auto 40px;
+    grid-template-columns: 16px 22px 92px 1fr auto 40px;
   }
   .sums {
     gap: 14px;

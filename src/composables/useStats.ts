@@ -7,9 +7,16 @@ export interface CatStat {
   id: string
   name: string
   color: string
+  /** 含所有子分類的總額 */
   total: number
+  /** 只算直接掛在自己身上的金額（不含子分類） */
+  own: number
   count: number
+  /** 佔全體的比例 */
   ratio: number
+  /** 佔上一層的比例（頂層等於 ratio）；展開子分類時用這個畫長條與百分比 */
+  parentRatio: number
+  children: CatStat[]
 }
 
 export interface DateRange {
@@ -46,29 +53,77 @@ export function useStats(range: Ref<DateRange>) {
   )
   const balance = computed(() => income.value - expense.value)
 
+  /**
+   * 分類統計（含子分類）。
+   * 每個節點的 total 會把自己底下所有子分類的金額都算進來，
+   * 所以頂層那一列就是「餐飲全部多少」，展開才看早餐／午餐／晚餐各多少。
+   */
   function byCategory(type: 'expense' | 'income'): CatStat[] {
-    const map = new Map<string, { total: number; count: number }>()
+    // 先算出「直接掛在某個分類身上」的金額
+    const own = new Map<string, { total: number; count: number }>()
     for (const r of rows.value) {
       if (r.type !== type) continue
-      const cur = map.get(r.categoryId) ?? { total: 0, count: 0 }
+      const cur = own.get(r.categoryId) ?? { total: 0, count: 0 }
       cur.total += r.baseAmount
       cur.count += 1
-      map.set(r.categoryId, cur)
+      own.set(r.categoryId, cur)
     }
-    const total = [...map.values()].reduce((s, v) => s + v.total, 0) || 1
-    return [...map.entries()]
-      .map(([id, v]) => {
-        const c = settings.category(id)
-        return {
-          id,
-          name: c?.name ?? '未分類',
-          color: c?.color ?? '#8a857c',
-          total: v.total,
-          count: v.count,
-          ratio: v.total / total,
-        }
+    const grand = [...own.values()].reduce((s, v) => s + v.total, 0) || 1
+    const used = new Set<string>()
+
+    const build = (parentId: string | null): CatStat[] => {
+      const out: CatStat[] = []
+      for (const c of settings.childrenOf(parentId)) {
+        const o = own.get(c.id) ?? { total: 0, count: 0 }
+        const kids = build(c.id)
+        const total = o.total + kids.reduce((s, k) => s + k.total, 0)
+        const count = o.count + kids.reduce((s, k) => s + k.count, 0)
+        if (total <= 0 && !kids.length) continue
+        used.add(c.id)
+        out.push({
+          id: c.id,
+          name: c.name,
+          color: c.color,
+          total,
+          own: o.total,
+          count,
+          ratio: total / grand,
+          parentRatio: 0,
+          children: kids,
+        })
+      }
+      return out.sort((a, b) => b.total - a.total)
+    }
+
+    const top = build(null)
+
+    // 已刪除（封存）或查不到的分類：補在最上層，金額才不會憑空消失
+    for (const [id, v] of own) {
+      if (used.has(id)) continue
+      const c = settings.category(id)
+      top.push({
+        id,
+        name: c?.name ?? '未分類',
+        color: c?.color ?? '#8a857c',
+        total: v.total,
+        own: v.total,
+        count: v.count,
+        ratio: v.total / grand,
+        parentRatio: 0,
+        children: [],
       })
-      .sort((a, b) => b.total - a.total)
+    }
+    top.sort((a, b) => b.total - a.total)
+
+    // 由上往下補上「佔上一層」的比例
+    const fill = (list: CatStat[], parentTotal: number) => {
+      for (const n of list) {
+        n.parentRatio = n.total / (parentTotal > 0 ? parentTotal : 1)
+        fill(n.children, n.total)
+      }
+    }
+    fill(top, grand)
+    return top
   }
 
   const expenseByCat = computed(() => byCategory('expense'))
