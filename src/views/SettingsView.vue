@@ -13,7 +13,7 @@ import { buildExport, downloadJson, parseImport, restoreImages } from '@/lib/exp
 import { usageBytes } from '@/lib/storage'
 import { clearImages, listImageIds } from '@/lib/imageDb'
 import { offlineReady, updateSW } from '@/lib/pwa'
-import type { Category, Settings, TxType } from '@/types'
+import type { Settings, TxType } from '@/types'
 
 const settings = useSettingsStore()
 const records = useRecordsStore()
@@ -91,61 +91,12 @@ const grouped = computed(() => [
   { type: 'income' as TxType, label: '收入分類', list: settings.state.categories.filter((c) => c.type === 'income') },
 ])
 
-/** 主頁常用分類：右側「詳細」鈕在同一頁展開管理區（改名／刪除／新增） */
+/** 主頁常用分類：右側「＋ 新增」開啟新增分類彈窗 */
 const showAddCat = ref(false)
-const showCatDetail = ref(false)
 function onAddCat(p: { name: string; color: string; type: TxType; icon: string }) {
   settings.addCategory(p.name, p.type, p.color, p.icon)
   showAddCat.value = false
   toast.push('已新增分類', 'ok')
-}
-
-/** 詳細區只列未封存的分類：封存等同已刪除，不該再被編輯 */
-const groupedActive = computed(() => [
-  {
-    type: 'expense' as TxType,
-    label: '支出分類',
-    list: settings.categories.filter((c) => c.type === 'expense'),
-  },
-  {
-    type: 'income' as TxType,
-    label: '收入分類',
-    list: settings.categories.filter((c) => c.type === 'income'),
-  },
-])
-
-/** Enter 時離開輸入框 → 觸發 change 寫回，跟「點別處」行為一致 */
-function blurIt(e: Event) {
-  ;(e.target as HTMLInputElement).blur()
-}
-
-/** 改名：離開輸入框或按 Enter 才寫回，避免打到一半就動到資料 */
-function renameCat(c: Category, e: Event) {
-  const el = e.target as HTMLInputElement
-  const next = el.value.trim()
-  if (!next || next === c.name) {
-    el.value = c.name // 空值或沒變動就還原顯示
-    return
-  }
-  settings.updateCategory(c.id, { name: next })
-  toast.push(`已改名為「${next}」`, 'ok')
-}
-
-/** 刪除：內建分類擋在 UI 層，其餘走確認對話框 */
-const pendingDelete = ref<Category | null>(null)
-function askDelete(c: Category) {
-  if (c.builtin) {
-    toast.push('內建分類不能刪除', 'warn')
-    return
-  }
-  pendingDelete.value = c
-}
-function doDelete() {
-  const c = pendingDelete.value
-  pendingDelete.value = null
-  if (!c) return
-  if (settings.removeCategory(c.id)) toast.push(`已刪除「${c.name}」`, 'info')
-  else toast.push('內建分類不能刪除', 'warn')
 }
 
 /* ── 資料管理 ───────────────────────────────────────────── */
@@ -435,18 +386,7 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
         <div class="panel__hd">
           <span class="panel__label">主頁常用分類</span>
           <span class="tiny muted panel__meta">已選 {{ settings.favoriteCategories.length }} 個</span>
-          <button
-            class="btn btn--sm btn--detail"
-            type="button"
-            :class="{ 'is-on': showCatDetail }"
-            :aria-expanded="showCatDetail"
-            @click="showCatDetail = !showCatDetail"
-          >
-            詳細
-            <svg class="det__caret" :class="{ 'is-open': showCatDetail }" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </button>
+          <button class="btn btn--sm" type="button" @click="showAddCat = true">＋ 新增</button>
         </div>
         <p class="tiny muted favs__hint">
           勾選幾個，主頁就只顯示那幾個，其餘收進「更多」；沒有勾選任何一個時，主頁顯示全部分類。
@@ -466,50 +406,6 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
               </span>
               <span class="catchip__name">{{ c.name }}</span>
             </button>
-          </div>
-        </div>
-
-        <!-- 詳細：在同一頁展開，直接改名或刪除分類（不另開視窗） -->
-        <div v-if="showCatDetail" class="detail">
-          <p class="tiny muted detail__hint">
-            改名字後按 Enter 或點別處就儲存；自訂分類可刪除，內建分類只能改名。
-          </p>
-          <div v-for="g in groupedActive" :key="'det-' + g.type" class="catgroup">
-            <span class="tiny muted catgroup__label">{{ g.label }}</span>
-            <ul class="crows">
-              <li v-for="c in g.list" :key="c.id" class="crow">
-                <span
-                  class="crow__ic"
-                  :style="{ '--c': c.color, '--bg': withAlpha(c.color, 0.14) }"
-                  aria-hidden="true"
-                >
-                  <CategoryIcon :name="iconForCategory(c)" :size="15" :stroke="1.9" />
-                </span>
-                <input
-                  class="field crow__name"
-                  :value="c.name"
-                  maxlength="12"
-                  :aria-label="`分類名稱：${c.name}`"
-                  @change="renameCat(c, $event)"
-                  @keyup.enter="blurIt"
-                />
-                <button
-                  class="crow__del"
-                  type="button"
-                  :disabled="c.builtin"
-                  :title="c.builtin ? '內建分類不能刪除' : `刪除「${c.name}」`"
-                  :aria-label="c.builtin ? '內建分類不能刪除' : `刪除「${c.name}」`"
-                  @click="askDelete(c)"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M4.8 7.2h14.4M9.6 7.2V5.4h4.8v1.8M6.8 7.2l.9 11.1a1.8 1.8 0 0 0 1.8 1.7h5a1.8 1.8 0 0 0 1.8-1.7l.9-11.1" />
-                  </svg>
-                </button>
-              </li>
-            </ul>
-          </div>
-          <div class="detail__foot">
-            <button class="btn btn--sm" type="button" @click="showAddCat = true">＋ 新增分類</button>
           </div>
         </div>
       </div>
@@ -625,17 +521,6 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
       · 1 {{ settings.inputCurrency }} ≈
       {{ fmtMoney(settings.rate(settings.inputCurrency), settings.baseCurrency) }}
     </p>
-
-    <ConfirmDialog
-      :open="!!pendingDelete"
-      :title="`刪除「${pendingDelete?.name ?? ''}」？`"
-      message="使用過此分類的記錄會保留，只是分類被封存、不再出現在選單裡。"
-      confirm-text="刪除"
-      cancel-text="取消"
-      danger
-      @confirm="doDelete"
-      @cancel="pendingDelete = null"
-    />
 
     <ConfirmDialog
       :open="!!pendingImport"
@@ -980,100 +865,6 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
 }
 .favs__hint {
   margin: 0 0 11px;
-}
-
-/* ── 分類詳細區（同一頁原地展開：改名 / 刪除） ─────────── */
-.btn--detail {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.btn--detail.is-on {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.det__caret {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transition: transform 0.16s;
-}
-.det__caret.is-open {
-  transform: rotate(180deg);
-}
-.detail {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px dashed var(--line-strong);
-}
-.detail__hint {
-  margin: 0 0 11px;
-}
-.crows {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.crow {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-.crow__ic {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  color: var(--c);
-  background: var(--bg);
-}
-.crow__name {
-  flex: 1;
-  min-width: 0;
-  height: 36px;
-}
-.crow__del {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  border: 1px solid var(--line-strong);
-  background: var(--surface);
-  color: var(--expense);
-}
-.crow__del svg {
-  width: 17px;
-  height: 17px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.crow__del:hover:not(:disabled) {
-  background: var(--expense-soft);
-  border-color: var(--expense);
-}
-.crow__del:disabled {
-  color: var(--text-3);
-  border-color: var(--line);
-  background: var(--surface-3);
-  cursor: default;
-}
-.detail__foot {
-  margin-top: 12px;
 }
 
 /* ── 資料 ─────────────────────────────────────────────── */

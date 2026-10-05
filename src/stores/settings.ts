@@ -131,9 +131,6 @@ export const useSettingsStore = defineStore('settings', () => {
     if (!c || c.builtin) return false
     // 已被使用的自訂分類改為封存，避免記錄指向空分類
     c.archived = true
-    // 同時從常用分類移除，否則常用清單會留下一個看不見的分類
-    const i = state.value.favoriteCategories.indexOf(id)
-    if (i >= 0) state.value.favoriteCategories.splice(i, 1)
     return true
   }
 
