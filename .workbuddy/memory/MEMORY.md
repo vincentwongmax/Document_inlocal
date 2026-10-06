@@ -181,10 +181,15 @@ App 是 PWA，`registerType: 'autoUpdate'`，Service Worker 會預快取整個 d
   - CI：`.github/workflows/deploy.yml` → `npm ci` → `npm run build` →
     把 `dist/` 內容 `git push -f` 到 `gh-pages`（只需 `contents: write`）
   - 手動：`GH_TOKEN=xxx npm run deploy`（`scripts/deploy-gh-pages.mjs`），
-    **建置到 `.deploy/`、不動 `dist/`**，所以本機預覽不受影響
+    **建置到 `os.tmpdir()` 下的全新目錄、不動 `dist/`**，所以本機預覽不受影響
+    - ⚠ 不要改回建到專案內的 `.deploy/`：那個目錄會殘留上一次的 `.git`，
+      Vite 清目錄時會被沙箱攔下而失敗（`prepareOutDir` 丟錯）
   - 曾用 `upload-pages-artifact` + `deploy-pages`（Pages 來源 = GitHub Actions），
     但 2026-10-06 GitHub Actions 服務降級（degraded_performance）時整批卡在佇列，
     使用者要求改用 gh-pages，這條路徑最短、也最好排查
+  - ⚠ **Pages 的 legacy 建置很慢但不一定是壞的**：狀態會長時間停在 `building`、
+    `duration: 0`、`updated_at` 不動（實測 6.5 分鐘才 `built`，之後站台 200）。
+    別因為看起來卡住就急著砍設定（`DELETE /pages` 會被回 422 "not allowed"）
 - ⚠ **絕對不要用 Pages 的 base 去蓋掉 `dist/`**：`npm run preview`（localhost:4173）服務的
   就是 `dist/`，蓋掉之後瀏覽器會去找 `/＜repo＞/assets/*.js` 而**白畫面**（踩過一次）。
   驗證 Pages 用的 base 請用 `.smoke/verify-base.mjs`（輸出到 `dist/`，跑完記得再
