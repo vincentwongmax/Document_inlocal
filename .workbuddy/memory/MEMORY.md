@@ -173,6 +173,22 @@ App 是 PWA，`registerType: 'autoUpdate'`，Service Worker 會預快取整個 d
   不用 RegExp、不分大小寫、保留原文大小寫；多根 fragment 輸出不影響外層 ellipsis。
   目前用於 `RecordRow` 的分類名與備註（`highlight` prop 由 RecordsView 搜尋框傳入）
 
+## 記帳頁版面（2026-10-07 起）
+
+- **金額欄是按鈕**：記帳頁只留顯示金額的欄位，點一下才開計算機子頁面
+  （`src/components/CalcSheet.vue`，置中卡片彈窗）。金額狀態在 HomeView，
+  CalcSheet 只負責顯示＋轉發按鍵，關掉再開輸入不會不見
+- 子頁面**不滑動**、開啟時**鎖背景捲動**：在 `<html>` 掛 `is-locked`
+  （全域樣式在 `src/style.css`：`html.is-locked, html.is-locked body { overflow: hidden }`）；
+  卡片 `max-height + overflow hidden`，按鍵 `clamp(42px, 8vh, 54px)` 矮螢幕自動縮小
+- 「常用金額」快捷列已移除（`quickAmounts`／`setAmount` 都刪了）
+- 實體鍵盤：計算機開著時 Enter／Esc 只關計算機，不送出、不清空
+- ⚠ Keypad 的 `＋ − × ÷ ( )` 要按左下角計算機鍵（`.key--tool`）展開才有；`=` 是基本鍵
+- 驗證腳本：`.smoke/v70.mjs`（40 assertions）
+- ⚠ smoke 測試需要 `puppeteer-core`，裝在
+  `C:\Users\user\.workbuddy\binaries\node\workspace\`（該目錄曾整個被清空，
+  不見了就 `npm install puppeteer-core` 補回去）
+
 ## 部署（GitHub Pages）
 
 - Repo：**`vincentwongmax/Document_inlocal`**（公開、default branch `main`）
