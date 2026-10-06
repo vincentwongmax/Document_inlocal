@@ -3,7 +3,24 @@ import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
 import { fileURLToPath, URL } from 'node:url'
 
+/**
+ * 部署到 GitHub Pages 時的 base（資源路徑前綴）：
+ *  - 專案站台 `https://<user>.github.io/<repo>/` → `/<repo>/`
+ *  - 使用者站台 `<user>.github.io` → `/`
+ * 在 GitHub Actions 裡由 GITHUB_REPOSITORY 自動判斷；本機開發／預覽一律 `/`，
+ * 也可用環境變數 VITE_BASE 手動覆寫（例如部署到自訂網域時給 `/`）。
+ */
+function resolveBase(): string {
+  if (process.env.VITE_BASE) return process.env.VITE_BASE
+  const repo = process.env.GITHUB_REPOSITORY?.split('/')[1]
+  if (process.env.GITHUB_ACTIONS && repo) {
+    return repo.endsWith('.github.io') ? '/' : `/${repo}/`
+  }
+  return '/'
+}
+
 export default defineConfig({
+  base: resolveBase(),
   plugins: [
     vue(),
     VitePWA({
@@ -35,7 +52,9 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 32 * 1024 * 1024,
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,
-        navigateFallbackDenylist: [/^\/tessdata\//, /^\/tesseract-core\//],
+        // 不比對開頭的 `/`：部署在 GitHub Pages 子路徑時 pathname 會是
+        // `/＜repo＞/tessdata/...`，錨定 `^\/` 會失效而讓語言包被當成導覽請求
+        navigateFallbackDenylist: [/\/tessdata\//, /\/tesseract-core\//],
       },
       devOptions: { enabled: false },
     }),

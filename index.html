@@ -17,7 +17,8 @@
     />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- manifest 的 <link> 由 vite-plugin-pwa 注入，它會自動帶上正確的 base
+         （GitHub Pages 子路徑部署才不會指到 404） -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   </head>
