@@ -175,11 +175,22 @@ App 是 PWA，`registerType: 'autoUpdate'`，Service Worker 會預快取整個 d
 
 ## 部署（GitHub Pages）
 
-- Repo：**`vincentwongmax/Document_inlocal`**（公開、空 repo、default branch `main`）
+- Repo：**`vincentwongmax/Document_inlocal`**（公開、default branch `main`）
   → 線上網址 `https://vincentwongmax.github.io/Document_inlocal/`
-- 推 `main` 就自動部署：`.github/workflows/deploy.yml`（`npm ci` → `npm run build` →
-  `upload-pages-artifact` → `deploy-pages`）。`configure-pages@v5` 帶 `enablement: true`，
-  首次會自動把 Pages 來源設成 GitHub Actions
+- **部署走 `gh-pages` 分支**（Pages 來源 = Deploy from a branch → `gh-pages` / `/`）：
+  - CI：`.github/workflows/deploy.yml` → `npm ci` → `npm run build` →
+    把 `dist/` 內容 `git push -f` 到 `gh-pages`（只需 `contents: write`）
+  - 手動：`GH_TOKEN=xxx npm run deploy`（`scripts/deploy-gh-pages.mjs`），
+    **建置到 `.deploy/`、不動 `dist/`**，所以本機預覽不受影響
+  - 曾用 `upload-pages-artifact` + `deploy-pages`（Pages 來源 = GitHub Actions），
+    但 2026-10-06 GitHub Actions 服務降級（degraded_performance）時整批卡在佇列，
+    使用者要求改用 gh-pages，這條路徑最短、也最好排查
+- ⚠ **絕對不要用 Pages 的 base 去蓋掉 `dist/`**：`npm run preview`（localhost:4173）服務的
+  就是 `dist/`，蓋掉之後瀏覽器會去找 `/＜repo＞/assets/*.js` 而**白畫面**（踩過一次）。
+  驗證 Pages 用的 base 請用 `.smoke/verify-base.mjs`（輸出到 `dist/`，跑完記得再
+  `npm run build` 還原），正式部署請用 `scripts/deploy-gh-pages.mjs`（輸出到 `.deploy/`）
+- `scripts/deploy-gh-pages.mjs` 的兩個坑：`run()` 走 `shell: true`，
+  **參數含空白會被拆開**（commit message 別放空白）；印指令時要**把 token 遮掉**
 - **base 由 `vite.config.ts` 的 `resolveBase()` 自動判斷**（依 `GITHUB_REPOSITORY`：
   `.github.io` 結尾 → `/`，否則 `/<repo>/`；本機 `/`；可用 `VITE_BASE` 覆寫）。
   **不要在 workflow 裡設 base**，也不要為不同部署位置改 `vite.config.ts`
