@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/composables/useToast'
-import Keypad from '@/components/Keypad.vue'
+import CalcSheet from '@/components/CalcSheet.vue'
 import CategoryPicker from '@/components/CategoryPicker.vue'
 import ClearableInput from '@/components/ClearableInput.vue'
 import DateTimeField from '@/components/DateTimeField.vue'
@@ -75,26 +75,11 @@ watch(
 )
 
 /* ── 鍵盤 ───────────────────────────────────────────────── */
+/** 計算機子頁面是否開啟（點金額欄打開） */
+const keypadOpen = ref(false)
+
 function press(k: string) {
   calc.value = k === '=' ? equals(calc.value) : input(calc.value, k)
-}
-
-/** 常用金額（歷史出現次數最多的幾個整數） */
-const quickAmounts = computed(() => {
-  const m = new Map<number, number>()
-  for (const r of records.records) {
-    if (r.type !== type.value) continue
-    const v = Math.round(r.amount)
-    if (v > 0) m.set(v, (m.get(v) ?? 0) + 1)
-  }
-  return [...m.entries()]
-    .sort((a, b) => b[1] - a[1] || b[0] - a[0])
-    .slice(0, 4)
-    .map(([v]) => v)
-})
-
-function setAmount(v: number) {
-  calc.value = { tokens: [{ t: 'num', v: String(v) }], done: true }
 }
 
 function onKey(e: KeyboardEvent) {
@@ -119,7 +104,9 @@ function onKey(e: KeyboardEvent) {
     return
   }
   if (e.key === 'Enter') {
-    submit()
+    // 計算機開著時 Enter 只是關掉它，避免手滑直接送出記錄
+    if (keypadOpen.value) keypadOpen.value = false
+    else submit()
     e.preventDefault()
     return
   }
@@ -129,7 +116,9 @@ function onKey(e: KeyboardEvent) {
     return
   }
   if (e.key === 'Escape') {
-    calc.value = initCalc()
+    // 計算機開著時 Esc 關計算機，沒有才清空金額
+    if (keypadOpen.value) keypadOpen.value = false
+    else calc.value = initCalc()
     e.preventDefault()
   }
 }
@@ -234,29 +223,34 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <em class="tiny muted">可一次選多張</em>
         </button>
 
-        <div v-if="quickAmounts.length" class="quick">
-          <button
-            v-for="v in quickAmounts"
-            :key="v"
-            class="quick__btn num"
-            @click="setAmount(v)"
-          >
-            {{ v }}
-          </button>
-        </div>
-
-          <div class="amount">
-          <div class="amount__expr num">{{ expr || '\u00a0' }}</div>
-          <div class="amount__main">
-            <span class="amount__sym">{{ currency(curCode).symbol }}</span>
-            <span class="amount__num num" :class="{ 'is-long': displayLong }">{{ display }}</span>
-          </div>
-          <div v-if="converted && amount > 0" class="amount__conv num tiny">
-            ≈ {{ fmtMoney(convertedAmount, settings.baseCurrency) }}
-          </div>
-        </div>
-
-        <Keypad class="pad__keypad" @press="press" />
+        <!-- 金額：只留顯示欄位，點一下開計算機子頁面 -->
+        <button
+          type="button"
+          class="amount"
+          :class="{ 'is-empty': !calc.tokens.length }"
+          @click="keypadOpen = true"
+        >
+          <span class="amount__hint">
+            <svg class="amount__ic" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="4.7" y="2.7" width="14.6" height="18.6" rx="2.8" />
+              <path d="M8.2 7h7.6" />
+              <path d="M8.6 11.4h.01M12 11.4h.01M15.4 11.4h.01" />
+              <path d="M8.6 14.6h.01M12 14.6h.01M15.4 14.6h.01" />
+              <path d="M8.6 17.8h3.6" />
+            </svg>
+            <em class="tiny">{{ calc.tokens.length ? '點擊修改' : '點擊輸入金額' }}</em>
+          </span>
+          <span class="amount__val">
+            <span class="amount__expr num">{{ expr || '\u00a0' }}</span>
+            <span class="amount__main">
+              <span class="amount__sym">{{ currency(curCode).symbol }}</span>
+              <span class="amount__num num" :class="{ 'is-long': displayLong }">{{ display }}</span>
+            </span>
+            <span v-if="converted && amount > 0" class="amount__conv num tiny">
+              ≈ {{ fmtMoney(convertedAmount, settings.baseCurrency) }}
+            </span>
+          </span>
+        </button>
 
         <div class="pad__meta">
           <div class="catbox">
@@ -272,6 +266,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </div>
       </section>
     </div>
+
+    <CalcSheet
+      :open="keypadOpen"
+      :calc="calc"
+      :symbol="currency(curCode).symbol"
+      :cur-code="curCode"
+      @press="press"
+      @close="keypadOpen = false"
+    />
 
     <ReviewSheet />
   </div>
@@ -373,9 +376,53 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   color: var(--text-2);
 }
 
+/* 金額欄本身是一顆按鈕：點一下開計算機子頁面 */
 .amount {
+  width: 100%;
   margin: 16px 0 14px;
-  text-align: right;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.amount:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.amount__hint {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  color: var(--text-3);
+}
+.amount__hint em {
+  font-style: normal;
+  font-size: 12px;
+}
+.amount__ic {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.amount__val {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+  flex: 1;
 }
 .amount__expr {
   min-height: 18px;
@@ -384,6 +431,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 100%;
 }
 .amount__main {
   display: flex;
@@ -391,13 +439,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   justify-content: flex-end;
   gap: 6px;
   margin-top: 2px;
+  max-width: 100%;
 }
 .amount__sym {
-  font-size: 17px;
+  font-size: 15px;
   color: var(--text-2);
 }
 .amount__num {
-  font-size: 40px;
+  font-size: 32px;
   font-weight: 600;
   line-height: 1.1;
   letter-spacing: -0.03em;
@@ -406,17 +455,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   max-width: 100%;
 }
 .amount__num.is-long {
-  font-size: 24px;
+  font-size: 22px;
   letter-spacing: -0.01em;
   white-space: nowrap;
+}
+/* 還沒輸入時把 0 壓淡，讓「點擊輸入金額」是主視覺 */
+.amount.is-empty .amount__num {
+  color: var(--text-3);
+}
+.amount.is-empty .amount__sym {
+  color: var(--text-3);
 }
 .amount__conv {
   color: var(--accent);
   margin-top: 2px;
-}
-
-.pad__keypad {
-  margin-bottom: 14px;
 }
 .pad__meta {
   display: flex;
@@ -449,29 +501,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .pad__row .dt {
   grid-column: 1 / -1;
   min-width: 0;
-}
-.quick {
-  display: flex;
-  gap: 6px;
-  margin-top: 12px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-}
-.quick__btn {
-  flex: none;
-  height: 30px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--surface-2);
-  font-size: 13px;
-  font-weight: 550;
-  color: var(--text-2);
-}
-.quick__btn:hover {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
 }
 .btn--save {
   min-width: 96px;

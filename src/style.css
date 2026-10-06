@@ -75,6 +75,13 @@ body {
   overscroll-behavior-y: none;
 }
 
+/* 開啟彈窗（如計算機子頁面）時鎖住背景捲動：
+   捲動容器是 documentElement，所以要連 body 一起關掉 overflow */
+html.is-locked,
+html.is-locked body {
+  overflow: hidden;
+}
+
 #app {
   min-height: 100%;
 }
