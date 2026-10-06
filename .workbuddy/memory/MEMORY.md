@@ -172,3 +172,30 @@ App 是 PWA，`registerType: 'autoUpdate'`，Service Worker 會預快取整個 d
 - `HighlightText.vue`：把文字按關鍵字切成片段、命中處包 `<mark class="hl">`（黃底 `--hl: #ffe066`）。
   不用 RegExp、不分大小寫、保留原文大小寫；多根 fragment 輸出不影響外層 ellipsis。
   目前用於 `RecordRow` 的分類名與備註（`highlight` prop 由 RecordsView 搜尋框傳入）
+
+## 部署（GitHub Pages）
+
+- Repo：**`vincentwongmax/Document_inlocal`**（公開、空 repo、default branch `main`）
+  → 線上網址 `https://vincentwongmax.github.io/Document_inlocal/`
+- 推 `main` 就自動部署：`.github/workflows/deploy.yml`（`npm ci` → `npm run build` →
+  `upload-pages-artifact` → `deploy-pages`）。`configure-pages@v5` 帶 `enablement: true`，
+  首次會自動把 Pages 來源設成 GitHub Actions
+- **base 由 `vite.config.ts` 的 `resolveBase()` 自動判斷**（依 `GITHUB_REPOSITORY`：
+  `.github.io` 結尾 → `/`，否則 `/<repo>/`；本機 `/`；可用 `VITE_BASE` 覆寫）。
+  **不要在 workflow 裡設 base**，也不要為不同部署位置改 `vite.config.ts`
+- 子路徑部署的兩個坑（都已修）：
+  - 資源路徑：Vite **只改寫「`public/` 裡真的存在」的絕對路徑**（`/favicon.svg`、
+    `/icons/*.png` 會變 `${base}...`）。**manifest 的 `<link>` 不要自己寫**
+    （不在 public/ 不會被改寫 → 子路徑 404），交給 `vite-plugin-pwa` 注入，它會帶 base
+  - `navigateFallbackDenylist` **不要錨定開頭的 `/`**：Workbox 比對的是含 base 的
+    `url.pathname`，`^\/tessdata\/` 在 `/<repo>/` 下會失效
+- 用 **hash routing**，所以不需要 `404.html`；`public/.nojekyll` 是給切回分支部署時用的保險
+- `public/tessdata`、`public/tesseract-core`（約 19MB）**沒進版控**，由 build 的
+  `prepare:assets` 下載 → **CI runner 要有外網**；`scripts/clean.mjs` 非 Windows 走 `rmSync`
+- ⚠ **Git Bash 會改寫「像 POSIX 絕對路徑」的參數與環境變數值**成 Windows 路徑
+  （`VITE_BASE=/mop-ledger/` → `C:\...\PortableGit\...\mop-ledger\`）。
+  要驗證 base 就寫成腳本內預設值、由 Node 設 `env` 再 spawn（`.smoke/verify-base.mjs`），
+  **呼叫時不要帶參數**；否則 `dist/index.html` 會是假結果。
+  `MSYS_NO_PATHCONV=1` 不保證有效
+- 這台機器**沒有任何 GitHub 憑證**（無 `gh`、`~/.ssh` 空、無 `~/.gitconfig`、
+  `GIT_TERMINAL_PROMPT=0`）→ 要推之前必須先跟使用者拿 PAT 或裝 gh 登入
