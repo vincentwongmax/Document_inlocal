@@ -8,6 +8,7 @@
     "build": "npm run clean && npm run prepare:assets && vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
+    "deploy": "node scripts/deploy-gh-pages.mjs",
     "prepare:assets": "node scripts/fetch-tessdata.mjs",
     "clean": "node scripts/clean.mjs"
   },

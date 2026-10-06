@@ -17,3 +17,4 @@ public/tesseract-core/
 !.env.example
 
 .smoke/
+.deploy/
