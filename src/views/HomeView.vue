@@ -267,8 +267,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             />
           </div>
           <ClearableInput v-model="note" placeholder="備註（可留空）" :maxlength="80" />
+          <!-- 日期跟備註同層（同一個 flex 直欄），寬度永遠一致，
+               不會被下面「清空／記錄」那列的 min-width 撐寬而跑掉 -->
+          <DateTimeField v-model="occurredAt" />
           <div class="pad__row">
-            <DateTimeField v-model="occurredAt" />
             <button class="btn btn--clear" @click="clearForm">清空</button>
             <button class="btn btn--primary btn--save" @click="submit">記錄</button>
           </div>
@@ -492,6 +494,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   flex-direction: column;
   gap: 9px;
 }
+/* 每一列都由同一個 flex 直欄撐滿，備註、日期、按鈕列左右一定切齊 */
+.pad__meta > * {
+  min-width: 0;
+}
 /* 分類：把整組選框框成一個明顯的區塊，方便一眼看到 */
 .catbox {
   padding: 10px 11px 11px;
@@ -509,15 +515,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   color: var(--accent);
   opacity: 0.75;
 }
-/* 日期時間獨佔一列；「清空」與「記錄」自己一列（各佔一半） */
+/* 「清空」與「記錄」自己一列（各佔一半）；日期欄不在這一列，避免被按鈕寬度帶著跑 */
 .pad__row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 9px;
-}
-.pad__row .dt {
-  grid-column: 1 / -1;
-  min-width: 0;
 }
 .btn--save {
   min-width: 96px;
