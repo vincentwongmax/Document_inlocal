@@ -178,13 +178,22 @@ App 是 PWA，`registerType: 'autoUpdate'`，Service Worker 會預快取整個 d
 - **金額欄是按鈕**：記帳頁只留顯示金額的欄位，點一下才開計算機子頁面
   （`src/components/CalcSheet.vue`，置中卡片彈窗）。金額狀態在 HomeView，
   CalcSheet 只負責顯示＋轉發按鍵，關掉再開輸入不會不見
-- 子頁面**不滑動**、開啟時**鎖背景捲動**：在 `<html>` 掛 `is-locked`
-  （全域樣式在 `src/style.css`：`html.is-locked, html.is-locked body { overflow: hidden }`）；
-  卡片 `max-height + overflow hidden`，按鍵 `clamp(42px, 8vh, 54px)` 矮螢幕自動縮小
+- **分類也是彈出頁面**：主頁只顯示勾選的常用分類，「更多」鈕開
+  `src/components/CategorySheet.vue`（置中卡片，內容沿用 CategoryPicker 不帶 collapsed，
+  所以是大類標籤列＋各層子分類標籤列）。**點分類只選中，按右上「完成」才關**
+  - CategoryPicker 加了 `moreExternal` prop（預設 false＝原本就地展開，其他使用處不受影響）
+- 兩個彈窗的捲動規則**不同**（使用者指定）：
+  - 計算機：整個不捲（卡片 max-height + overflow hidden，按鍵 `clamp(42px, 8vh, 54px)`）
+  - 分類：內容可捲（`overflow-y auto` + `overscroll-behavior contain`），背景鎖住
+- **鎖背景捲動**統一用 `src/composables/useScrollLock.ts`
+  （`useScrollLock(toRef(props,'open'))`；在 `<html>` 掛 `is-locked`，
+  全域樣式在 `src/style.css`：`html.is-locked, html.is-locked body { overflow: hidden }`）
 - 「常用金額」快捷列已移除（`quickAmounts`／`setAmount` 都刪了）
 - 實體鍵盤：計算機開著時 Enter／Esc 只關計算機，不送出、不清空
 - ⚠ Keypad 的 `＋ − × ÷ ( )` 要按左下角計算機鍵（`.key--tool`）展開才有；`=` 是基本鍵
-- 驗證腳本：`.smoke/v70.mjs`（40 assertions）
+- ⚠ 數主頁分類 chips 只能數第一列：`.catbox .picker > .cats .cat__name`
+  （`.catbox .cat` 會把選中大類後展開的子分類列 `.subs .cats--sub` 也算進去）
+- 驗證腳本：`.smoke/v70.mjs`（計算機 40）、`.smoke/v71.mjs`（分類 31）
 - ⚠ smoke 測試需要 `puppeteer-core`，裝在
   `C:\Users\user\.workbuddy\binaries\node\workspace\`（該目錄曾整個被清空，
   不見了就 `npm install puppeteer-core` 補回去）
