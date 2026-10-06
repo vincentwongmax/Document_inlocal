@@ -191,6 +191,10 @@ App 是 PWA，`registerType: 'autoUpdate'`，Service Worker 會預快取整個 d
 
 ## 部署（GitHub Pages）
 
+- ⚠ **2026-10-07 使用者指示：改版只 commit 本機，不要主動 push 到 GitHub、不要部署 Pages**
+  （「不需要 UPLOAD PAGE 和 MAIN，本地 GIT 就可以」）。遠端要動之前先問；
+  目前遠端維持在 `main = a3eadd5`、gh-pages = 計算機改版後的內容，使用者選擇保持現狀
+
 - Repo：**`vincentwongmax/Document_inlocal`**（公開、default branch `main`）
   → 線上網址 `https://vincentwongmax.github.io/Document_inlocal/`
 - **部署走 `gh-pages` 分支**（Pages 來源 = Deploy from a branch → `gh-pages` / `/`）：
