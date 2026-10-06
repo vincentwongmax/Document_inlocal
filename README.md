@@ -34,10 +34,20 @@ npm run preview    # http://localhost:4173/
 推上 `main` 就會自動建置並部署，流程定義在 `.github/workflows/deploy.yml`：
 
 1. `npm ci` → `npm run build`
-2. `actions/upload-pages-artifact` 上傳 `dist/`
-3. `actions/deploy-pages` 部署
+2. 把 `dist/` 的內容**強制推送**到 `gh-pages` 分支（不需要 Pages 的 Actions API）
 
-首次使用請到 **Settings → Pages** 把 **Source** 設成 **GitHub Actions**（workflow 也會嘗試自動開啟）。
+首次使用請到 **Settings → Pages** 把 **Source** 設成 **Deploy from a branch**、
+分支選 **`gh-pages`** / **`/ (root)`**。
+
+`gh-pages` 這個分支**只有建置產物**（`dist/` 的內容），由 workflow 每次覆蓋推送，
+平常不用手動碰它。分支根目錄帶 `.nojekyll`，避免 GitHub Pages 用 Jekyll 處理而漏掉
+底線開頭的檔案。
+
+要手動部署一次也可以（例如 Actions 掛掉時）：
+
+```bash
+npm run build                     # 記得 base 要對，CI 之外請用 VITE_BASE 指定
+```
 
 `vite.config.ts` 會依 `GITHUB_REPOSITORY` 自動決定 `base`：
 
