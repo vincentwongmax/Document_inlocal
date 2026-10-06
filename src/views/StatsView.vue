@@ -4,7 +4,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
 import { useToast } from '@/composables/useToast'
 import { useStats, type DateRange } from '@/composables/useStats'
-import { fmtMoney } from '@/lib/currency'
+import { fmtMoney, fmtNum } from '@/lib/currency'
 import {
   addDays,
   dayKey,
@@ -274,6 +274,8 @@ const mom = computed(() => st.momChange.value)
           {{ fmtMoney(st.allTime.value.income - st.allTime.value.expense, base) }}
         </p>
       </div>
+      <!-- 整頁金額都是這個幣別，只在標題右邊標一次，摘要卡就不重複帶符號 -->
+      <span class="page-cur">{{ base }}</span>
     </div>
 
     <!-- 區間選擇 -->
@@ -363,7 +365,7 @@ const mom = computed(() => st.momChange.value)
     <div class="sums">
       <div class="card sum">
         <span class="tiny muted">支出</span>
-        <strong class="num sum__exp">{{ fmtMoney(st.expense.value, base) }}</strong>
+        <strong class="num sum__exp">{{ fmtNum(st.expense.value) }}</strong>
         <span
           v-if="mom !== null"
           class="tiny"
@@ -375,13 +377,13 @@ const mom = computed(() => st.momChange.value)
       </div>
       <div class="card sum">
         <span class="tiny muted">收入</span>
-        <strong class="num sum__inc">{{ fmtMoney(st.income.value, base) }}</strong>
+        <strong class="num sum__inc">{{ fmtNum(st.income.value) }}</strong>
         <span class="tiny muted">{{ st.incomeByCat.value.length }} 個來源</span>
       </div>
       <div class="card sum">
         <span class="tiny muted">結餘</span>
         <strong class="num" :class="st.balance.value < 0 ? 'sum__exp' : 'sum__inc'">
-          {{ fmtMoney(st.balance.value, base) }}
+          {{ fmtNum(st.balance.value) }}
         </strong>
         <span class="tiny muted">{{ st.rows.value.length }} 筆</span>
       </div>
@@ -518,6 +520,18 @@ const mom = computed(() => st.momChange.value)
 </template>
 
 <style scoped>
+/* 標題右邊的幣別膠囊；.page-head 本身已是 space-between 的 flex */
+.page-cur {
+  flex: none;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+}
+
 .rangebar {
   padding: 12px 14px 13px;
   margin-bottom: 14px;
