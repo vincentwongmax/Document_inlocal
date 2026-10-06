@@ -4,6 +4,7 @@ import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/composables/useToast'
 import CalcSheet from '@/components/CalcSheet.vue'
+import CategorySheet from '@/components/CategorySheet.vue'
 import CategoryPicker from '@/components/CategoryPicker.vue'
 import ClearableInput from '@/components/ClearableInput.vue'
 import DateTimeField from '@/components/DateTimeField.vue'
@@ -77,6 +78,8 @@ watch(
 /* ── 鍵盤 ───────────────────────────────────────────────── */
 /** 計算機子頁面是否開啟（點金額欄打開） */
 const keypadOpen = ref(false)
+/** 分類子頁面是否開啟（點分類的「更多」打開） */
+const catSheetOpen = ref(false)
 
 function press(k: string) {
   calc.value = k === '=' ? equals(calc.value) : input(calc.value, k)
@@ -255,7 +258,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <div class="pad__meta">
           <div class="catbox">
             <span class="catbox__label">分類</span>
-            <CategoryPicker v-model="categoryId" :type="type" collapsed />
+            <CategoryPicker
+              v-model="categoryId"
+              :type="type"
+              collapsed
+              more-external
+              @more="catSheetOpen = true"
+            />
           </div>
           <ClearableInput v-model="note" placeholder="備註（可留空）" :maxlength="80" />
           <div class="pad__row">
@@ -266,6 +275,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </div>
       </section>
     </div>
+
+    <CategorySheet
+      :open="catSheetOpen"
+      :type="type"
+      :model-value="categoryId"
+      @update:model-value="categoryId = $event"
+      @close="catSheetOpen = false"
+    />
 
     <CalcSheet
       :open="keypadOpen"

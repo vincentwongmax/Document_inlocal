@@ -19,12 +19,17 @@ const props = withDefaults(
     usageOrder?: boolean
     /** 主頁模式：只顯示常用分類，其餘收進「更多」 */
     collapsed?: boolean
+    /**
+     * 「更多」改成發事件、由外面開彈出頁面，而不是就地展開。
+     * 預設 false（維持原本就地展開的行為），其他使用處不受影響。
+     */
+    moreExternal?: boolean
     /** 顯示方式：chips 標籤（預設）／ select 下拉清單 */
     variant?: 'chips' | 'select'
   }>(),
-  { limit: 0, usageOrder: true, collapsed: false, variant: 'chips' },
+  { limit: 0, usageOrder: true, collapsed: false, moreExternal: false, variant: 'chips' },
 )
-const emit = defineEmits<{ 'update:modelValue': [id: string] }>()
+const emit = defineEmits<{ 'update:modelValue': [id: string]; more: [] }>()
 
 const settings = useSettingsStore()
 const records = useRecordsStore()
@@ -132,6 +137,12 @@ const hiddenCount = computed(() =>
     : 0,
 )
 
+/** 「更多」：外部模式發事件，否則就地展開 */
+function onMore() {
+  if (props.moreExternal) emit('more')
+  else expanded.value = true
+}
+
 function pick(id: string) {
   emit('update:modelValue', id)
   // 從展開的全部清單選了非常用分類後自動收起，維持介面精簡
@@ -184,10 +195,10 @@ watch(
         v-if="expandable && !expanded"
         type="button"
         class="cat-more"
-        :title="`更多分類（還有 ${hiddenCount} 個）`"
-        aria-label="展開更多分類"
+        :title="moreExternal ? `開啟全部分類（還有 ${hiddenCount} 個）` : `更多分類（還有 ${hiddenCount} 個）`"
+        :aria-label="moreExternal ? '開啟全部分類' : '展開更多分類'"
         :aria-expanded="false"
-        @click="expanded = true"
+        @click="onMore"
       >
         <svg class="cat-more__icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M6 9l6 6 6-6" />

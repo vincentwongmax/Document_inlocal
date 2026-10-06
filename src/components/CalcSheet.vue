@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, watch } from 'vue'
+import { computed, toRef } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { calcValue, displayMain, displaySub, type CalcState } from '@/lib/calc'
 import { fmtMoney } from '@/lib/currency'
+import { useScrollLock } from '@/composables/useScrollLock'
 import Keypad from '@/components/Keypad.vue'
 
 /**
@@ -37,15 +38,7 @@ const isEmpty = computed(() => props.calc.tokens.length === 0)
  * 背景不滑動：捲動容器是 documentElement，彈窗期間直接在它上面關掉 overflow。
  * 卡片本身也不能滑動（max-height + overflow hidden）。
  */
-watch(
-  () => props.open,
-  (v) => {
-    document.documentElement.classList.toggle('is-locked', v)
-  },
-)
-onBeforeUnmount(() => {
-  document.documentElement.classList.remove('is-locked')
-})
+useScrollLock(toRef(props, 'open'))
 </script>
 
 <template>
