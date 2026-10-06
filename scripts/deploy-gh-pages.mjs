@@ -34,10 +34,12 @@ if (!repoName) {
 const base = repoName.endsWith('.github.io') ? '/' : `/${repoName}/`
 
 function run(cmd, args, opts = {}) {
-  console.log(`  $ ${cmd} ${args.join(' ')}`)
+  // 印出指令時把 token 遮掉
+  const shown = args.map((a) => (token ? a.replace(token, '***') : a)).join(' ')
+  console.log(`  $ ${cmd} ${shown}`)
   const r = spawnSync(cmd, args, { cwd: ROOT, stdio: 'inherit', shell: true, ...opts })
   if (r.status !== 0) {
-    console.error(`✗ 指令失敗：${cmd} ${args.join(' ')}`)
+    console.error(`✗ 指令失敗：${cmd} ${shown}`)
     process.exit(r.status ?? 1)
   }
 }
@@ -62,7 +64,8 @@ run('git', ['symbolic-ref', 'HEAD', 'refs/heads/gh-pages'], inOut)
 run('git', ['config', 'user.name', repo.split('/')[0]], inOut)
 run('git', ['config', 'user.email', `${repo.split('/')[0]}@users.noreply.github.com`], inOut)
 run('git', ['add', '-A'], inOut)
-run('git', ['commit', '-q', '-m', `deploy: ${new Date().toISOString()}`], inOut)
+// 訊息刻意不含空白：run() 走 shell，含空白的參數會被拆成多個
+run('git', ['commit', '-q', '-m', `deploy-${new Date().toISOString()}`], inOut)
 run(
   'git',
   ['push', '-f', `https://${token}@github.com/${repo}.git`, 'gh-pages'],
