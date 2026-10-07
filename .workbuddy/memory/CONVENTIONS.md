@@ -14,6 +14,20 @@
   讓開導航列）**必須 `!important`**：
   `body.swal2-toast-shown .swal2-container.swal2-bottom { bottom: calc(var(--nav-h) + var(--safe-b) + 14px) }`（≥1024px → 22px）
 - sheet 開著（body 被釘成 fixed）時 SweetAlert 仍疊在最上層（fixed 的包含塊是視窗）
+- ⚠ **彈窗尺寸**（使用者要求「置中、不要全屏」）：
+  官方 container 的留白只有 `--swal2-container-padding: 0.625em`（10px），在 390px 手機上
+  彈窗會撐到 370px 幾乎滿版。`style.css` 裡覆寫成：
+  ```css
+  body.swal2-shown:not(.swal2-toast-shown) .swal2-container { padding: 24px 20px; }
+  .swal2-container .swal2-popup { max-height: calc(100dvh - 48px); overflow-y: auto; }
+  ```
+  - ⚠ **一定要用 `body.swal2-shown:not(.swal2-toast-shown)` 限定**：直接寫 `.swal2-container`
+    會連 Toast 的 container 一起改（Toast 的寬度與留白是另外調好的）
+  - 官方的尺寸規則用的是 `div:where(.swal2-container) div:where(.swal2-popup)`，
+    `:where()` 權重為 0 → 整條只有 (0,0,2)，所以我們用一般選擇器就蓋得過，**不需要 `!important`**
+  - 只改尺寸與留白，**外觀維持官方原生**（配色／圓角／按鈕都不動）
+  - ⚠ **SweetAlert2 即使 `showDenyButton: false` 也會把 deny 鈕留在 DOM 裡**（只是隱藏，
+    沒有寬度）。測試數按鈕數量時要濾掉 `offsetWidth === 0` 的，否則會多算一顆空的
 - ⚠ 驗「Toast 沒遮罩」別看 `body.swal2-shown`（Toast 也會加），要看容器計算底色
 - ⚠ 寫 CSSOM walker：Chrome 的 `CSSStyleRule` 也有 `cssRules`（巢狀），要先判斷
   `r.selectorText` 再遞迴，否則整批規則被跳過
