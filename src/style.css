@@ -58,11 +58,32 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/**
+ * ⚠⚠ 這裡是 `min-height` 不是 `height`，**不要改回 `height: 100%`**。
+ *
+ * 為什麼：`height: 100%` 會把 body 的高度「釘死」在視窗高度，
+ * 但裡面的內容（記錄頁／統計頁／設定頁）往往比視窗高很多 →
+ * body 的**盒子沒有內容那麼高**，內容是「溢出」的。
+ *
+ * iOS（PWA／Safari 都一樣）在使用者點畫面上任何地方時，會跑一輪
+ * 「把點到的元素對齊到可視範圍」的處理；body 盒子既然只有視窗高，
+ * 這一輪就會把整份文件往上推，使用者看到的現象就是
+ * **「連點空白處，頁面就一直往上滑」**（點幾下就往上跑幾下）。
+ *
+ * 改成 min-height 之後 body 會**跟著內容長高**，沒有「盒子比內容短」的錯位，
+ * iOS 那輪對齊就無事可做 → 怎麼點都不會動。
+ * （`html` 用 height: 100% 沒關係，捲動的是 documentElement，本來就該是視窗高。）
+ */
+html {
+  height: 100%;
+}
+body {
+  min-height: 100%;
+}
 html,
 body {
   margin: 0;
   padding: 0;
-  height: 100%;
 }
 
 /**

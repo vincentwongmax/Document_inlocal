@@ -8,7 +8,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 
 ## 版本號
 
-- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.22`
+- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.23`
 - 單一來源＝`package.json` 的 `version` → `vite.config.ts` `define` 注入 `__APP_VERSION__`
   （型別在 `env.d.ts`）→ `src/lib/version.ts` → 設定頁「離線與版本」膠囊
 - 每次更新要改 `package.json` ＋ 補一筆 `CHANGELOG.md`
@@ -29,7 +29,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
     `dist/` 沒重建 → v79（拿 `package.json` 對畫面版本號）必紅。這是「假紅燈」，不是程式壞
   - ⚠ **node 是 Windows binary**：curl 輸出要存到**專案內**（`.smoke/tmp/`），
     Git Bash 的 `/tmp` 讀不到
-  - **維護中的回歸集＝v70～v101**；`v45/v46/v56/v57` 早已失效，別當基準
+  - **維護中的回歸集＝v70～v102**；`v45/v46/v56/v57` 早已失效，別當基準
   - 改到計算機／彈窗／通知／記錄頁／設定頁匯出／錢包時另外跑 **v82~v99**（計算機 11 位／算式／
     SweetAlert2／最近檢視／按鍵快按／快速備註／收據圖片貼上／收據圖片放大拖曳／
     統計頁自訂日期框／分類第一列不塞子分類／日期欄＝普通文字框＋下拉關閉明細／
@@ -39,6 +39,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
   - **v100（42 項）＝日期輸入框約定 ＋ iOS 貼上 ＋ 向左滑空白 ＋ Toast「知道了」的守門員**
   - **v101（51 項）＝0.1.22 六需求的守門員**（徽章「圖」／計算公式位置／圖片去重兩層／
     摘要卡詳情／預設分類／彈窗鎖背景）
+  - **v102（30 項）＝「連點空白頁面不能動」的守門員**（body 幾何 ＋ 捲動不動 ＋ 連點防護設定）
   - ⚠ **動到錢包／記錄／設定的存取時，v99 是守門員**（遷移、隔離、匯出匯入都在那）；
     **動到圖片／放大檢視／剪貼簿時，v77（收據壓縮）與 v89（明細放大後可拖曳）是守門員**；
     **動到明細的算式顯示時，v83 與 v93 會紅**（它們抓 `.sheet .expr__v`，
@@ -118,6 +119,23 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
   收據原圖在 IndexedDB（`idb-keyval`，跨錢包共用）
 - 分類 `{ id, name, type, color, icon?, builtin, archived, parentId? }`；
   舊資料載入時 `withIcons()` 補 icon 並回寫
+
+## ⚠⚠ 全站約定：`body` 一律 `min-height`，不要 `height: 100%`（0.1.23 起永久適用）
+
+> 使用者原話：「在 pwa (IPHONE) 的所有頁面中，用戶連點空白的地方，頁面會向上滑
+> （不需要向上滑, 要無論怎樣點都保持不動）」
+
+- `src/style.css`：`html { height: 100% }`（捲動容器）＋ **`body { min-height: 100% }`**
+- 原因：`body { height: 100% }` 會把 body 盒子釘死在視窗高，但內容遠比視窗高
+  （記錄 3406／統計 2611／設定 3261 px）→ 盒子比內容短；iOS 點畫面時那輪
+  「對齊到可視範圍」就會把文件往上推 → 連點一直往上跑
+- ⚠ **改版時千萬不要把它改回 `height: 100%`**
+- 驗法看**幾何關係**（`body` 盒子高 ≥ `documentElement.scrollHeight`），
+  不是看 computed px（844 視窗下兩者可能同值，分不出來）
+- 連點防護別拆：`html { touch-action: manipulation }`、
+  `button/a/[role=button] { -webkit-touch-callout: none; user-select: none }`、
+  `body { overscroll-behavior-y: none }`
+- 細節 → `CONVENTIONS.md` 的「body 一律用 min-height」
 
 ## ⚠⚠ 全站約定：日期輸入框（0.1.21 起，含未來所有新畫面）
 

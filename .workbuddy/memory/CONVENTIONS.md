@@ -563,6 +563,45 @@
 真的有東西溢出時至少不會出現空白區，但**不該拿它當解法**——上面的三條規則
 才是正解，加了新的輸入框還是要照做。
 
+## ⚠⚠ body 一律用 `min-height`，不要寫 `height: 100%`（全站約定，0.1.23 起永久適用）
+
+**使用者 0.1.23 原話：「在 pwa (IPHONE) 的所有頁面中，用戶連點空白的地方，頁面會向上滑
+（不需要向上滑, 要無論怎樣點都保持不動）」**
+
+`src/style.css` 的根層：
+
+```css
+html { height: 100%; }        /* 捲動容器＝documentElement，本來就該是視窗高 */
+body { min-height: 100%; }    /* ⚠ 不是 height: 100% */
+html, body { margin: 0; padding: 0; }
+```
+
+### 為什麼（別改回去）
+
+`body { height: 100% }` 會把 body 的**盒子釘死在視窗高度**，但內容（記錄頁 3406px／
+統計頁 2611px／設定頁 3261px）遠比視窗高 → **body 盒子比內容短**，內容是溢出的。
+
+iOS（PWA 與 Safari 都一樣）在使用者**點畫面上任何地方**時，會跑一輪
+「把點到的位置對齊到可視範圍」。body 盒子既然只有視窗高，這一輪就把整份文件往上推 →
+**連點就一直往上跑**。
+
+改成 `min-height` 後 body 會跟著內容長高，沒有錯位，那輪對齊就無事可做。
+
+### 怎麼驗
+
+`.smoke/v102.mjs`。⚠ 判準是**幾何關係**，不是「computed height 等於多少 px」：
+在 844 的視窗下 `min-height: 100%` 算出來也可能是 `844px`，光看數值分不出
+「被釘死」還是「剛好等於視窗」。要驗的是：
+**當內容比視窗高時，`body.getBoundingClientRect().height ≥ documentElement.scrollHeight`。**
+
+### 相關的連點防護（都已存在，別拆掉）
+
+- `html { touch-action: manipulation }` ＋ 按鈕自己也寫一次 → 關掉 iOS 的 double-tap 放大
+- `button/a/[role=button] { -webkit-touch-callout: none; user-select: none }` → 關掉長按選單與連點選字
+- `body { overscroll-behavior-y: none }` → 捲到底不往外鏈
+- ⚠ 測 `-webkit-touch-callout` 時**不要問 computed style**：Chrome 會在 CSSOM 解析時
+  直接丟掉不認得的 vendor 屬性，要改成 `fetch` stylesheet 的**文字**來驗
+
 ## ⚠⚠ 彈窗／子頁面開著時，背景一律不能滑動（全站約定，0.1.22 起永久適用）
 
 **使用者 0.1.22 明說「請把這個記憶，任何子頁面滾動時，背景都不能滑動」。**
@@ -663,6 +702,21 @@ useScrollLock(toRef(props, 'open'), { scrollable: () => boxEl.value })
 - 已封存（`archived`）的分類不能設為預設（`canDefault`），記帳頁選不到，設了等於沒設。
 - `HomeView` 的 `pickInitialCategory()`：預設分類存在且屬於當前收支類型 → 用它；
   否則沿用舊行為（現有 `categoryId` → 第一個）。`resetForm()` 會呼叫 `resetCategory()`。
+
+## 測試（`.smoke/v102.mjs`，30 項）
+
+驗「連點空白處頁面不能動」（0.1.23）。四頁（記帳／記錄／統計／設定）各驗：
+① 內容比視窗高 ② **body 盒子高度 ≥ 文件 scrollHeight**（這條才是關鍵，見上面那節）
+③ html 仍是 viewport 高 ④ 無橫向溢出 ⑤ html `overflow-x: hidden`；
+再加一組「連點 8 下空白處 scrollY 完全不變」與連點防護設定檢查。
+
+⚠ 這支踩到的坑：
+- **點的位置不能寫死**：記錄頁 y=620 剛好落在 `.row__main`（點下去會開明細、合法地把背景
+  鎖住並把捲動歸零）→ 會被誤判成 bug。要**往下掃描挑第一個不在任何互動元素裡的位置**
+  （`document.elementFromPoint` + `closest('a,button,input,...')`）
+- **`-webkit-touch-callout` 不要用 computed style 驗**：Chrome 會在 CSSOM 解析時丟掉
+  不認得的 vendor 屬性 → 永遠拿到空字串。要 `fetch` stylesheet 的文字做 regex
+- 「內容比視窗高」的門檻別設太嚴：記帳頁常常只比視窗高 6px
 
 ## 測試（`.smoke/v101.mjs`，51 項）
 
