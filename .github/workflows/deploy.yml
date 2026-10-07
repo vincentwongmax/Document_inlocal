@@ -1,5 +1,11 @@
 name: Deploy to GitHub Pages
 
+# ⚠️ 2026-10-05 起本 workflow 每次都失敗，且與本檔內容無關：
+#   "The job was not started because your account is locked due to a billing issue."
+#   runner 完全沒被分配（job 只跑約 2 秒、steps: []、runner_id: 0）。
+#   處理 https://github.com/settings/billing 之後會自動恢復。
+#   在那之前請改用手動部署（Pages 的 legacy 建置不受影響）：
+#     GH_TOKEN=ghp_xxx npm run deploy
 on:
   push:
     branches: [main]

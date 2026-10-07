@@ -31,7 +31,8 @@ npm run preview    # http://localhost:4173/
 
 ## 部署到 GitHub Pages
 
-推上 `main` 就會自動建置並部署，流程定義在 `.github/workflows/deploy.yml`：
+推上 `main` 就會自動建置並部署，流程定義在 `.github/workflows/deploy.yml`
+（⚠️ 目前因帳號 billing 被鎖而無法執行，見本節末說明）：
 
 1. `npm ci` → `npm run build`
 2. 把 `dist/` 的內容**強制推送**到 `gh-pages` 分支（不需要 Pages 的 Actions API）
@@ -46,8 +47,20 @@ npm run preview    # http://localhost:4173/
 要手動部署一次也可以（例如 Actions 掛掉時）：
 
 ```bash
-npm run build                     # 記得 base 要對，CI 之外請用 VITE_BASE 指定
+GH_TOKEN=ghp_xxx npm run deploy
 ```
+
+`npm run deploy`（`scripts/deploy-gh-pages.mjs`）會用正確的 base 建置到**專案外的臨時目錄**
+再把內容強制推到 `gh-pages`，所以不會動到 `dist/`、也不會讓本機 `npm run preview` 白畫面。
+`GH_TOKEN` 需要 classic PAT 的 `repo` 權限（或 fine-grained 的 Contents: Read and write）。
+
+> ⚠️ **2026-10-05 起 `deploy.yml` 這個 workflow 一直失敗，原因與程式無關**：GitHub 帳號被
+> billing 問題鎖住，runner 根本沒被分配。失敗訊息是
+> `The job was not started because your account is locked due to a billing issue.`
+> （特徵：job 只跑 ~2 秒、`steps: []`、`runner_id: 0`）。
+> 到 <https://github.com/settings/billing> 處理完畢後 workflow 就會自己恢復。
+> 在那之前，**用上面的 `npm run deploy` 手動部署**（Pages 的 legacy 建置不受影響，
+> 推上去照樣會成功上線）。
 
 `vite.config.ts` 會依 `GITHUB_REPOSITORY` 自動決定 `base`：
 
