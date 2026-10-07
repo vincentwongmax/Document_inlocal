@@ -88,8 +88,17 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
   base 由 `resolveBase()` 自動判斷（`.github.io` 結尾→`/`，否則 `/<repo>/`；本機 `/`；
   `VITE_BASE` 可覆寫）。**不要在 workflow 裡設 base**
 - PWA 看到舊版先 Ctrl+Shift+R／無痕；測試用全新 profile
-- ⚠ 沙箱對外網路會不穩（`CONNECT tunnel failed, response 502`／github.io timeout）
-  → push／deploy 回報成功但 `git ls-remote`／`curl` 驗不到時，先重試再判斷
+- ⚠⚠ **線上驗證的兩個坑**（`CONVENTIONS.md` 有完整版）：
+  1. **`github.io` CDN 有傳播延遲**：剛 deploy 完抓 `index.html`，它可能還指著上一版的
+     hash 檔，而那個檔在 force push 後已被換掉 → 404。**看起來像「部署把站弄壞了」，
+     其實只是還沒傳播完**（`pages/builds/latest` 的 status 已是 `built`）。
+     等 1～2 分鐘重抓就對了，**不要急著重新部署**
+  2. **絕對不要手打 bundle 的雜湊檔名**（`index-BHF_IIia.js` 打成 `...IIIA.js` → 白繞一圈）。
+     要檔名就用 `git/trees/{branch}?recursive=1` 撈、用 shell 變數帶進 URL。
+     - ⚠ `contents` API 對大檔回 404（1MB 限制）→ 改用
+       `raw.githubusercontent.com/<owner>/<repo>/<branch>/<path>`
+  3. 驗線上要看**內容特徵**（`overlay`／`MacIntel` 等程式碼標記、版本號），
+     不要對雜湊——部署版的雜湊和本機 dist 一定不同
 
 ## 資料
 
