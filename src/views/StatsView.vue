@@ -549,14 +549,18 @@ const mom = computed(() => st.momChange.value)
 }
 .custom__dates {
   display: grid;
-  /* 兩欄各自只佔「原生日期框真正需要的寬度」，而不是硬切一半。
-     ⚠ 原生日期框（日期文字＋日曆圖示）最少要 140～166px，各佔一半的話手機上每欄只有
-     120～160px → 日期文字和圖示被迫疊在一起（就是「爆掉」的樣子）。
-     minmax(0, …) 是保險：真的放不下時可以再縮，不會把卡片撐爆。
-     用 space-between 讓「從」貼左、「到」貼右，跟卡片裡其他列左右對齊。 */
-  grid-template-columns: repeat(2, minmax(0, max-content));
+  /* 兩欄各佔一半 → 整列填滿：「從」貼左、「到」貼右，中間只留 10px 間隔。
+     ⚠ 不要用 `max-content` + `space-between`（舊寫法）：那樣每欄寬度取決於
+     **瀏覽器給原生日期框的內建寬度**，而 Chrome 與 iOS Safari 的日期格式不同
+     （`10/07/2026` vs `2026/10/07`）→ 內建寬度不同 → 間隙忽大忽小，
+     在 iPhone PWA 上看起來就是「走位」。固定 1fr 1fr 後兩欄寬度只跟容器有關，
+     跨瀏覽器完全一致，也不會隨視窗寬度漂移。
+     ⚠ 每欄至少要放得下原生日期框（13px ＋ 左右各 8px 內距 ≈ 141px）：
+     375px 時每欄 150px 剛好夠（360px 只剩 142px，餘裕只有 1px 太冒險）；
+     再窄就撐不住 → 交給下面的 media query 改成上下堆疊。
+     `minmax(0, …)` 是保險：真的放不下時可以再縮，不會把卡片撐爆。 */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  justify-content: space-between;
 }
 .custom__date {
   display: flex;
@@ -577,8 +581,11 @@ const mom = computed(() => st.momChange.value)
   padding-right: 8px;
   font-size: 13px;
 }
-/* 超窄螢幕（< 360px）兩欄再怎麼收都會擠到，直接改成上下堆疊 */
-@media (max-width: 359px) {
+/* 超窄螢幕改成上下堆疊。
+   門檻抓 375px（不是 360）：兩欄各佔一半時，每欄寬度 = (視窗 - 頁面左右 36 - 卡片左右 28 - 10) / 2，
+   375px 剛好每欄 150px；再窄就逼近原生日期框的 141px 下限（360px 時只剩 1px 餘裕）→
+   乾脆疊起來，每次都有滿版寬度可用。 */
+@media (max-width: 374px) {
   .custom__dates {
     grid-template-columns: minmax(0, 1fr);
   }
