@@ -35,8 +35,12 @@ const convertedAmount = computed(() => Number((amount.value * settings.rate(prop
 const isEmpty = computed(() => props.calc.tokens.length === 0)
 
 /**
- * 背景不滑動：捲動容器是 documentElement，彈窗期間直接在它上面關掉 overflow。
- * 卡片本身也不能滑動（max-height + overflow hidden）。
+ * 背景不滑動：
+ * 1. 捲動容器是 documentElement，彈窗期間直接在它上面關掉 overflow（useScrollLock）
+ * 2. iOS Safari 只靠 overflow 擋不住手指滑動，useScrollLock 會另外 preventDefault touchmove
+ * 3. 卡片本身也不滑動（max-height + overflow hidden），手指在卡片上滑也不會傳給背景
+ *
+ * 計算機整頁都不需要捲，所以不傳 scrollable —— 任何手指滑動一律擋掉。
  */
 useScrollLock(toRef(props, 'open'))
 </script>
@@ -79,7 +83,10 @@ useScrollLock(toRef(props, 'open'))
   place-items: center;
   padding: 16px;
   background: rgba(28, 34, 31, 0.42);
-  /* 彈窗本身也不要把捲動傳給背景 */
+  /* 手指滑動不要在這一層產生任何捲動手勢（背景也就不會被帶動）；
+     計算機沒有可捲動的區域，所以直接 none 不會影響任何操作 */
+  touch-action: none;
+  /* 彈窗本身也不要把捲動傳給背景（雙重保險） */
   overscroll-behavior: contain;
 }
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, toRef, watch } from 'vue'
+import { useScrollLock } from '@/composables/useScrollLock'
 import type { ImageRef, TxRecord, TxType } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
@@ -27,6 +28,10 @@ const emit = defineEmits<{
 const settings = useSettingsStore()
 const records = useRecordsStore()
 const toast = useToast()
+
+/** 明細內容是彈窗裡唯一可捲的地方，其餘（含背景）都要鎖住 */
+const bodyEl = ref<HTMLElement | null>(null)
+useScrollLock(toRef(props, 'open'), { scrollable: () => bodyEl.value })
 
 const converted = computed(() => props.record?.currency !== props.record?.baseCurrency)
 const type = ref<TxType>('expense')
@@ -257,7 +262,7 @@ function save() {
           <button class="sheet__close" type="button" @click="close">關閉</button>
         </header>
 
-        <div class="sheet__body">
+        <div ref="bodyEl" class="sheet__body">
           <!-- 即時摘要 -->
           <div class="hero" :class="isExpense ? 'is-exp' : 'is-inc'">
             <div class="hero__l">

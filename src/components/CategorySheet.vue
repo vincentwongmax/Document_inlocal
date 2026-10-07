@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, toRef } from 'vue'
+import { computed, ref, toRef } from 'vue'
 import type { TxType } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { useScrollLock } from '@/composables/useScrollLock'
@@ -25,7 +25,9 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [id: string]; close: [] }>()
 
 const settings = useSettingsStore()
-useScrollLock(toRef(props, 'open'))
+/** 分類清單是彈窗裡唯一可以捲的地方；手指在這裡滑要照常捲，其他一律鎖背景 */
+const bodyEl = ref<HTMLElement | null>(null)
+useScrollLock(toRef(props, 'open'), { scrollable: () => bodyEl.value })
 
 const currentName = computed(() => settings.category(props.modelValue)?.name ?? '')
 </script>
@@ -46,7 +48,7 @@ const currentName = computed(() => settings.category(props.modelValue)?.name ?? 
           </button>
         </header>
 
-        <div class="catsheet__body">
+        <div ref="bodyEl" class="catsheet__body">
           <CategoryPicker
             :type="type"
             :model-value="modelValue"

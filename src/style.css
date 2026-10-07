@@ -76,10 +76,13 @@ body {
 }
 
 /* 開啟彈窗（如計算機子頁面）時鎖住背景捲動：
-   捲動容器是 documentElement，所以要連 body 一起關掉 overflow */
+   捲動容器是 documentElement，所以要連 body 一起關掉 overflow。
+   ⚠ 手指滑動（touch）靠 src/composables/useScrollLock.ts 的 touchmove preventDefault 擋，
+   這裡只管滑鼠滾輪／觸控板；overscroll-behavior 是額外保險，避免捲動往外鏈 */
 html.is-locked,
 html.is-locked body {
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 #app {
