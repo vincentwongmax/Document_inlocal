@@ -368,3 +368,17 @@ body.swal2-toast-shown .swal2-container.swal2-bottom {
     bottom: 22px !important;
   }
 }
+
+/* ── 彈窗（非 Toast）：置中、四周留白、永遠不會變成全屏 ──────────
+   官方的 container padding 只有 0.625em（10px），在手機上彈窗會撐到幾乎貼齊
+   左右邊緣，看起來就像整頁被蓋掉。這裡只把留白加大並限制高度，
+   外觀仍維持官方原生樣式（不改配色、不改圓角、不改按鈕）。
+   ⚠ 只針對非 Toast 的 container（Toast 的留白是另外調的，見上面）。 */
+body.swal2-shown:not(.swal2-toast-shown) .swal2-container {
+  padding: 24px 20px;
+}
+/* 內容太高時在彈窗內捲動，不會一路長到滿版（上下永遠各留 24px） */
+.swal2-container .swal2-popup {
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+}
