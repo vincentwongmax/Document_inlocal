@@ -96,6 +96,26 @@
 - **日期欄要跟備註同寬**：`DateTimeField` 放 `.pad__meta`（**別放回 `.pad__row`**）
 - 數主頁 chips 用 `.catbox .picker > .cats .cat__name`（`.catbox .cat` 會混入子分類列）
 
+## 計算機鍵盤 `Keypad.vue`
+
+- **按鍵一律用 `pointerdown` 觸發，不要用 `click`**（使用者反映過「按太快沒反應」）
+  - `click` 是合成的：手指碰下去後要等手勢辨識器認定「這是一下 tap」才送出；
+    兩指觸碰重疊（快按時手指就是會疊到）、兩下之間有位移、子樹 effective
+    `touch-action: none`（計算機彈窗為了擋滑動而設）→ 事件整個靜默消失
+  - 實測（CDP `Input.dispatchTouchEvent`）：**兩指同時落在同一顆鍵 → 2 個 pointerdown、
+    0 個 click**，畫面完全不動。⚠ **零位移的乾淨連點是測不出來的**（10ms 間隔也全過），
+    一定要測「兩指重疊」與「手指微位移」這兩種
+  - pointerdown 之後瀏覽器仍可能補一個 `click` → 用 `pressedFromPointer` 旗標吃掉，
+    並附 **600ms 自動過期**（沒等到 click 時旗標不能卡住，否則下次鍵盤 Enter 會被吃掉）；
+    鍵盤／讀屏走的仍然是 `click`，功能不變
+- **按下樣式自己做（`.is-tap`），不能只靠 `:active`**：實測按住 120ms 期間
+  `el.matches(':active')` 都是 `false`，按鍵要等手指放開才變色 → 快按就像沒反應。
+  在 pointerdown 加 class、pointerup／pointercancel／pointerleave 移除
+  - ⚠ `.key--eq`（等號）要另外寫 `:active, .is-tap { background: --accent-light-hover }`，
+    否則會被 `.key:active`／`.key.is-tap` 的灰底蓋掉（原本按等號會閃成灰色）
+  - 放開後底色仍停在 `--surface-3` 是**觸控的 sticky :hover**（Chrome／iOS 都會把最後
+    碰到的元素留在 hover 態），全站既有行為、不是 bug，驗收時不要當成沒還原
+
 ## 收據圖片 / iOS 觸控
 
 - `lib/imaging.ts`：`MAX_EDGE=1600`、`TARGET_BYTES=300KB`、品質最低 0.62、縮尺寸只退兩階。

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { onBeforeUnmount } from 'vue'
+
 const emit = defineEmits<{ press: [key: string] }>()
 
 type Kind = 'num' | 'op' | 'fn' | 'eq'
@@ -60,6 +62,67 @@ const rows: PadKey[][] = [
 
 /** 20 顆鍵沒有跨欄跨列，直接依序排進 4 欄格線就好 */
 const keys = rows.flat()
+
+/* ── 按鍵：用 pointerdown 觸發，不要等 click ───────────────────────────
+ *
+ * `click` 是瀏覽器「合成」出來的：手指碰下去之後，要等手勢辨識器認定
+ * 「這是一下 tap」才會送出來。快速連點時中間任何一步被打斷，事件就整個
+ * 靜默消失（沒有錯誤、沒有事件，就是沒反應）：
+ *   - 兩隻手指的觸碰重疊（快按時手指本來就會疊到）→ 判成多指手勢 → 兩下都不算 tap
+ *   - 手指在兩下之間有位移 → 被當成滑動
+ *   - 彈窗為了擋背景滑動，整棵子樹的 effective touch-action 是 none
+ * 實測（.smoke/v86.mjs，用 CDP 送真實觸控事件）兩指重疊那一下：
+ *   按鈕收到 2 個 pointerdown、0 個 click，畫面完全不動——就是「按了沒反應」。
+ *
+ * pointerdown 是「手指一碰到就送」的原始事件，不經過手勢判定，也就不會被上面任何一項吃掉。
+ * 手指滑走不算取消（跟實體計算機一樣：按下去就算），所以 pointercancel 不用回退。
+ *
+ * 代價是 pointerdown 之後瀏覽器還是可能補一個 click，同一顆鍵會被算兩次，
+ * 因此用 pressedFromPointer 這個旗標把補上的 click 吃掉（見 onClick）。
+ */
+const CLICK_GUARD_MS = 600
+
+/** 這一下是不是已經由 pointerdown 送出去了（用來吃掉隨後補上的 click） */
+let pressedFromPointer = false
+/** 旗標的自動過期計時器：pointerdown 之後若沒有 click 跟上（正好就是上面那些失敗情境），
+ *  旗標不能永遠卡著，否則下一次鍵盤 Enter 會被吃掉 */
+let guardTimer = 0
+
+function onDown(e: PointerEvent, k: string) {
+  // button 0 ＝ 滑鼠左鍵／觸控接觸點；右鍵、中鍵不處理
+  if (e.button !== 0) return
+
+  // 按下樣式自己做，不靠 CSS 的 :active（見下面 .key.is-tap 的註解）
+  ;(e.currentTarget as HTMLElement | null)?.classList.add('is-tap')
+
+  pressedFromPointer = true
+  window.clearTimeout(guardTimer)
+  guardTimer = window.setTimeout(() => {
+    pressedFromPointer = false
+  }, CLICK_GUARD_MS)
+
+  emit('press', k)
+}
+
+/** 放開（或手勢被取消／手指滑出按鍵）就把按下樣式拿掉 */
+function onUp(e: PointerEvent) {
+  ;(e.currentTarget as HTMLElement | null)?.classList.remove('is-tap')
+}
+
+/**
+ * 沒有指標事件來源的啟動方式（實體鍵盤 Enter／Space、讀屏、舊環境）只會送 click，
+ * 這裡要接住；由 pointerdown 觸發的那一個 click 則忽略，避免同一顆鍵算兩次。
+ */
+function onClick(k: string) {
+  if (pressedFromPointer) {
+    pressedFromPointer = false
+    window.clearTimeout(guardTimer)
+    return
+  }
+  emit('press', k)
+}
+
+onBeforeUnmount(() => window.clearTimeout(guardTimer))
 </script>
 
 <template>
@@ -72,7 +135,11 @@ const keys = rows.flat()
       :class="`key--${key.kind}`"
       :data-key="key.k"
       :aria-label="key.name"
-      @click="emit('press', key.k)"
+      @pointerdown="onDown($event, key.k)"
+      @pointerup="onUp"
+      @pointercancel="onUp"
+      @pointerleave="onUp"
+      @click="onClick(key.k)"
     >
       <svg v-if="key.icon === 'back'" class="kic" viewBox="0 0 24 24" aria-hidden="true">
         <path d="M9.2 6h9.4a2.5 2.5 0 0 1 2.5 2.5v7a2.5 2.5 0 0 1-2.5 2.5H9.2L3.3 12z" />
@@ -127,6 +194,18 @@ const keys = rows.flat()
   transform: scale(0.97);
   background: var(--surface-3);
 }
+/**
+ * 「按下去」的樣式由 JS 控制（見 script 的 onDown）。
+ *
+ * 不能只靠 :active：實測（.smoke/v86.mjs，CDP 送真實觸控、按住 120ms 後量測）
+ * 按住期間連 `el.matches(':active')` 都是 false，按鍵要等手指放開之後才變色，
+ * 快按時使用者只會看到「按了沒反應」。自己加 class 才能保證一碰就亮。
+ * 選擇器權重與 .key:active 相同、排在其後，兩者外觀一致（桌面滑鼠走哪個都行）。
+ */
+.key.is-tap {
+  transform: scale(0.97);
+  background: var(--surface-3);
+}
 .key--op {
   color: var(--accent);
 }
@@ -142,6 +221,12 @@ const keys = rows.flat()
   font-weight: 700;
 }
 .key--eq:hover {
+  background: var(--accent-light-hover);
+  border-color: var(--accent-light-hover);
+}
+/* 等號鍵按下去要維持深綠，不能被上面 .key:active／.key.is-tap 的灰底蓋掉 */
+.key--eq:active,
+.key--eq.is-tap {
   background: var(--accent-light-hover);
   border-color: var(--accent-light-hover);
 }
