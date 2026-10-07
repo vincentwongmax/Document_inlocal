@@ -3,6 +3,7 @@ import { computed, ref, toRef } from 'vue'
 import type { TxType } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { useScrollLock } from '@/composables/useScrollLock'
+import { usePullToClose } from '@/composables/usePullToClose'
 import CategoryPicker from '@/components/CategoryPicker.vue'
 
 /**
@@ -29,13 +30,46 @@ const settings = useSettingsStore()
 const bodyEl = ref<HTMLElement | null>(null)
 useScrollLock(toRef(props, 'open'), { scrollable: () => bodyEl.value })
 
+/**
+ * 向下拉就關閉（0.1.26）。
+ * 使用者要求「之前的子頁面風格全跟記錄明細的頁面」——
+ * 原本只有「完成」鈕與點背景，現在補上跟記錄明細同一套的下拉手勢。
+ * ⚠ `panel` 是外框 `.catsheet__card`、`scroller` 是裡面的 `.catsheet__body`：
+ *   清單沒捲到頂時往下滑是捲清單，捲到頂再往下拉才是關閉。
+ */
+const sheetEl = ref<HTMLElement | null>(null)
+const {
+  dragging: pulling,
+  style: pullStyle,
+  onTouchStart: onSheetTouchStart,
+  onTouchMove: onSheetTouchMove,
+  onTouchEnd: onSheetTouchEnd,
+  onMouseDown: onSheetMouseDown,
+} = usePullToClose({ panel: sheetEl, scroller: bodyEl, onClose: () => emit('close') })
+
 const currentName = computed(() => settings.category(props.modelValue)?.name ?? '')
 </script>
 
 <template>
   <Transition name="catsheet">
-    <div v-if="open" class="catsheet" @click.self="emit('close')">
-      <div class="catsheet__card card" role="dialog" aria-modal="true" aria-label="選擇分類">
+    <div v-if="open" class="catsheet bsheet-mask" @click.self="emit('close')">
+      <div
+        ref="sheetEl"
+        class="catsheet__card card bsheet"
+        :class="{ 'is-dragging': pulling }"
+        :style="pullStyle"
+        role="dialog"
+        aria-modal="true"
+        aria-label="選擇分類"
+        @touchstart="onSheetTouchStart"
+        @touchmove="onSheetTouchMove"
+        @touchend="onSheetTouchEnd"
+        @touchcancel="onSheetTouchEnd"
+        @mousedown="onSheetMouseDown"
+      >
+        <!-- 抓把：往下拉即可關閉（跟記錄明細同一套） -->
+        <div class="bsheet__grab" aria-hidden="true"></div>
+
         <header class="catsheet__hd">
           <div class="catsheet__ttl">
             <span class="catsheet__title">選擇分類</span>
@@ -48,7 +82,7 @@ const currentName = computed(() => settings.category(props.modelValue)?.name ?? 
           </button>
         </header>
 
-        <div ref="bodyEl" class="catsheet__body">
+        <div ref="bodyEl" class="catsheet__body bsheet__body">
           <CategoryPicker
             :type="type"
             :model-value="modelValue"
@@ -61,25 +95,18 @@ const currentName = computed(() => settings.category(props.modelValue)?.name ?? 
 </template>
 
 <style scoped>
+/*
+ * 0.1.26：外框幾何全部來自 style.css 的 `.bsheet-mask` / `.bsheet` / `.bsheet__grab`
+ * / `.bsheet__body`（＝記錄明細那套）。這裡只留 z-index、標題列與清單自己的排版。
+ * ⚠ 不要再把 display / background / padding / max-width / max-height 寫回來 ——
+ *   重寫就會蓋掉共用值，五個子頁面又會各長各的。
+ */
 .catsheet {
-  position: fixed;
-  inset: 0;
   z-index: 80;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-  background: rgba(28, 34, 31, 0.42);
-  overscroll-behavior: contain;
 }
 
 .catsheet__card {
-  width: 100%;
-  max-width: 380px;
-  max-height: min(72dvh, 560px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: 12px 12px 14px;
+  padding: 0 12px 14px;
 }
 
 .catsheet__hd {
@@ -114,11 +141,8 @@ const currentName = computed(() => settings.category(props.modelValue)?.name ?? 
 }
 
 /* 分類清單可以捲，但捲到底不會帶動背景 */
+/* 可捲動的幾何交給共用的 `.bsheet__body`，這裡只留這個清單自己的內距 */
 .catsheet__body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
   padding: 12px 2px 2px;
 }
 

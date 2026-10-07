@@ -11,6 +11,7 @@
  */
 import { ref, toRef } from 'vue'
 import { useScrollLock } from '@/composables/useScrollLock'
+import { usePullToClose } from '@/composables/usePullToClose'
 
 export interface DetailRow {
   label: string
@@ -51,16 +52,44 @@ const emit = defineEmits<{ close: [] }>()
  */
 const boxEl = ref<HTMLElement | null>(null)
 useScrollLock(toRef(props, 'open'), { scrollable: () => boxEl.value })
+
+/**
+ * 向下拉就關閉（0.1.26）。
+ * 使用者要求「之前的子頁面風格全跟記錄明細的頁面」——記錄明細可以往下拉關掉，
+ * 這一張以前只有一顆關閉鈕（抓把還是 `display: none` 的裝飾），現在補上手勢。
+ */
+const sheetEl = ref<HTMLElement | null>(null)
+const {
+  dragging: pulling,
+  style: pullStyle,
+  onTouchStart: onSheetTouchStart,
+  onTouchMove: onSheetTouchMove,
+  onTouchEnd: onSheetTouchEnd,
+  onMouseDown: onSheetMouseDown,
+} = usePullToClose({ panel: sheetEl, scroller: boxEl, onClose: () => emit('close') })
 </script>
 
 <template>
   <Transition name="pop">
-    <div v-if="open" class="mask" @click.self="emit('close')">
-      <div ref="boxEl" class="card box" role="dialog" aria-modal="true">
-        <!-- 抓把：手機上暗示可以下拉關閉（實際靠點背景或關閉鈕） -->
-        <span class="grab" aria-hidden="true" />
+    <div v-if="open" class="mask bsheet-mask" @click.self="emit('close')">
+      <div
+        ref="sheetEl"
+        class="card bsheet"
+        :class="{ 'is-dragging': pulling }"
+        :style="pullStyle"
+        role="dialog"
+        aria-modal="true"
+        @touchstart="onSheetTouchStart"
+        @touchmove="onSheetTouchMove"
+        @touchend="onSheetTouchEnd"
+        @touchcancel="onSheetTouchEnd"
+        @mousedown="onSheetMouseDown"
+      >
+        <!-- 抓把：往下拉的握把（以前是隱藏裝飾，0.1.26 起真的可以拉） -->
+        <div class="bsheet__grab" aria-hidden="true"></div>
 
-        <div class="hd">
+        <div ref="boxEl" class="box bsheet__body">
+          <div class="hd">
           <span class="hd__t">{{ title }}</span>
           <button class="hd__x" type="button" aria-label="關閉" @click="emit('close')">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -102,45 +131,30 @@ useScrollLock(toRef(props, 'open'), { scrollable: () => boxEl.value })
           </ul>
         </div>
 
-        <p class="tip tiny muted">點卡片以外的地方就可以關閉</p>
+        <p class="tip tiny muted">往下拉、或點卡片以外的地方都可以關閉</p>
+        </div>
       </div>
     </div>
   </Transition>
 </template>
 
 <style scoped>
+/*
+ * 0.1.26：外框幾何全部來自 style.css 的 `.bsheet-mask` / `.bsheet` / `.bsheet__grab`
+ * / `.bsheet__body`（＝記錄明細那套），這裡只留 z-index 與內容自己的排版。
+ * ⚠ 不要再把 display / background / padding / max-width 寫回 `.mask`／`.box`。
+ */
 .mask {
-  position: fixed;
-  inset: 0;
   z-index: 95;
-  background: rgba(27, 26, 24, 0.34);
-  display: grid;
-  place-items: center;
-  padding: 20px;
 }
 .box {
-  width: 100%;
-  max-width: 330px;
-  max-height: calc(100vh - 40px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 16px 17px 14px;
+  padding: 4px 17px 14px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  /* 動畫起點：從卡片位置微微放大浮出（見 .pop-*） */
-  transform-origin: center 60%;
 }
-/* 抓把（桌機看不到也不礙事，純裝飾） */
-.grab {
-  display: none;
-  align-self: center;
-  width: 34px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--line-strong);
-  margin-bottom: 2px;
-}
+/* ⚠ 0.1.26 移除這裡舊的 `.grab`（`display: none` 的裝飾）——
+   抓把改用共用的 `.bsheet__grab`，而且現在真的可以拉。不要把舊的加回來。 */
 .hd {
   display: flex;
   align-items: center;

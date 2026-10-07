@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, toRef } from 'vue'
+import { computed, ref, toRef } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { calcValue, displayMain, displaySub, isLongDisplay, type CalcState } from '@/lib/calc'
 import { fmtMoney } from '@/lib/currency'
 import { useScrollLock } from '@/composables/useScrollLock'
+import { usePullToClose } from '@/composables/usePullToClose'
 import Keypad from '@/components/Keypad.vue'
 
 /**
@@ -42,12 +43,50 @@ const convertedAmount = computed(() => Number((amount.value * settings.rate(prop
  * 計算機整頁都不需要捲，所以不傳 scrollable —— 任何手指滑動一律擋掉。
  */
 useScrollLock(toRef(props, 'open'))
+
+/**
+ * 向下拉就關閉（0.1.26）。
+ * 使用者要求「之前的子頁面風格全跟記錄明細的頁面」——計算機也是子頁面。
+ *
+ * ⚠ 計算機**沒有可捲動區**（超過高度是讓數字鍵縮小，不是長捲軸），
+ *   所以 `scroller` 傳一個永遠是 null 的 ref：
+ *   這樣 `usePullToClose` 會把「往下滑」一律判成「拖面板」，
+ *   不會有「這一下是捲內容還是關面板」的歧義。
+ * ⚠ 外框仍然留著 `touch-action: none`（見 CSS）：這一頁本來就不該有原生捲動，
+ *   而 touch 事件照樣會進來，拖曳關閉不受影響。
+ */
+const sheetEl = ref<HTMLElement | null>(null)
+const noScroller = ref<HTMLElement | null>(null)
+const {
+  dragging: pulling,
+  style: pullStyle,
+  onTouchStart: onSheetTouchStart,
+  onTouchMove: onSheetTouchMove,
+  onTouchEnd: onSheetTouchEnd,
+  onMouseDown: onSheetMouseDown,
+} = usePullToClose({ panel: sheetEl, scroller: noScroller, onClose: () => emit('close') })
 </script>
 
 <template>
   <Transition name="calcfade">
-    <div v-if="open" class="calcwrap" @click.self="emit('close')">
-      <div class="calccard card" role="dialog" aria-modal="true" aria-label="輸入金額">
+    <div v-if="open" class="calcwrap bsheet-mask" @click.self="emit('close')">
+      <div
+        ref="sheetEl"
+        class="calccard card bsheet"
+        :class="{ 'is-dragging': pulling }"
+        :style="pullStyle"
+        role="dialog"
+        aria-modal="true"
+        aria-label="輸入金額"
+        @touchstart="onSheetTouchStart"
+        @touchmove="onSheetTouchMove"
+        @touchend="onSheetTouchEnd"
+        @touchcancel="onSheetTouchEnd"
+        @mousedown="onSheetMouseDown"
+      >
+        <!-- 抓把：往下拉即可關閉（跟記錄明細同一套） -->
+        <div class="bsheet__grab" aria-hidden="true"></div>
+
         <header class="calccard__hd">
           <span class="calccard__title">輸入金額</span>
           <button type="button" class="btn btn--primary calccard__done" @click="emit('close')">
@@ -73,30 +112,19 @@ useScrollLock(toRef(props, 'open'))
 </template>
 
 <style scoped>
+/*
+ * 0.1.26：外框幾何來自 style.css 的 `.bsheet-mask` / `.bsheet` / `.bsheet__grab`
+ * （＝記錄明細那套）。這裡只留計算機自己的東西。
+ * ⚠ `touch-action: none` 要留著：計算機整頁都不該有原生捲動。
+ *   touch 事件照樣會進來，所以下拉關閉不受影響。
+ */
 .calcwrap {
-  position: fixed;
-  inset: 0;
   z-index: 80;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-  background: rgba(28, 34, 31, 0.42);
-  /* 手指滑動不要在這一層產生任何捲動手勢（背景也就不會被帶動）；
-     計算機沒有可捲動的區域，所以直接 none 不會影響任何操作 */
   touch-action: none;
-  /* 彈窗本身也不要把捲動傳給背景（雙重保險） */
-  overscroll-behavior: contain;
 }
 
 .calccard {
-  width: 100%;
-  max-width: 352px;
-  /* 卡片不滑動：超過就讓數字鍵縮小，而不是長出捲軸 */
-  max-height: calc(100dvh - 32px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: 12px 12px 14px;
+  padding: 0 12px 14px;
 }
 
 .calccard__hd {

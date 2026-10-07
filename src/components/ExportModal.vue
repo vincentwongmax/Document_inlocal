@@ -16,6 +16,7 @@ import { computed, onBeforeUnmount, ref, toRef, watch } from 'vue'
 import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
 import { useScrollLock } from '@/composables/useScrollLock'
+import { usePullToClose } from '@/composables/usePullToClose'
 import DateField from '@/components/DateField.vue'
 import { notify } from '@/lib/alerts'
 import { buildExport, downloadJson } from '@/lib/exportImport'
@@ -42,6 +43,31 @@ const settings = useSettingsStore()
 const boxEl = ref<HTMLElement | null>(null)
 useScrollLock(toRef(props, 'open'), { scrollable: () => boxEl.value })
 
+/**
+ * 向下拉就關閉（0.1.26）。
+ * 使用者要求「之前的子頁面風格全跟記錄明細的頁面」——記錄明細可以往下拉關掉。
+ * ⚠ 匯出中（busy）不給關：那時候正在打包 ZIP／XLSX，中途關掉會留下半成品。
+ *   （背景點擊與取消鈕本來就有同樣的 busy 判斷，這裡保持一致。）
+ * ⚠ `busy` 一定要**宣告在這一塊之前**：下面那個閉包雖然是延後執行、
+ *   就算寫在後面也不會炸，但寫在前面才讀得懂「誰先誰後」。
+ */
+const busy = ref(false)
+const sheetEl = ref<HTMLElement | null>(null)
+const {
+  dragging: pulling,
+  style: pullStyle,
+  onTouchStart: onSheetTouchStart,
+  onTouchMove: onSheetTouchMove,
+  onTouchEnd: onSheetTouchEnd,
+  onMouseDown: onSheetMouseDown,
+} = usePullToClose({
+  panel: sheetEl,
+  scroller: boxEl,
+  onClose: () => {
+    if (!busy.value) emit('close')
+  },
+})
+
 type Fmt = 'json' | 'excel'
 /** 匯出範圍的**錢包**維度：只有這本帳，或全部錢包 */
 type Scope = 'wallet' | 'all'
@@ -52,7 +78,6 @@ const scope = ref<Scope>('all')
 const rangeMode = ref<RangeMode>('all')
 const from = ref('')
 const to = ref('')
-const busy = ref(false)
 const progress = ref<ExportProgress | null>(null)
 
 /** 預設的「自訂區間」＝本月，省得每次都要從空白開始挑 */
@@ -252,8 +277,25 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 </script>
 
 <template>
-  <div v-if="open" class="mask" @click.self="!busy && emit('close')">
-    <div ref="boxEl" class="card box" role="dialog" aria-modal="true" aria-label="匯出資料">
+  <div v-if="open" class="mask bsheet-mask" @click.self="!busy && emit('close')">
+    <div
+      ref="sheetEl"
+      class="card bsheet"
+      :class="{ 'is-dragging': pulling }"
+      :style="pullStyle"
+      role="dialog"
+      aria-modal="true"
+      aria-label="匯出資料"
+      @touchstart="onSheetTouchStart"
+      @touchmove="onSheetTouchMove"
+      @touchend="onSheetTouchEnd"
+      @touchcancel="onSheetTouchEnd"
+      @mousedown="onSheetMouseDown"
+    >
+      <!-- 抓把：往下拉即可關閉（匯出中 busy 時 onClose 會自己擋掉） -->
+      <div class="bsheet__grab" aria-hidden="true"></div>
+
+      <div ref="boxEl" class="box bsheet__body">
       <h3>匯出資料</h3>
 
       <!-- 格式 -->
@@ -402,27 +444,17 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
         <button class="btn" :disabled="busy" @click="emit('close')">取消</button>
         <button class="btn btn--primary" :disabled="!canExport" @click="run">匯出</button>
       </div>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
 .mask {
-  position: fixed;
-  inset: 0;
   z-index: 90;
-  background: rgba(27, 26, 24, 0.34);
-  display: grid;
-  place-items: center;
-  padding: 20px;
 }
 .box {
-  width: 100%;
-  max-width: 380px;
-  max-height: calc(100vh - 40px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 18px;
+  padding: 4px 18px 18px;
   display: flex;
   flex-direction: column;
   gap: 15px;

@@ -469,7 +469,12 @@ const sumDetail = computed(() => {
       </p>
     </div>
 
-    <!-- 摘要（三張都可以點開看明細，0.1.22） -->
+    <!--
+      摘要（三張都可以點開看明細，0.1.22）。
+      ⚠ 0.1.26 起**移除「明細 ›」文字**（使用者：移除明細的文字，但功能保持）。
+        點卡片開明細的行為完全不變；右下角留一顆純裝飾的 `›` 折箭頭，
+        讓「這張卡可以點」的提示還在（`.sum__more` 只剩箭頭，不再有文字）。
+    -->
     <div class="sums">
       <button class="card sum" type="button" @click="sumOpen = 'expense'">
         <span class="tiny muted">支出</span>
@@ -483,13 +488,13 @@ const sumDetail = computed(() => {
           較前期 {{ mom > 0 ? '+' : '' }}{{ (mom * 100).toFixed(0) }}%
         </span>
         <span v-else class="tiny muted">尚無前期可比較</span>
-        <span class="sum__more" aria-hidden="true">明細 ›</span>
+        <span class="sum__arrow" aria-hidden="true">›</span>
       </button>
       <button class="card sum" type="button" @click="sumOpen = 'income'">
         <span class="tiny muted">收入</span>
         <strong class="num sum__inc">{{ fmtNum(st.income.value) }}</strong>
         <span class="tiny muted">{{ st.incomeByCat.value.length }} 個來源</span>
-        <span class="sum__more" aria-hidden="true">明細 ›</span>
+        <span class="sum__arrow" aria-hidden="true">›</span>
       </button>
       <button class="card sum" type="button" @click="sumOpen = 'balance'">
         <span class="tiny muted">結餘</span>
@@ -497,7 +502,7 @@ const sumDetail = computed(() => {
           {{ fmtNum(st.balance.value) }}
         </strong>
         <span class="tiny muted">{{ st.rows.value.length }} 筆</span>
-        <span class="sum__more" aria-hidden="true">明細 ›</span>
+        <span class="sum__arrow" aria-hidden="true">›</span>
       </button>
     </div>
 
@@ -804,13 +809,17 @@ const sumDetail = computed(() => {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-/* 右下角的「明細 ›」：不做成獨立鈕，只當可按的視覺提示 */
-.sum__more {
+/* 右下角的折箭頭：0.1.26 起把「明細 ›」的文字拿掉，只留箭頭噹「可以點開」的提示。
+   ⚠ 不要做成獨立鈕（整張卡片就是那顆鈕），也**不要**把文字加回來 ——
+     使用者明確要求移除「明細」文字。 */
+.sum__arrow {
   margin-top: 3px;
-  font-size: 10.5px;
-  font-weight: 650;
+  align-self: flex-end;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
   color: var(--accent);
-  opacity: 0.85;
+  opacity: 0.6;
 }
 .sum strong {
   font-size: 15px;

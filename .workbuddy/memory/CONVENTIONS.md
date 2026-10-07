@@ -974,3 +974,152 @@ pointerdown（capture）
   那是 esbuild 的 optionalDependencies（**不該**進 package.json）：把那行從 package.json
   刪掉再 `npm install` 就會裝回
 - `.smoke/`、`.deploy/` 已 gitignore；`CHANGELOG.md` 要進版控
+
+## ⚠⚠ 所有子頁面都是底部彈層，可向下拉關閉（0.1.26 起永久適用）
+
+> 使用者原話：「管理分類的按鈕中的頁面（新增和修改分類）改成和記錄明細頁面的樣式一樣，
+> **用戶可以向下拉就關閉**，等等，**之前的子頁面風格全跟記錄明細的頁面**」
+
+**樣板＝`RecordSheet.vue`**。它那套外框幾何已經抽到 `style.css` 共用
+（`.bsheet-mask` / `.bsheet` / `.bsheet__grab` / `.bsheet__body`），
+六個子頁面全部改用它：
+
+```html
+<div v-if="open" class="mask bsheet-mask" @click.self="close">
+  <div ref="sheetEl" class="card bsheet" :class="{ 'is-dragging': pulling }" :style="pullStyle"
+       role="dialog" aria-modal="true"
+       @touchstart="onSheetTouchStart" @touchmove="onSheetTouchMove"
+       @touchend="onSheetTouchEnd" @touchcancel="onSheetTouchEnd" @mousedown="onSheetMouseDown">
+    <div class="bsheet__grab" aria-hidden="true"></div>
+    <div ref="bodyEl" class="bsheet__body">…內容（唯一可捲的那一層）…</div>
+  </div>
+</div>
+```
+
+```ts
+const sheetEl = ref<HTMLElement | null>(null)   // 外框（跟著手指位移）
+// bodyEl 是內容區，也是 useScrollLock 的 scrollable
+const { dragging: pulling, style: pullStyle, onTouchStart: onSheetTouchStart,
+        onTouchMove: onSheetTouchMove, onTouchEnd: onSheetTouchEnd,
+        onMouseDown: onSheetMouseDown } =
+  usePullToClose({ panel: sheetEl, scroller: bodyEl, onClose: () => emit('close') })
+```
+
+⚠ **五件一定要注意的事**：
+
+1. **不要在元件裡重寫那些幾何屬性**（`position` / `inset` / `background` / `display` /
+   `padding` / `max-width` / `max-height` / `border-radius`）。
+   元件的 scoped 樣式特異度更高，一寫就會蓋掉共用值 → 六個子頁面又各長各的。
+   元件裡只該留：`z-index`、以及自己內容的排版。
+2. `panel`（外框）與 `scroller`（內容區）**必須是不同元素**：
+   內容沒捲到頂時往下滑是「捲內容」，捲到頂再往下拉才是「關閉」。
+   - 例外：`CalcSheet` 沒有可捲區，所以 `scroller` 傳一個永遠是 `null` 的 ref
+     → 往下滑一律判成拖面板。
+3. 抓把 `.bsheet__grab` 要是 `bsheet` 的**直接子元素**（不能放進 `__body`），
+   否則內容一捲動抓把就跑了。它自己有 `touch-action: none`，不然拖曳會被瀏覽器搶走。
+4. 有「進行中」狀態的彈層要自己擋關閉：`ExportModal` 的 `onClose` 檢查 `busy`
+   （匯出中不給關，跟背景點擊與取消鈕的判斷一致）。
+5. 桌機（≥768px）由共用的 `@media (min-width: 768px)` 處理（置中、固定 480px 寬），
+   **不要在元件裡另外規定**。
+
+**目前的清單**（新的子頁面要照這個規格做）：
+`RecordSheet`（樣板）、`CategoryManageModal`、`CategorySheet`、`CalcSheet`、
+`SumDetailSheet`、`ExportModal`、`ReviewSheet`。
+- ⚠ `ReviewSheet` 原本是**整頁覆蓋**（`background: var(--bg)`、`inset: 0`）
+  而且**完全沒接 `useScrollLock`**；0.1.26 一起改成彈層並補上鎖背景。
+- ⚠ 這些彈層的 `useScrollLock` 的 `scrollable` 都要指向 `.bsheet__body`（或等價的內容區）。
+
+### ⚠⚠ 已知取捨：底部的 Toast 會蓋住彈層下半部
+
+Toast 是 `position: 'bottom'`（`src/lib/alerts.ts` 的 `Swal.mixin`）——
+**這是使用者指定的，v80 有明文記載「使用者指定保留原本位置」，不要改去頂部。**
+所以彈層改成貼底之後，兩者一定會在畫面下半部重疊：
+
+- 「已可離線使用」這則會在 **Service Worker 快取完成**時出現約 4 秒，
+  它的 `pointer-events` 是 auto → **會把底下按鍵的觸控整顆吃掉**。
+- 影響最大的是 `CalcSheet`：它的**整個數字鍵盤**都在畫面下半部。
+  0.1.26 的 v86 就是這樣紅的（`pd: 0, cl: 0`，一次都沒送到按鈕上，
+  看起來像「按鍵壞了」，其實是被 Toast 蓋住）。
+
+**處理方式：測試端等它消失**（產品端不動，因為 Toast 的位置是使用者指定的）。
+任何要點畫面下半部的測試都要先：
+
+```js
+await page.waitForFunction(() => !document.querySelector('.swal2-container'), { timeout: 9000 }).catch(() => {})
+await sleep(250)
+```
+
+⚠ 這是**短暫且一次性**的（安裝／更新後那次），實務上影響很小；
+但寫測試時不處理就會變成「看起來像程式壞了」的假紅燈。
+
+## ⚠⚠ 點／雙擊空白處都不能動（0.1.23 → 0.1.25 → 0.1.26 三度修正）
+
+> 使用者三次回報，一次比一次具體：
+> 0.1.23「連點空白的地方，頁面會向上滑」
+> 0.1.25「只要用戶有在文字輸入框點擊，就會出現問題」（→ 16px ＋ 收鍵盤）
+> 0.1.26「**雙擊**空白的地方也是會向上移。一開始打開時不會，點選了輸入框再回到空白地方
+> 雙擊，就會回到頁面向上移的 BUG，**應無論在任何地方雙擊都不要動**」
+
+**0.1.25 為什麼還不夠**：它只在「當下有輸入框聚焦」時才動手。可是**雙擊的第二次點擊**
+發生時，輸入框早就被第一次點擊收掉了 → 護欄完全沒插手，
+WebKit 就把它當成一次真正的 double-tap 手勢（smart zoom／重新對齊 visual viewport）。
+
+**`src/lib/iosScrollGuard.ts` 現在有三層**：
+
+1. **擋掉雙擊手勢**（關鍵）：`touchend`（capture、`passive: false`）時，
+   若「目標在空白處」**且**「距上次 touchend ≤ 350ms」且「上次也在空白處」
+   → `e.preventDefault()`。WebKit 收不到第二個 touchend 的預設行為就組不出 double-tap。
+   - ⚠ **只在空白處擋**。按鈕上的連點是合法的連續操作（計算機快速按兩下同一個數字），
+     擋掉會把功能弄壞。`.smoke/v105.mjs` 有對照組專門守這個。
+2. **收掉輸入框**：`pointerdown`（capture）時，若「點在空白處」且「當下有可編輯元素聚焦」
+   → 記下位置 → `active.blur()`（鍵盤跟著收起，游標對齊迴圈結束）。
+3. **扶正捲動位置**：剛收掉輸入框的 **1.2 秒**內，任何一次「乾淨的點擊」之後，
+   把 `scrollY` 扶回點下去那一刻的值。**分兩次做**：`rAF×2`（趕在下次繪製前）
+   與 `setTimeout 300ms`（iOS 收鍵盤的還原動畫是非同步的，跑完可能又帶走一次）。
+   只在「離目標 > 4px」時才動。
+
+⚠ 幾個刻意的設計，別「優化」掉：
+
+- **只認「點擊」不認「滑動」**：`touchstart` 記下座標，`touchmove` 一動超過
+  **10px** 就放棄這次判定（`clean = false`）。要有容差 ——
+  手指「點」的時候難免抖一兩 px，一點點位移就當滑動的話，真點擊會被誤判掉。
+- **`TAP_MAX_MS = 600`**：手指停留太久不算點擊（那是長按）。
+- 多指（縮放）一律不算點擊。
+- 彈窗開著時（`html.is-locked`）整支不插手。
+- 非 iOS 整支不裝。
+
+**`isBlankTap()` 的判準要跟測試一致**：
+`a,button,input,select,textarea,label,summary,[role=button],[role=option],[role=tab],[contenteditable=true]`
+
+### 測試（`.smoke/v105.mjs` 的 ① 段）—— 三個踩過的坑
+
+- **CDP 的觸控命中 ≠ `elementFromPoint`**：偶爾不一致（底部固定列、toast 的陰影…）。
+  所以「找空白點」要**先用一次探測觸控確認實際目標**，不能只信 `elementFromPoint`。
+- **SweetAlert2 的 toast 會蓋住螢幕下半部**，而它上面有按鈕 →
+  掃描會把 toast 的空白區誤判成空白，實際卻打在它的按鈕上。
+  **每次要找空白點之前先等 toast 消失**（`waitForFunction(() => !document.querySelector('.swal2-container'))`）。
+- **順序是「先聚焦輸入框，再找空白點」**：`focus()` 會把輸入框捲進可視範圍，
+  底下的內容會移動 —— 先找點再聚焦的話，剛才那個空白點已經不是空白了。
+- 兩下觸控之間要 **< 350ms**（同一個 CDP session，不要在兩下之間重建）。
+- 觀察器要掛在 **bubble** 階段讀 `e.defaultPrevented`；掛 capture 會比護欄先跑，永遠是 false。
+
+## ⚠ 收據辨識記帳＝設定頁的 BETA 區塊（0.1.26 移動）
+
+- **入口在設定頁**（`.sec--beta` ＋ `.beta` 徽章 ＋ `.upload` 按鈕），
+  記帳頁**不再顯示**它。`ReviewSheet` 也只掛在設定頁。
+- `useUpload()` 的狀態是**模組層級**的（singleton），所以 `ReviewSheet` 只需要掛在
+  「當下要顯示它的那一頁」。**搬頁面時要記得一起搬 `ReviewSheet`。**
+- ⚠ **記帳頁的「收據圖片」區塊（`ReceiptImages`）是完全不同的功能**（把圖片附加到
+  這次記帳，沒有 OCR、不會自動建記錄），**不要合併、不要動它**。
+- ⚠ **整頁拖放已拆掉**：以前記帳頁的 `drop` 依落點分流（收據圖片區塊→附加；
+  別處→OCR）。OCR 搬走後這條分岔沒意義了，`drop` 收進 `ReceiptImages` **自己**處理
+  （需要 `@dragover.prevent`，不然 `drop` 不會觸發）。
+  那個整頁的「放開即可上傳收據」遮罩與 `.dropzone` / `.upload` 的樣式已從 HomeView 移除。
+
+### 測試用的假收據圖一定要「像收據」
+
+⚠⚠ `.smoke/v105.mjs` 的 ③-6 用 canvas 畫一張白底黑字、有 `TOTAL 85.00` 的假收據。
+**不要改回「一張小的純色 PNG」** —— tesseract 對那種圖會直接
+`RuntimeError: Aborted(-1)`（wasm 內部斷言），而且那個 abort 是 **uncaught 的 pageerror**，
+會讓「沒有 JS 錯誤」那條假紅燈。用像收據的圖就完全正常（實測金額 85.00 辨識得出來）。
+- 這個 abort **與換頁無關**（不換頁也會在 3 秒內炸），純粹是圖的問題。

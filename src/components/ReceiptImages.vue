@@ -161,14 +161,37 @@ const { armed: pasteMode, onPaste, onInput, pasteFromClipboard } = usePasteImage
   onNothing: () => notify('剪貼簿裡沒有圖片', 'info'),
 })
 
-/* ── 拖曳（頁面的掉落判斷交給 HomeView，這裡只負責亮起來）─── */
+/* ── 拖曳（0.1.26 起自己接，不再依賴外層頁面）──────────────────
+   ⚠ 以前 drop 是掛在 HomeView 的整個頁面上，那裡再用 `[data-drop="receipt"]`
+     判斷落點：落在這一塊就附加圖片，落在別處就走「上傳收據 → OCR 辨識記帳」。
+     0.1.26 把 OCR 那段整個搬到設定頁的 BETA 區塊，記帳頁不再有那個gesture，
+     所以 drop 直接收進這個元件自己處理 ——
+     這樣不管在哪一頁（記帳頁、記錄明細、設定頁）拖進來都一樣能附加圖片。
+   ⚠ dragover 一定要 preventDefault：不擋的話瀏覽器不會把這裡當成放置目標，
+     drop 根本不會觸發（而且會顯示「不允許」的游標）。 */
+function isFileDrag(e: DragEvent) {
+  return !!e.dataTransfer?.types.includes('Files')
+}
 function onDragEnter(e: DragEvent) {
-  if (!e.dataTransfer?.types.includes('Files')) return
+  if (!isFileDrag(e)) return
   over.value = true
 }
 function onDragLeave(e: DragEvent) {
   const to = e.relatedTarget as Node | null
   if (!to || !(e.currentTarget as HTMLElement).contains(to)) over.value = false
+}
+function onDragOver(e: DragEvent) {
+  if (!isFileDrag(e)) return
+  e.preventDefault()
+  e.dataTransfer!.dropEffect = 'copy'
+  over.value = true
+}
+async function onDrop(e: DragEvent) {
+  if (!isFileDrag(e)) return
+  e.preventDefault()
+  over.value = false
+  const files = Array.from(e.dataTransfer?.files ?? [])
+  if (files.length) await addFiles(files)
 }
 
 /* ── 生命週期 ───────────────────────────────────────────── */
@@ -214,6 +237,8 @@ const hintText = computed(() => {
     data-drop="receipt"
     @dragenter="onDragEnter"
     @dragleave="onDragLeave"
+    @dragover="onDragOver"
+    @drop="onDrop"
   >
     <span class="rec__label">{{ label }}</span>
 

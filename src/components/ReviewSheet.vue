@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { DraftRecord } from '@/types'
 import { useUpload } from '@/composables/useUpload'
 import { useSettingsStore } from '@/stores/settings'
+import { useScrollLock } from '@/composables/useScrollLock'
+import { usePullToClose } from '@/composables/usePullToClose'
 import CategoryPicker from './CategoryPicker.vue'
 import ClearableInput from './ClearableInput.vue'
 import DateTimeField from './DateTimeField.vue'
@@ -24,6 +26,26 @@ function sizeInfo(d: DraftRecord): string {
 
 const up = useUpload()
 const settings = useSettingsStore()
+
+/**
+ * 0.1.26：這一張以前是**整頁覆蓋**（`background: var(--bg)`、`inset: 0`），
+ * 而且**完全沒有鎖背景**（連 useScrollLock 都沒接）。
+ * 使用者要求「之前的子頁面風格全跟記錄明細的頁面」，所以一起改成底部彈層，
+ * 順便補上本來就缺的鎖背景。
+ * 它現在掛在設定頁的 BETA 區塊旁邊（見 SettingsView.vue）。
+ */
+const bodyEl = ref<HTMLElement | null>(null)
+useScrollLock(computed(() => up.reviewOpen.value), { scrollable: () => bodyEl.value })
+
+const sheetEl = ref<HTMLElement | null>(null)
+const {
+  dragging: pulling,
+  style: pullStyle,
+  onTouchStart: onSheetTouchStart,
+  onTouchMove: onSheetTouchMove,
+  onTouchEnd: onSheetTouchEnd,
+  onMouseDown: onSheetMouseDown,
+} = usePullToClose({ panel: sheetEl, scroller: bodyEl, onClose: () => up.clear() })
 
 const list = computed(() => up.drafts.value)
 const ocrBusy = computed(() => up.stage.value === 'ocr')
@@ -68,8 +90,24 @@ function applyDate(d: DraftRecord, iso: string) {
 
 <template>
   <Transition name="rv">
-    <div v-if="up.reviewOpen.value" class="wrap">
-      <div class="panel">
+    <div v-if="up.reviewOpen.value" class="wrap bsheet-mask">
+      <div
+        ref="sheetEl"
+        class="panel card bsheet"
+        :class="{ 'is-dragging': pulling }"
+        :style="pullStyle"
+        role="dialog"
+        aria-modal="true"
+        aria-label="收據辨識"
+        @touchstart="onSheetTouchStart"
+        @touchmove="onSheetTouchMove"
+        @touchend="onSheetTouchEnd"
+        @touchcancel="onSheetTouchEnd"
+        @mousedown="onSheetMouseDown"
+      >
+        <!-- 抓把：往下拉即可關閉（跟記錄明細同一套） -->
+        <div class="bsheet__grab" aria-hidden="true"></div>
+
         <header class="hd">
           <div>
             <h3>收據辨識</h3>
@@ -96,7 +134,7 @@ function applyDate(d: DraftRecord, iso: string) {
           <div class="bar__fill" :style="{ width: `${(up.progress.value.done / Math.max(1, up.progress.value.total)) * 100}%` }" />
         </div>
 
-        <div class="body">
+        <div ref="bodyEl" class="body bsheet__body">
           <p v-if="!list.length" class="muted empty">沒有待確認的圖片</p>
 
           <article v-for="d in list" :key="d.key" class="dcard card">
@@ -200,19 +238,16 @@ function applyDate(d: DraftRecord, iso: string) {
 </template>
 
 <style scoped>
+/*
+ * 0.1.26：外框幾何來自 style.css 的 `.bsheet-mask` / `.bsheet` / `.bsheet__grab`
+ * / `.bsheet__body`（＝記錄明細那套）。這裡只留 z-index 與內容自己的排版。
+ * ⚠ 不要再把 position/inset/background/height 寫回 `.wrap`／`.panel`。
+ */
 .wrap {
-  position: fixed;
-  inset: 0;
   z-index: 70;
-  background: var(--bg);
-  display: flex;
-  flex-direction: column;
 }
 .panel {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
+  padding: 0;
 }
 .hd {
   display: flex;
@@ -238,10 +273,8 @@ function applyDate(d: DraftRecord, iso: string) {
   background: var(--accent);
   transition: width 0.25s;
 }
+/* 可捲動的幾何交給共用的 `.bsheet__body`，這裡只留內距與欄距 */
 .body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
   padding: 14px 18px 20px;
   display: flex;
   flex-direction: column;
@@ -381,32 +414,14 @@ function applyDate(d: DraftRecord, iso: string) {
 }
 
 @media (min-width: 768px) {
-  .wrap {
-    padding: 28px;
-    background: rgba(27, 26, 24, 0.32);
-  }
-  .panel {
-    margin: 0 auto;
-    width: 100%;
-    max-width: 720px;
-    background: var(--surface);
-    border-radius: var(--r-xl);
-    box-shadow: var(--shadow-3);
-    overflow: hidden;
-  }
+  /* ⚠ 0.1.26：`.wrap`／`.panel` 的桌機尺寸**已交給共用的 `.bsheet`**
+     （置中、固定 480px 寬、圓角），不要在這一頁另外規定，
+     否則五個子頁面又會各長各的。這裡只留內容自己的排版。 */
   .grid {
     grid-template-columns: 1fr 1fr;
   }
   .ft {
     padding-bottom: 14px;
-  }
-}
-@media (min-width: 1024px) {
-  .wrap {
-    padding: 32px;
-  }
-  .panel {
-    max-width: 860px;
   }
 }
 </style>

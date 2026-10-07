@@ -80,14 +80,23 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
         <span class="row__expr-eq">=</span>
       </span>
     </button>
-    <div class="row__amt">
+    <!--
+      金額也是一顆按鈕（0.1.26）。
+      ⚠ 原本這裡是 <div>：點數字既不開明細、又會被瀏覽器當成文字選取
+      （使用者：「用戶點擊金錢的數字不要選取，要進入到記錄明細的頁面中」）。
+      改成 <button> 之後：
+        ① 點它就跟點左邊的主按鈕一樣開明細
+        ② `user-select: none` 由 style.css 的全站 button 規則自動帶上，不會再選到字
+        ③ v102 那種「找空白處」的探測本來就會跳過 button，行為一致
+    -->
+    <button class="row__amt" type="button" @click="emit('edit', record.id)">
       <strong class="num" :class="isExpense ? 'is-exp' : 'is-inc'">
         {{ isExpense ? '−' : '+' }}{{ fmtMoney(record.baseAmount, record.baseCurrency) }}
       </strong>
       <span v-if="converted" class="tiny muted num">
         {{ fmtMoney(record.amount, record.currency) }} × {{ record.rate }}
       </span>
-    </div>
+    </button>
   </div>
 </template>
 
@@ -98,6 +107,15 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
   gap: 11px;
   padding: 12px 14px;
   transition: background 0.15s ease;
+  /**
+   * ⚠ 整列都不給選字（0.1.26）。
+   * 一列就是一個「點開明細」的目標，選到字只會讓人以為點失敗；
+   * 使用者原話：「用戶點擊金錢的數字不要選取，要進入到記錄明細的頁面中」。
+   * 兩顆按鈕（.row__main／.row__amt）本來就繼承 button 的 user-select: none，
+   * 這裡寫在列上是一道保險，連非按鈕的縫隙也一起蓋掉。
+   */
+  user-select: none;
+  -webkit-user-select: none;
 }
 .row:hover {
   background: var(--surface-3);
@@ -221,12 +239,15 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
   color: var(--text-3);
   font-weight: 550;
 }
+/* 金額區塊：點一下開明細（跟左邊的主按鈕同一個動作） */
 .row__amt {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 1px;
   flex: none;
+  cursor: pointer;
+  text-align: right;
 }
 .row__amt strong {
   font-size: 15px;

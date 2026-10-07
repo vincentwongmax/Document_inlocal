@@ -9,9 +9,7 @@ import CategoryPicker from '@/components/CategoryPicker.vue'
 import ClearableInput from '@/components/ClearableInput.vue'
 import QuickNotePicker from '@/components/QuickNotePicker.vue'
 import DateTimeField from '@/components/DateTimeField.vue'
-import ReviewSheet from '@/components/ReviewSheet.vue'
 import ReceiptImages from '@/components/ReceiptImages.vue'
-import { useUpload } from '@/composables/useUpload'
 import {
   displayMain,
   displaySub,
@@ -30,7 +28,15 @@ import { readJSON, writeJSON } from '@/lib/storage'
 
 const records = useRecordsStore()
 const settings = useSettingsStore()
-const up = useUpload()
+
+/*
+ * ⚠ 0.1.26：這一頁**不再有**「上傳收據圖片 → 自動辨識記帳」的區塊
+ *   （ReviewSheet／useUpload 都已移出）。使用者要求把它搬到設定頁的 BETA 區塊。
+ *   留在這裡的只有「收據圖片」區塊（ReceiptImages）—— 那是把圖片附加到這次記帳上，
+ *   跟 OCR 辨識記帳是兩件事，**刻意不動它**。
+ *   連帶的：整頁拖放也拆了（drop 收進 ReceiptImages 自己處理），
+ *   所以在這一頁把圖拖到「收據圖片」區塊上仍然可以附加圖片。
+ */
 
 /* ── 表單狀態 ───────────────────────────────────────────── */
 const calc = ref<CalcState>(initCalc())
@@ -227,52 +233,26 @@ function submit() {
   resetForm()
 }
 
-/* ── 圖片上傳（可多張、可拖曳） ─────────────────────────── */
-const dragOver = ref(false)
-
-/**
- * 拖到哪裡決定要做什麼：
- *   - 拖在「收據圖片」區塊上 → 附加到這次記帳（區塊自己會亮起來）
- *   - 拖在頁面其他地方   → 走原本的收據辨識流程（OCR → 清單 → 建立記錄）
- * 兩邊共用同一個 dragover / drop，所以用 `[data-drop="receipt"]` 判斷落點。
+/*
+ * ── 拖放（0.1.26 簡化）─────────────────────────────────────
+ * 以前這裡是整頁的 dragover/drop，再依落點分流：
+ *   落在「收據圖片」區塊 → 附加到這次記帳；落在別處 → 走 OCR 辨識記帳。
+ * OCR 搬到設定頁之後，這一頁就只剩「附加到這次記帳」一種結果，
+ * 所以 drop 直接由 `ReceiptImages` 自己接（它自己就有 dragover/drop 了），
+ * 這裡不必再掛任何拖放監聽，也就不會再有那個整頁的「放開即可上傳收據」遮罩。
  */
-function overReceipts(e: DragEvent) {
-  const t = e.target as HTMLElement | null
-  return !!t?.closest?.('[data-drop="receipt"]')
-}
-
-function onDragOver(e: DragEvent) {
-  e.preventDefault()
-  dragOver.value = !overReceipts(e)
-}
-function onDragLeave(e: DragEvent) {
-  // 只在真的離開整個頁面時才收掉遮罩，不然滑過任何子元素都會閃一下
-  const to = e.relatedTarget as Node | null
-  if (to && (e.currentTarget as HTMLElement).contains(to)) return
-  dragOver.value = false
-}
-async function onDrop(e: DragEvent) {
-  e.preventDefault()
-  dragOver.value = false
-  const files = Array.from(e.dataTransfer?.files ?? [])
-  if (!files.length) return
-  if (overReceipts(e)) await imgEl.value?.addFiles(files)
-  else await up.addFiles(files)
-}
 
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
-  <div
-    class="page home"
-    :class="{ 'is-drag': dragOver }"
-    @dragover="onDragOver"
-    @dragleave="onDragLeave"
-    @drop="onDrop"
-  >
-    <div v-if="dragOver" class="dropzone">放開即可上傳收據</div>
+  <!--
+    ⚠ 0.1.26：原本這裡掛著整頁的 dragover／dragleave／drop 與「放開即可上傳收據」
+      遮罩（把圖拖到別處＝走 OCR 辨識記帳）。OCR 搬到設定頁的 BETA 區塊之後，
+      這一頁不需要任何拖放監聽了 —— 拖放改由「收據圖片」區塊自己接。
+  -->
+  <div class="page home">
     <div class="home__grid">
       <!-- 記帳表單 -->
       <section class="card pad">
@@ -292,21 +272,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           </div>
         </div>
 
-        <!-- 收據辨識流程：上傳後自動 OCR，彈出清單幫你建立記錄。
-             跟下面「收據圖片」區塊（附加圖片到這次記帳）是兩件事，所以文案要分得開 -->
-        <button
-          class="upload"
-          type="button"
-          title="上傳收據後自動辨識，幫你建立記錄"
-          @click="up.pick()"
-        >
-          <svg class="uic" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 16V5m0 0 4 4m-4-4L8 9" />
-            <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
-          </svg>
-          <span>上傳收據圖片</span>
-          <em class="tiny muted">自動辨識記帳</em>
-        </button>
+        <!--
+          ⚠ 0.1.26：原本這裡有一顆「上傳收據圖片／自動辨識記帳」的按鈕，
+            已搬到「設定 → BETA 收據辨識記帳」。記帳頁不再顯示它。
+            下面的「收據圖片」區塊是完全不同的功能（附加圖片到這次記帳），維持不動。
+        -->
 
         <!-- 金額：只留顯示欄位，點一下開計算機子頁面 -->
         <button
@@ -382,8 +352,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       @press="press"
       @close="keypadOpen = false"
     />
-
-    <ReviewSheet />
   </div>
 </template>
 
@@ -398,56 +366,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .pad {
   padding: 16px;
 }
-.upload {
-  width: 100%;
-  margin-top: 12px;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 10px 13px;
-  border-radius: 12px;
-  border: 1px dashed var(--line-strong);
-  background: var(--surface-2);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-2);
-  transition:
-    background 0.15s,
-    border-color 0.15s;
-}
-.upload:hover {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.upload em {
-  margin-left: auto;
-  font-style: normal;
-  font-weight: 500;
-}
-.uic {
-  width: 18px;
-  height: 18px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  flex: none;
-}
-.dropzone {
-  position: fixed;
-  inset: 12px;
-  z-index: 60;
-  display: grid;
-  place-items: center;
-  border: 2px dashed var(--accent);
-  border-radius: var(--r-xl);
-  background: rgba(231, 240, 236, 0.9);
-  color: var(--accent);
-  font-weight: 650;
-  pointer-events: none;
-}
+/*
+ * ⚠ 0.1.26 移除：`.upload`／`.upload:hover`／`.upload em`／`.uic`／`.dropzone`。
+ *   那些是「上傳收據 → 自動辨識記帳」那顆按鈕與整頁拖放遮罩的樣式，
+ *   功能已搬到設定頁的 BETA 區塊（樣式也一起搬過去了，見 SettingsView.vue）。
+ *   不要把這些規則加回來 —— 記帳頁不該再出現那個區塊。
+ */
 .seg {
   display: flex;
   align-items: center;

@@ -9,7 +9,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 
 ## 版本號
 
-- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.25`
+- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.26`
 - 單一來源＝`package.json` 的 `version` → `vite.config.ts` `define` 注入 `__APP_VERSION__`
   （型別在 `env.d.ts`）→ `src/lib/version.ts` → 設定頁「離線與版本」膠囊
 - 每次更新要改 `package.json` ＋ 補一筆 `CHANGELOG.md`
@@ -22,7 +22,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 - 流程：`npx vue-tsc --noEmit` → `npm run build` → `.smoke/vNN.mjs` → 截圖 → CHANGELOG → memory → commit
 - 跑測試：`bash .smoke/run-regress.sh`（全部）或 `bash .smoke/run-regress.sh v104`（指定幾支）。
   ⚠ **判準以 exit code 為主**，摘要行格式各支不一（`pass=N fail=N` vs `N 通過 / N 失敗`）
-- **維護中的回歸集＝v70～v104**；`v45/v46/v56/v57` 早已失效，別當基準
+- **維護中的回歸集＝v70～v105**；`v45/v46/v56/v57` 早已失效，別當基準
 - Chrome `C:/Program Files/Google/Chrome/Application/chrome.exe`；puppeteer-core 在
   `C:\Users\user\.workbuddy\binaries\node\workspace\`；`node` 已在 PATH
   （⚠ 版本目錄會變，用過 `22.22.2-3`／`22.22.2-6`，找不到先 `ls ~/.workbuddy/binaries/node/versions/`）
@@ -41,28 +41,25 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 | 計算機／彈窗／通知／記錄頁／快速備註／統計頁自訂日期 | **v82~v99** |
 | 連點空白處／body 幾何／連點防護 | **v102** |
 | 輸入框字級／點空白處的捲動／下拉清單能不能滑 | **v104** |
+| **雙擊**空白處／統計摘要卡／子頁面彈層／收據 BETA／金額點擊 | **v105** |
 
 - v100（42 項）＝日期輸入框約定 ＋ iOS 貼上 ＋ 向左滑空白 ＋ Toast「知道了」
 - v101（51 項）＝0.1.22 六需求（徽章「圖」／計算公式位置／圖片去重／摘要卡詳情／預設分類／彈窗鎖背景）
-- v102（30 項）＝「連點空白頁面不能動」（body 幾何 ＋ 捲動不動 ＋ 連點防護設定）
+- v102（30 項）＝「連點空白頁面不能動」（body 幾何 ＋ 捲動不動 ＋ 連點防護設定）。
+  **用 390×667 跑**（記帳頁在 844 會剛好塞滿，捲不動就驗不到「不會動」）
 - v103（84 項）＝0.1.24（資料統計分本錢包／總資料 ＋ 匯出可選錢包範圍）
 - v104（46 項）＝0.1.25（輸入框 16px ＋ iosScrollGuard ＋ 下拉清單滑得動）
+- v105（44 項）＝0.1.26（雙擊防護 ＋ 摘要卡 ＋ 六個子頁面彈層 ＋ 收據 BETA ＋ 金額點擊）
 
 ### ⚠⚠ 測試常見殺手（**完整清單在 `CONVENTIONS.md`**，這裡只列最會掛掉的）
 
-- **`indexedDB.deleteDatabase` 只能在「App 重新載入後」呼叫**：App 一載入就握著
-  `mop-ledger-images` 連線 → 請求卡在 `blocked` 永不完成 → **整支掛死（零輸出、被 SIGTERM）**。
-  正確順序：`goto` → `localStorage.clear()` → `reload` → `deleteDatabase` → `reload` → 種資料
+- **`indexedDB.deleteDatabase` 只能在「App 重新載入後」呼叫** → 否則掛死（零輸出、SIGTERM）。
+  順序：`goto` → `localStorage.clear()` → `reload` → `deleteDatabase` → `reload` → 種資料
 - **`mop-ledger.wallets.v1` 是 `{ wallets, activeWalletId }`，不是裸陣列**
-  （裸陣列被 `loadRoot` 當成「沒存過」→ 走遷移 → 只剩 1 個錢包）
-- **照抄 `isRealErr()` + `ENV_NOISE`**：`index.html` 有 Google Fonts 外鏈，網路一抖 console 就噴
-  `ERR_NAME_NOT_RESOLVED`，害「沒有 JS 錯誤」的斷言偶發紅燈（與程式無關）
-- **要等狀態、不要等時間**：`waitForFunction(() => !!document.querySelector(目標))` 再 `sleep(400)`
-- **空集合假通過要防**；**「不會動」要先讓它「能動」**（驗 `scrollY` 不變前要先捲到非 0）
-- **沙箱不允許 Node 開子行程**（`execFileSync`／`spawnSync` → `EBUSY`）
-  → 要「換個實作再驗一次」得拆成 shell 腳本（例：`.smoke/v98-verify.sh`）
-- ⚠ **`npm install <pkg>` 會拔掉 `@esbuild/win32-x64`** → build 爆「needed by esbuild」。
-  那是 esbuild 的 optionalDependencies（**不該**進 package.json）：把那行刪掉再 `npm install`
+- **照抄 `isRealErr()` + `ENV_NOISE`**（Google Fonts 外鏈會讓「沒有 JS 錯誤」偶發紅燈）
+- **要等狀態、不要等時間**；**空集合假通過要防**；**「不會動」要先讓它「能動」**
+- **沙箱不允許 Node 開子行程**（`spawnSync` → `EBUSY`）→ 拆成 shell 腳本
+- ⚠ **`npm install <pkg>` 會拔掉 `@esbuild/win32-x64`** → 把 package.json 那行刪掉再裝回
 
 ## Git / 部署
 
@@ -70,9 +67,9 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
   線上 `https://vincentwongmax.github.io/Document_inlocal/`
 - ⚠ **只 commit 本機，不主動 push／部署**，要動遠端先問
 - ⚠ **工作區有使用者自己的 `ddd.txt`**（草稿）→ 一律 `git add -A -- . ':!ddd.txt'`
-- **沒有存起來的憑證**：要用的 classic PAT（`repo, workflow`）從
+- **沒有存起來的憑證**：classic PAT（`repo, workflow`）從
   `~/.workbuddy/audit-log/*.jsonl` grep `ghp_`（**不要寫進任何檔案**，
-  輸出記得過 `sed -E "s/ghp_[A-Za-z0-9]{36}/ghp_***/g"`）。
+  輸出過 `sed -E "s/ghp_[A-Za-z0-9]{36}/ghp_***/g"`）。
   push＝`git push "https://${TOKEN}@github.com/vincentwongmax/Document_inlocal.git" main`；
   部署＝`GH_TOKEN="$TOKEN" npm run deploy`。
   ⚠ 別用 `git push --dry-run` 判斷有沒有憑證（一定失敗）
@@ -81,12 +78,9 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
   <https://github.com/settings/billing>。**但 Pages 的 legacy 建置不受影響
   → `npm run deploy` 手動部署完全可用**
 - `scripts/deploy-gh-pages.mjs`：用正確 base 建到 `os.tmpdir()` 的**全新目錄**再 force push
-  `gh-pages`，**不動 `dist/`**（動了 `npm run preview` 會白畫面）。
-  ⚠ 別改回建到專案內 `.deploy/`（殘留舊 `.git` 會讓 Vite 清目錄被沙箱攔）
-- ⚠ 部署版雜湊與本機 dist **不同**（`VITE_BASE` 會 inlined 進 bundle）→
-  比對線上／本機要看「內容特徵」，不能對雜湊。
-  base 由 `resolveBase()` 自動判斷（`.github.io` 結尾→`/`，否則 `/<repo>/`；本機 `/`；
-  `VITE_BASE` 可覆寫）。**不要在 workflow 裡設 base**
+  `gh-pages`，**不動 `dist/`**。⚠ 別改回建到專案內 `.deploy/`（殘留舊 `.git` 會被沙箱攔）
+- ⚠ 部署版雜湊與本機 dist **不同**（`VITE_BASE` 會 inlined）→ 比對要看**內容特徵**，不能對雜湊。
+  base 由 `resolveBase()` 自動判斷（`.github.io`→`/`，否則 `/<repo>/`；本機 `/`）
 - PWA 看到舊版先 Ctrl+Shift+R／無痕；測試用全新 profile
 - ⚠⚠ **線上驗證的兩個坑**（`CONVENTIONS.md` 有完整版）：
   1. **`github.io` CDN 有傳播延遲**：剛 deploy 完抓 `index.html`，它可能還指著上一版的
@@ -118,7 +112,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 - **匯出**：設定頁 → 彈窗選格式（JSON／Excel）與範圍（本錢包／全部錢包，兩者都能選）。
   **JSON＝format 2，完整備份可還原**；**Excel＝.zip（xlsx + `images/`），不含任何設定、不能匯回**。
   ZIP 與 XLSX 都是**自己寫的**（`lib/zip.ts`／`lib/xlsx.ts`，零依賴）→
-  ⚠ 動到那裡之前先讀 `CONVENTIONS.md` 的「匯出（JSON ╱ Excel）」那節（一堆一錯就檔案損毀的雷）
+  ⚠ 動到那裡之前先讀 `CONVENTIONS.md` 的「匯出」那節（一堆一錯就檔案損毀的雷）
 - localStorage `mop-ledger.{wallets,setting.<id>,records,draft}`；
   `mop-ledger.settings.v1` 是**單錢包時代的舊鍵，刻意不刪**（遷移保險）；
   收據原圖在 IndexedDB（`idb-keyval`，跨錢包共用）
@@ -128,7 +122,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
   `favoriteCategories`（常用分類）完全獨立**，互不影響。⚠ 入口 `CategoryManageModal`
   的「記帳預設」編輯／新增兩態要用 `v-if/v-else` 互斥；已封存分類不能當預設
 - 設定頁「資料」統計分兩組（0.1.24）：**本錢包**／**總資料（含所有錢包）**，
-  圖片數分別是「本錢包用到的張數」與「跨錢包的**聯集**張數」→
+  圖片數＝「本錢包用到的張數」與「跨錢包的**聯集**張數」→
   ⚠ 圖檔 blob 跨錢包共用，**總張數 ≠ 各錢包相加**
 
 ## 全站約定（含未來所有新畫面）
@@ -137,34 +131,52 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 
 1. **`body` 一律 `min-height: 100%`，不要 `height: 100%`**（0.1.23）
    `html { height: 100% }`（捲動容器）＋ `body { min-height: 100% }`。
-   ⚠ **改版時千萬不要改回去** —— body 盒子被釘在視窗高時，iOS 點畫面的那輪
-   「對齊到可視範圍」會把文件往上推。驗法看**幾何關係**（`body` 盒子高 ≥ `scrollHeight`），
+   ⚠ **千萬不要改回去**。驗法看**幾何關係**（`body` 盒子高 ≥ `scrollHeight`），
    不是看 computed px（844 視窗下兩者可能同值，分不出來）
 2. **所有日期輸入框都是「純文字框 ＋ 右邊按鈕」**（0.1.21）
    **永遠不要**把 `<input type="date">`／`datetime-local` 當成畫面上可見的輸入框。
    只要日期 → `DateField.vue`；日期＋時間 → `DateTimeField.vue`
 3. **彈窗／子頁面開著時背景不能滑動**（0.1.22）
-   任何 `position: fixed` 的全螢幕彈窗接
-   `useScrollLock(toRef(props,'open'), { scrollable: () => 內容區 })`，內容區加
-   `overscroll-behavior: contain`。目前已接 6 個：`CalcSheet`／`CategorySheet`／
-   `CategoryManageModal`／`ExportModal`／`RecordSheet`／`SumDetailSheet`
-   - ⚠ **0.1.25 起 `scrollable` 不再是唯一的放行條件**：`useScrollLock` 會放行
-     「任何當下真的可捲動的元素」（`overflow-y` auto/scroll **且** `scrollHeight > clientHeight`）。
-     這正是「管理分類的下拉選單滑不動」的修法。`scrollable` 仍值得給，但**不再是地雷**
+   一律接 `useScrollLock(toRef(props,'open'), { scrollable: () => 內容區 })`，內容區加
+   `overscroll-behavior: contain`。目前 7 個彈層全接了
+   - ⚠ **0.1.25 起 `scrollable` 不再是唯一的放行條件**：也會放行「任何當下真的可捲動的元素」
+     （`overflow-y` auto/scroll **且** `scrollHeight > clientHeight`）—— 這是下拉清單滑不動的修法
 4. **會叫出鍵盤的可編輯元素字級一律 16px**（0.1.25）
-   iOS 對 < 16px 的可編輯元素會 focus zoom，且 blur 後不保證還原
-   → 之後每次點畫面都被重新對齊（＝連點空白處一直往上滑）。
-   ⚠ 那段宣告**必須排在 `input, select, textarea { font: inherit }` 之後**（同特異度靠源碼順序）；
-   選擇器特異度是 **(0,5,1)，會蓋過元件 scoped 樣式**（刻意：不讓任何元件把字級改小又讓 bug 復活）
-   → 搜尋框 13px、`.qn__in` 14px、`.rate__input` 14px 都因此變 16px（高度與版面不變）；
+   iOS 對 < 16px 的可編輯元素會 focus zoom，且 blur 後不保證還原。
+   ⚠ 宣告**必須排在 `input, select, textarea { font: inherit }` 之後**；
+   特異度 **(0,5,1) 會蓋過元件 scoped 樣式**（刻意：不讓任何元件把字級改小又讓 bug 復活）
+   → 搜尋框／`.qn__in`／`.rate__input` 都因此變 16px（高度與版面不變）；
    ⚠ **不含 `<select>`**（iOS 的 select 是原生滾輪、沒有游標，不會 zoom）
-5. **點空白處要收掉鍵盤並扶正捲動位置**（0.1.25）
-   `src/lib/iosScrollGuard.ts`（`main.ts` 開機裝一次，只在 iOS 生效）：
-   點在空白處且正有輸入框聚焦時 → 記下位置 → `blur()` → rAF×2 後扶回原位。
-   ⚠ 點在互動元素上、彈窗開著時都不插手
-6. 連點防護別拆：`html { touch-action: manipulation }`、
+5. **點／雙擊空白處都不能動**（0.1.25 → 0.1.26 兩度修正）
+   `src/lib/iosScrollGuard.ts`（`main.ts` 開機裝一次，只在 iOS 生效）。三層：
+   - **擋掉雙擊手勢**（0.1.26 的關鍵）：空白處的第二次 `touchend` 要 `preventDefault()`
+     ⚠ **只在空白處**；按鈕上的連點是合法的（計算機快速按兩下），擋掉會弄壞功能
+   - **收掉輸入框**：點空白處且有輸入框聚焦時 `blur()`
+   - **扶正位置**：剛收掉輸入框的 1.2 秒內，「乾淨的點擊」後把 scrollY 扶回去
+     （分 rAF×2 與 ~300ms 兩次，因為收鍵盤是非同步的）
+   ⚠ 只認「點擊」不認「滑動」（移動 > 10px 就放棄判定）；彈窗開著時不插手
+6. **所有子頁面都是底部彈層、可向下拉關閉**（0.1.26）
+   外框幾何**只寫在 `style.css` 的 `.bsheet-mask`／`.bsheet`／`.bsheet__grab`／
+   `.bsheet__body`**（樣板＝`RecordSheet`）。各元件只留 `z-index` 與自己內容的排版，
+   ⚠ **不要在元件裡重寫那些幾何屬性**（scoped 特異度更高，會蓋掉共用值）。
+   手勢一律 `usePullToClose({ panel: 外框, scroller: 內容區 })`（兩者必須不同元素）。
+   已套用 7 個：`RecordSheet`／`CategoryManageModal`／`CategorySheet`／`CalcSheet`／
+   `SumDetailSheet`／`ExportModal`／`ReviewSheet`
+7. **一列記錄就是一個點擊目標**（0.1.26）
+   `RecordRow` 的金額是 `<button class="row__amt">`（原本是 `<div>`，點它不開明細又會選到字）；
+   整列 `.row` 加 `user-select: none`
+8. 連點防護別拆：`html { touch-action: manipulation }`、
    `button/a/[role=button] { -webkit-touch-callout: none; user-select: none }`、
    `body { overscroll-behavior-y: none }`、`html { overflow-x: hidden }`
+
+## 收據辨識記帳（BETA，0.1.26 起在設定頁）
+
+- 入口＝設定頁的 `.sec--beta` 區塊（`ReviewSheet` 也只掛在那一頁）。
+  ⚠ `useUpload()` 是**模組層級 singleton** → 搬頁面時要一起搬 `ReviewSheet`
+- ⚠ **記帳頁的「收據圖片」區塊（`ReceiptImages`）是完全不同的功能**
+  （附加圖片到這次記帳，沒有 OCR），**不要合併、不要動它**
+- ⚠ 記帳頁的整頁拖放已拆掉，`drop` 收進 `ReceiptImages` 自己處理
+  （需要 `@dragover.prevent`，不然 `drop` 不觸發）
 
 ## 視覺基調
 

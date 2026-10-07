@@ -5,6 +5,7 @@ import { ICON_KEYS, CATEGORY_ICONS, DEFAULT_ICON, guessIcon, iconForCategory } f
 import { withAlpha } from '@/lib/color'
 import { flattenCategories } from '@/lib/tree'
 import { useScrollLock } from '@/composables/useScrollLock'
+import { usePullToClose } from '@/composables/usePullToClose'
 import CategoryIcon from './CategoryIcon.vue'
 import CategorySelect from './CategorySelect.vue'
 import { confirmDialog } from '@/lib/alerts'
@@ -58,6 +59,28 @@ const emit = defineEmits<{
  */
 const boxEl = ref<HTMLElement | null>(null)
 useScrollLock(toRef(props, 'open'), { scrollable: () => boxEl.value })
+
+/**
+ * 底部面板「向下拉就關掉」（0.1.26）。
+ *
+ * 使用者要求：這個頁面（新增／修改分類）要跟**記錄明細**長得一樣，
+ * 可以往下拉關閉。所以整個外框從「置中卡片」改成底部彈層，手勢沿用同一支
+ * `usePullToClose`（跟 RecordSheet 完全同一套，行為才不會有兩種）。
+ *
+ * ⚠ `panel` 是外框 `.sheet`（跟著手指位移的那一層），
+ *   `scroller` 是裡面的 `.box`（真正 overflow 的那一層）。
+ *   內容沒捲到頂時往下滑是「捲內容」，捲到頂再往下拉才是「拖面板」——
+ *   這樣才不會跟「捲動內容」打架。
+ */
+const sheetEl = ref<HTMLElement | null>(null)
+const {
+  dragging: pulling,
+  style: pullStyle,
+  onTouchStart: onSheetTouchStart,
+  onTouchMove: onSheetTouchMove,
+  onTouchEnd: onSheetTouchEnd,
+  onMouseDown: onSheetMouseDown,
+} = usePullToClose({ panel: sheetEl, scroller: boxEl, onClose: () => emit('close') })
 
 const NEW = '' // 下拉的「新增分類」佔位值
 /** 剛打開、什麼都還沒選的狀態：只露出「類型」與「選擇分類」 */
@@ -333,9 +356,25 @@ async function askRemove() {
 
 <template>
   <Transition name="fade">
-    <div v-if="open" class="mask" @click.self="emit('close')">
-      <div ref="boxEl" class="card box">
-        <h3>{{ title }}</h3>
+    <div v-if="open" class="mask bsheet-mask" @click.self="emit('close')">
+      <div
+        ref="sheetEl"
+        class="card bsheet"
+        :class="{ 'is-dragging': pulling }"
+        :style="pullStyle"
+        role="dialog"
+        aria-modal="true"
+        @touchstart="onSheetTouchStart"
+        @touchmove="onSheetTouchMove"
+        @touchend="onSheetTouchEnd"
+        @touchcancel="onSheetTouchEnd"
+        @mousedown="onSheetMouseDown"
+      >
+        <!-- 抓把：明示「這裡可以往下拉」（順便當滑鼠的握把），跟記錄明細同一套 -->
+        <div class="bsheet__grab" aria-hidden="true"></div>
+
+        <div ref="boxEl" class="box bsheet__body">
+          <h3>{{ title }}</h3>
 
         <!-- 類型放最上面：它決定下面兩個下拉各會列出哪些分類（只列同一種收支） -->
         <div class="lb">
@@ -561,29 +600,29 @@ async function askRemove() {
             {{ isEdit ? '儲存' : '新增' }}
           </button>
         </div>
+        </div>
       </div>
     </div>
   </Transition>
 </template>
 
 <style scoped>
+/*
+ * 底部彈層（0.1.26）。
+ * 使用者要求：這個頁面要跟**記錄明細**長得一樣，可以往下拉關閉。
+ *
+ * ⚠ 外框的幾何（貼底、圓角、最高 92dvh、抓把、桌機置中）**全部來自 style.css 的
+ *   `.bsheet-mask` / `.bsheet` / `.bsheet__grab` / `.bsheet__body`**，
+ *   不要在這一頁重寫 —— 重寫就會蓋掉共用值，五個子頁面又會各長各的。
+ *   這裡只留 z-index（每個彈層的層級不同）。
+ */
 .mask {
-  position: fixed;
-  inset: 0;
   z-index: 90;
-  background: rgba(27, 26, 24, 0.34);
-  display: grid;
-  place-items: center;
-  padding: 20px;
 }
+/* 內容區：共用 `.bsheet__body` 已經給了「自己捲 + 不連鎖」，
+   這裡只補這個彈層自己的內距與欄距 */
 .box {
-  width: 100%;
-  max-width: 356px;
-  max-height: calc(100vh - 40px);
-  overflow-y: auto;
-  /* 捲到底不要連鎖帶動背景（跟鎖背景一起用的第二道保險） */
-  overscroll-behavior: contain;
-  padding: 18px;
+  padding: 6px 18px 18px;
   display: flex;
   flex-direction: column;
   gap: 14px;

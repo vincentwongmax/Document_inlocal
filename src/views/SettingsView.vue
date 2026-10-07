@@ -12,6 +12,8 @@ import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { parseImport, restoreImages } from '@/lib/exportImport'
 import ExportModal from '@/components/ExportModal.vue'
 import WalletSection from '@/components/WalletSection.vue'
+import ReviewSheet from '@/components/ReviewSheet.vue'
+import { useUpload } from '@/composables/useUpload'
 import { usageBytes, walletUsageBytes } from '@/lib/storage'
 import { listImageIds } from '@/lib/imageDb'
 import { formatBytes } from '@/lib/imaging'
@@ -22,6 +24,29 @@ import type { Category, Settings, TxType } from '@/types'
 const settings = useSettingsStore()
 const records = useRecordsStore()
 const route = useRoute()
+
+/**
+ * BETA：收據辨識記帳（0.1.26 從記帳頁搬過來）。
+ *
+ * ⚠ `useUpload` 的狀態是**模組層級**的（`drafts`／`reviewOpen` 都定義在檔案頂端），
+ *   所以它是一個 singleton：這裡呼叫 `up.pick()` 產生的草稿，
+ *   會由同樣掛在這一頁的 `<ReviewSheet />` 顯示出來（兩邊看的是同一份狀態）。
+ *   ⚠ 因此 ReviewSheet 只需要掛在「當下要顯示它的那一頁」——
+ *     0.1.26 起就是這一頁；記帳頁已經完全沒有它了。
+ */
+const up = useUpload()
+
+/** BETA 區塊的拖放狀態：拖進那個框就亮起來 */
+const betaOver = ref(false)
+function onBetaDragLeave(e: DragEvent) {
+  const to = e.relatedTarget as Node | null
+  if (!to || !(e.currentTarget as HTMLElement).contains(to)) betaOver.value = false
+}
+async function onBetaDrop(e: DragEvent) {
+  betaOver.value = false
+  const files = Array.from(e.dataTransfer?.files ?? []).filter((f) => f.type.startsWith('image/'))
+  if (files.length) await up.addFiles(files)
+}
 
 /* ── 快速備註 ───────────────────────────────────────────── */
 const newQuick = ref('')
@@ -546,6 +571,64 @@ const activeWalletName = computed(() => settings.activeWallet.name)
       </div>
     </section>
 
+    <!--
+      BETA：收據辨識記帳（0.1.26 從記帳頁搬過來）
+      ────────────────────────────────────────────────────────
+      使用者原話：「把上傳收據圖片自動辨識記帳的區塊放到設定頁中（新建一個新的 BETA
+      版區塊），不要顯示在記帳頁面上（不要影響收據圖片的區塊）」。
+
+      ⚠ 跟上面那個「收據辨識」區塊的差別：
+        上面的是**設定**（辨識語言、多幣別預設），
+        這一塊是**入口**（真的上傳收據、跑 OCR、把結果建成記錄）。
+      ⚠ 也跟記帳頁的「收據圖片」區塊完全不同 —— 那個是把圖片附加到「這次記帳」上，
+        沒有 OCR、也不會自動建記錄。兩者刻意分開，不要合併。
+    -->
+    <section class="card sec sec--beta">
+      <header class="sec__hd">
+        <span class="sec__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 16V5m0 0 4 4m-4-4L8 9" />
+            <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+          </svg>
+        </span>
+        <div class="sec__meta">
+          <h2 class="sec__title">
+            BETA 收據辨識記帳
+            <span class="beta">BETA</span>
+          </h2>
+          <p class="sec__desc">
+            上傳收據照片 → 離線辨識金額與日期 → 一次確認並建立多筆記錄。圖片不會上傳
+          </p>
+        </div>
+      </header>
+
+      <div class="panel">
+        <button
+          class="upload"
+          type="button"
+          title="上傳收據後自動辨識，幫你建立記錄"
+          :class="{ 'is-over': betaOver }"
+          @click="up.pick()"
+          @dragenter.prevent="betaOver = true"
+          @dragover.prevent="betaOver = true"
+          @dragleave="onBetaDragLeave"
+          @drop.prevent="onBetaDrop"
+        >
+          <svg class="uic" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 16V5m0 0 4 4m-4-4L8 9" />
+            <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+          </svg>
+          <span>上傳收據圖片</span>
+          <em class="tiny muted">自動辨識記帳</em>
+        </button>
+        <p class="tiny muted beta__hint">
+          也可以直接把圖片拖進上面的框。辨識完會彈出一張清單，讓你逐筆確認後才建立記錄。
+          <br />
+          ⚠ 這是實驗性功能：數字若辨識得怪怪的，請以收據上的金額為準，或改用記帳頁的「收據圖片」。
+        </p>
+      </div>
+    </section>
+
     <!-- 分類 -->
     <section class="card sec">
       <header class="sec__hd">
@@ -825,6 +908,13 @@ const activeWalletName = computed(() => settings.activeWallet.name)
 
     <!-- 匯出：先選格式（JSON／Excel）與範圍，再下載 -->
     <ExportModal :open="exportOpen" @close="exportOpen = false" />
+
+    <!--
+      BETA 收據辨識的結果清單（0.1.26 從記帳頁搬過來）。
+      ⚠ 它讀的是 `useUpload()` 的模組層級狀態，所以在哪一頁掛它就決定了「辨識結果
+        會出現在哪一頁」—— 記帳頁已經完全沒有它了，這裡是唯一的一處。
+    -->
+    <ReviewSheet />
   </div>
 </template>
 
@@ -839,6 +929,72 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   padding: 16px;
   margin-bottom: 16px;
 }
+
+/* ── BETA 區塊（0.1.26：收據辨識記帳從記帳頁搬過來）─────────
+   樣式刻意沿用記帳頁原本那顆 `.upload`（虛線框、hover 轉墨綠），
+   讓從舊位置過來的人一眼認得是同一個功能。 */
+.sec--beta {
+  border-color: var(--accent-light);
+}
+.beta {
+  margin-left: 6px;
+  vertical-align: 2px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--pick-soft);
+  color: var(--pick);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+}
+.upload {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 13px;
+  border-radius: 12px;
+  border: 1px dashed var(--line-strong);
+  background: var(--surface-2);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.upload:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* 拖曳進來時同一個亮法（以前在記帳頁是整頁遮罩，現在只亮這個框） */
+.upload.is-over {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  border-style: solid;
+  color: var(--accent);
+}
+.upload em {
+  margin-left: auto;
+  font-style: normal;
+  font-weight: 500;
+}
+.uic {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+.beta__hint {
+  margin: 9px 0 0;
+  line-height: 1.55;
+}
+
 .sec__hd {
   display: flex;
   align-items: flex-start;
