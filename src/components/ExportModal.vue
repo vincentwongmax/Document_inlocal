@@ -1,13 +1,16 @@
 <script setup lang="ts">
 /**
- * 匯出彈窗：先選「格式」（JSON／Excel），再選「範圍」（全部／日期區間），最後按下匯出。
+ * 匯出彈窗：先選「格式」（JSON／Excel），再選「錢包」（本錢包／全部錢包），
+ * 最後是「範圍」（全部／日期區間），按下匯出。
  *
- * 兩種格式的差別（文案刻意寫清楚，免得使用者以為 Excel 也能拿來還原）：
- *   JSON  —— 一個 .json 檔，含**全部錢包**＋各自的設定＋圖片（base64），是完整備份，可以再匯入還原。
- *   Excel —— 一個 .zip 檔，內含 .xlsx 與 images/ 圖檔。**只有當前錢包的記錄、不含任何設定**，
- *            給人看的／拿去算的，不能匯回 App。
+ * 格式與錢包的組合（0.1.24 起兩者都可以選）：
+ *   JSON × 本錢包     —— 一個 .json，只有這本帳（含它的設定）＋圖片，可匯入還原
+ *   JSON × 全部錢包   —— 一個 .json，全部錢包＋各自設定＋圖片，完整備份
+ *   Excel × 本錢包    —— 一個 .zip，內含一份 .xlsx 與 images/
+ *   Excel × 全部錢包  —— 同一個 .zip，內含**每個錢包各一份 .xlsx** 與共用的 images/
  *
- * 範圍只影響「這次要打包哪些記錄」；JSON 裡的錢包與設定一律整份帶走。
+ * ⚠ Excel 一律不含任何設定（分類樹、匯率、常用備註…），只能看／拿去算，不能匯回 App。
+ *   要備份還原請用 JSON。
  */
 import { computed, onBeforeUnmount, ref, toRef, watch } from 'vue'
 import { useRecordsStore } from '@/stores/records'
@@ -16,9 +19,15 @@ import { useScrollLock } from '@/composables/useScrollLock'
 import DateField from '@/components/DateField.vue'
 import { notify } from '@/lib/alerts'
 import { buildExport, downloadJson } from '@/lib/exportImport'
-import { buildExcelExport, downloadBlob, type ExportProgress } from '@/lib/exportExcel'
+import {
+  buildExcelExport,
+  downloadBlob,
+  type ExcelWalletGroup,
+  type ExportProgress,
+} from '@/lib/exportExcel'
 import { dayKey, monthRange, todayKey } from '@/lib/date'
 import { formatBytes } from '@/lib/imaging'
+import type { Category } from '@/types'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -34,9 +43,12 @@ const boxEl = ref<HTMLElement | null>(null)
 useScrollLock(toRef(props, 'open'), { scrollable: () => boxEl.value })
 
 type Fmt = 'json' | 'excel'
+/** 匯出範圍的**錢包**維度：只有這本帳，或全部錢包 */
+type Scope = 'wallet' | 'all'
 type RangeMode = 'all' | 'custom'
 
 const format = ref<Fmt>('json')
+const scope = ref<Scope>('all')
 const rangeMode = ref<RangeMode>('all')
 const from = ref('')
 const to = ref('')
@@ -55,6 +67,7 @@ watch(
   (open) => {
     if (!open) return
     format.value = 'json'
+    scope.value = 'all'
     rangeMode.value = 'all'
     busy.value = false
     progress.value = null
@@ -100,12 +113,8 @@ const rangeInvalid = computed(
     (!from.value || !to.value || (!!from.value && !!to.value && from.value > to.value)),
 )
 
-/**
- * 這次要考慮的記錄來源：
- *   Excel → 只涵蓋**當前錢包**（報表是針對一本帳）
- *   JSON  → 涵蓋**全部錢包**（備份）
- */
-const pool = computed(() => (format.value === 'json' ? records.all : records.records))
+/** 這次要考慮的記錄來源：本錢包 → 只有當前錢包；全部錢包 → 全部 */
+const pool = computed(() => (scope.value === 'all' ? records.all : records.records))
 
 /** 這次要匯出的記錄：全部，或落在 [from, to] 內（含首尾，用本地日曆日判斷） */
 const selected = computed(() => {
@@ -124,7 +133,7 @@ const imageCount = computed(() => {
   return s.size
 })
 
-/** 選到的記錄橫跨幾個錢包（JSON 用，讓使用者知道備份範圍） */
+/** 選到的記錄橫跨幾個錢包 */
 const walletCount = computed(() => {
   const s = new Set<string>()
   for (const r of selected.value) s.add(r.walletId)
@@ -132,6 +141,40 @@ const walletCount = computed(() => {
 })
 
 const canExport = computed(() => !busy.value && !rangeInvalid.value && selected.value.length > 0)
+
+/** 「全部錢包」時，範圍裡實際有記錄的錢包（依錢包順序） */
+const groups = computed<ExcelWalletGroup[]>(() => {
+  const wallets = scope.value === 'all' ? settings.wallets : [settings.activeWallet]
+  const out: ExcelWalletGroup[] = []
+  for (const w of wallets) {
+    const mine = selected.value.filter((r) => r.walletId === w.id)
+    if (!mine.length) continue
+    // 每個錢包用自己的分類樹取名（各錢包的分類是分開的）
+    const s = settings.settingsOf(w.id)
+    out.push({
+      walletId: w.id,
+      name: w.name,
+      records: mine,
+      pathNamesOf: (id) => pathNamesOfIn(s.categories, id),
+      baseCurrency: s.baseCurrency,
+    })
+  }
+  return out
+})
+
+/** 依分類樹取「根 → 葉」的名稱（找不到就回空陣列） */
+function pathNamesOfIn(cats: Category[], id: string): string[] {
+  const byId = new Map(cats.map((c) => [c.id, c]))
+  const out: string[] = []
+  const seen = new Set<string>()
+  let cur = byId.get(id)
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id)
+    out.unshift(cur.name)
+    cur = cur.parentId ? byId.get(cur.parentId) : undefined
+  }
+  return out
+}
 
 /* ── 匯出 ───────────────────────────────────────────────── */
 const barPct = computed(() => {
@@ -153,26 +196,33 @@ async function run() {
   progress.value = { phase: 'read', done: 0, total: 0 }
   try {
     if (format.value === 'json') {
+      // 本錢包 → 只帶這本帳的記錄與設定；全部錢包 → 整份備份
+      const onlyWallet = scope.value === 'wallet'
+      const walletId = settings.activeWalletId
       const payload = await buildExport({
-        wallets: settings.wallets,
-        activeWalletId: settings.activeWalletId,
-        settingsByWallet: settings.allWalletSettings(),
+        wallets: onlyWallet ? [settings.activeWallet] : settings.wallets,
+        activeWalletId: walletId,
+        settingsByWallet: onlyWallet
+          ? { [walletId]: settings.state }
+          : settings.allWalletSettings(),
         records: list,
         onProgress: (p) => (progress.value = p),
       })
       const name = downloadJson(payload)
-      notify(`已匯出 ${list.length} 筆（${payload.wallets?.length ?? 1} 個錢包）→ ${name}`, 'ok')
+      const scopeWord = onlyWallet ? `本錢包「${settings.activeWallet.name}」` : '全部錢包'
+      notify(`已匯出 ${list.length} 筆（${scopeWord}）→ ${name}`, 'ok')
     } else {
       const res = await buildExcelExport({
-        records: list,
-        pathNamesOf: (id) => settings.pathOf(id).map((c) => c.name),
-        baseCurrency: settings.baseCurrency,
+        groups: groups.value,
+        // 全部錢包時 ZIP 檔名用 ledger；單一錢包時帶上錢包名，一眼看得出是哪本帳
+        zipName: scope.value === 'wallet' ? settings.activeWallet.name : 'ledger',
         onProgress: (p) => (progress.value = p),
       })
       downloadBlob(res.blob, res.fileName)
       const extra = res.missingImages ? `，另有 ${res.missingImages} 張圖片已不存在` : ''
+      const files = res.fileCount > 1 ? `（${res.fileCount} 份 Excel）` : ''
       notify(
-        `已匯出 ${res.recordCount} 筆、${res.imageCount} 張圖片（${formatBytes(res.blob.size)}）${extra} → ${res.fileName}`,
+        `已匯出 ${res.recordCount} 筆、${res.imageCount} 張圖片${files}（${formatBytes(res.blob.size)}）${extra} → ${res.fileName}`,
         res.missingImages ? 'warn' : 'ok',
       )
     }
@@ -225,7 +275,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
             </svg>
             <span class="pick__t">JSON</span>
             <span class="pick__d tiny">
-              單一 .json 檔，含<b>全部錢包</b>、各自的設定與圖片。可以再匯入還原（完整備份）
+              單一 .json 檔，含記錄、設定與圖片。可以再匯入還原（完整備份）
             </span>
           </button>
 
@@ -243,10 +293,38 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
             </svg>
             <span class="pick__t">Excel</span>
             <span class="pick__d tiny">
-              一個 .zip，內含 .xlsx 與 images/ 圖檔。只含<b>當前錢包</b>的記錄、不含設定，不能匯回 App
+              一個 .zip，內含 .xlsx 與 images/ 圖檔。只含記錄、不含設定，不能匯回 App
             </span>
           </button>
         </div>
+      </div>
+
+      <!-- 錢包 -->
+      <div class="lb">
+        <span class="lb__t">錢包</span>
+        <div class="seg">
+          <button
+            class="seg__btn"
+            :class="{ 'is-on': scope === 'wallet' }"
+            @click="scope = 'wallet'"
+          >
+            本錢包
+          </button>
+          <button class="seg__btn" :class="{ 'is-on': scope === 'all' }" @click="scope = 'all'">
+            全部錢包
+          </button>
+        </div>
+        <p class="lb__d tiny muted">
+          <template v-if="scope === 'all' && format === 'excel'">
+            每個錢包會各自產生一份 .xlsx，圖片共用同一個 images/ 資料夾，全部打包在同一個 ZIP
+          </template>
+          <template v-else-if="scope === 'all'">
+            所有錢包與設定都會完整備份
+          </template>
+          <template v-else>
+            只匯出「{{ settings.activeWallet.name }}」這本帳（含它的設定）
+          </template>
+        </p>
       </div>
 
       <!-- 範圍 -->
@@ -287,25 +365,30 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
           <span class="tiny muted">將匯出</span>
           <strong class="num">{{ selected.length }}</strong>
           <span class="tiny muted">筆記錄</span>
-          <template v-if="format === 'excel' && imageCount">
+          <template v-if="imageCount">
             <span class="sum__dot">·</span>
             <strong class="num">{{ imageCount }}</strong>
             <span class="tiny muted">張圖片</span>
           </template>
-          <template v-else-if="format === 'json'">
+          <template v-if="scope === 'all'">
             <span class="sum__dot">·</span>
             <strong class="num">{{ walletCount }}</strong>
             <span class="tiny muted">個錢包</span>
+          </template>
+          <template v-if="format === 'excel' && groups.length > 1">
+            <span class="sum__dot">·</span>
+            <strong class="num">{{ groups.length }}</strong>
+            <span class="tiny muted">份 Excel</span>
           </template>
         </div>
         <p v-if="!selected.length && !rangeInvalid" class="tiny muted sum__hint">
           這個範圍裡沒有記錄，換個區間或選「全部記錄」
         </p>
         <p v-else-if="format === 'excel'" class="tiny muted sum__hint">
-          來自當前錢包「{{ settings.activeWallet.name }}」；只含記錄，不含分類樹、匯率、常用備註等設定
+          只含記錄，不含分類樹、匯率、常用備註等設定
         </p>
         <p v-else class="tiny muted sum__hint">
-          所有的錢包與設定都會完整備份；範圍只篩選要打包的記錄
+          設定會跟著記錄一起帶走，之後可以匯入還原
         </p>
       </div>
 
@@ -357,6 +440,11 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
   font-weight: 700;
   letter-spacing: 0.1em;
   color: var(--text-3);
+}
+/* 分段選項下方那一行說明 */
+.lb__d {
+  margin: 0;
+  line-height: 1.45;
 }
 
 /* ── 格式卡 ─────────────────────────────────────────────── */

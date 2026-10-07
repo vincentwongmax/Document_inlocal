@@ -8,7 +8,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 
 ## 版本號
 
-- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.23`
+- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.24`
 - 單一來源＝`package.json` 的 `version` → `vite.config.ts` `define` 注入 `__APP_VERSION__`
   （型別在 `env.d.ts`）→ `src/lib/version.ts` → 設定頁「離線與版本」膠囊
 - 每次更新要改 `package.json` ＋ 補一筆 `CHANGELOG.md`
@@ -29,7 +29,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
     `dist/` 沒重建 → v79（拿 `package.json` 對畫面版本號）必紅。這是「假紅燈」，不是程式壞
   - ⚠ **node 是 Windows binary**：curl 輸出要存到**專案內**（`.smoke/tmp/`），
     Git Bash 的 `/tmp` 讀不到
-  - **維護中的回歸集＝v70～v102**；`v45/v46/v56/v57` 早已失效，別當基準
+  - **維護中的回歸集＝v70～v103**；`v45/v46/v56/v57` 早已失效，別當基準
   - 改到計算機／彈窗／通知／記錄頁／設定頁匯出／錢包時另外跑 **v82~v99**（計算機 11 位／算式／
     SweetAlert2／最近檢視／按鍵快按／快速備註／收據圖片貼上／收據圖片放大拖曳／
     統計頁自訂日期框／分類第一列不塞子分類／日期欄＝普通文字框＋下拉關閉明細／
@@ -40,10 +40,18 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
   - **v101（51 項）＝0.1.22 六需求的守門員**（徽章「圖」／計算公式位置／圖片去重兩層／
     摘要卡詳情／預設分類／彈窗鎖背景）
   - **v102（30 項）＝「連點空白頁面不能動」的守門員**（body 幾何 ＋ 捲動不動 ＋ 連點防護設定）
+  - **v103（84 項）＝0.1.24 的守門員**（資料統計分本錢包／總資料 ＋ 匯出可選錢包範圍，
+    含「Excel × 全部錢包＝同一個 ZIP 內每個錢包各一份 xlsx」）。**動到匯出或資料統計時必跑**
   - ⚠ **動到錢包／記錄／設定的存取時，v99 是守門員**（遷移、隔離、匯出匯入都在那）；
     **動到圖片／放大檢視／剪貼簿時，v77（收據壓縮）與 v89（明細放大後可拖曳）是守門員**；
     **動到明細的算式顯示時，v83 與 v93 會紅**（它們抓 `.sheet .expr__v`，
     0.1.22 把算式從金額底下移到「詳細資訊」了）
+  - ⚠⚠ **測試種多錢包資料時，`mop-ledger.wallets.v1` 要寫成 `{ wallets, activeWalletId }`，
+    不是裸陣列**（裸陣列會被 `loadRoot` 當成「沒存過」→ 走遷移 → 只剩 1 個錢包）
+  - ⚠⚠ **測試裡 `indexedDB.deleteDatabase` 一定要在「App 重新載入後」才呼叫**：
+    App 一載入就握著 `mop-ledger-images` 連線 → 請求卡在 `blocked` 永不完成
+    → **整支測試掛死（零輸出、被 SIGTERM）**。順序：`goto` → `localStorage.clear()`
+    → `reload` → `deleteDatabase` → `reload` → 種資料
   - ⚠ **測試圖別用兩張「內容相同」的**：MD5 去重會擋掉第二張，多張上傳就測不到
   - ⚠ **測試用 `os.tmpdir()` 生暫存檔**（`fs.mkdtempSync`），別寫死 `/tmp`（Windows 讀不到）
   - ⚠⚠ **沙箱不允許 Node 開子行程**（`execFileSync`／`spawnSync` → `EBUSY`，連 `python -c` 都擋）
@@ -173,6 +181,32 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
   空字串取消）；新增＝勾選框 `makeDefault`（id 要等 `create` 才知道，由
   `SettingsView.onCreateCat` 補設）→ ⚠ 兩者要用 `v-if/v-else` 互斥
 - 已封存分類不能當預設；`HomeView.pickInitialCategory()` 負責開頁預選、`resetCategory()` 負責記完一筆後重置
+
+## 匯出的「錢包範圍」（0.1.24）
+
+- `ExportModal.vue` 的 `scope: 'wallet' | 'all'`（**預設 `'all'`＝維持舊行為**）
+- `pool` computed 現在**看 scope 而不是看 format**：
+  `scope==='all' ? records.all : records.records`
+  （0.1.23 以前是「JSON→全部、Excel→當前」，0.1.24 起兩者都能選）
+- 四種組合：JSON×本錢包（單錢包備份，可還原）／JSON×全部錢包（完整備份）／
+  Excel×本錢包／**Excel×全部錢包（同一個 ZIP、每個錢包各一份 xlsx）**
+- `lib/exportExcel.ts`：入口是 `buildExcelExport({ groups: ExcelWalletGroup[], zipName? })`
+  - `ExcelWalletGroup` **每個錢包自帶 `pathNamesOf` 與 `baseCurrency`**
+    （各錢包的分類樹／主幣別是分開的，不能共用當前錢包那份）
+  - ⚠ **單錢包 xlsx 檔名沿用舊行為 `ledger-….xlsx`；多錢包才改成 `<錢包名>-….xlsx`**
+    （改了會讓 v98 紅）
+  - ⚠ 圖檔名 `images/<錢包名>_<日期>_<分類>_<金額>_<序號>.<ext>`；
+    **`pathByImage` 是全域的（跨錢包共用的圖只寫一份），`pathsByWallet` 只是各錢包自己的對照表**
+  - `ExcelWalletGroup.name` 會進檔名 → 已經過 `safePart()` 清乾淨
+- **Excel 一律不含任何設定**（分類樹／匯率／常用備註…），只有分類**名稱**是拿來顯示的
+
+## 資料統計的兩種圖片數（0.1.24）
+
+- 設定頁「資料」分兩組：**本錢包**／**總資料（含所有錢包）**
+- 本錢包圖片數＝`records.records` 用到的張數；總資料＝`records.all` 的**聯集張數**
+- ⚠ 圖檔 blob 跨錢包共用 → **總張數 ≠ 各錢包相加**，UI 有一行說明
+- 空間：本錢包＝`walletUsageBytes(id, share)`（設定鍵整份 ＋ 記錄鍵按筆數比例分攤）；
+  總資料＝`usageBytes()` 真實總量（**兩者不會剛好相加**）
 
 ## 視覺基調
 

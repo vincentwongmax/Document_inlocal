@@ -329,16 +329,30 @@
 
 ## 匯出（JSON ╱ Excel）
 
-設定頁的「匯出」不直接下載，先開 `components/ExportModal.vue` 選**格式**與**範圍**。
+設定頁的「匯出」不直接下載，先開 `components/ExportModal.vue` 選**格式**、
+**錢包**與**範圍**。
 
-- **JSON**＝備份／還原用：單一 `.json`，含記錄＋**設定**＋圖片 base64；
-  匯入時會問「要不要一起還原設定」。**不要把設定從 JSON 拿掉**，匯入的
-  「連設定一起還原」會直接壞掉。
-- **Excel**＝給人看／拿去算：一個 `.zip`，內含一個 `.xlsx` ＋ `images/` 圖檔。
+### 錢包範圍（0.1.24 起，JSON 與 Excel 都有）
+
+彈窗上有三組分段鈕：**格式**（JSON／Excel）／**錢包**（本錢包／全部錢包）／
+**範圍**（全部記錄／自訂區間）。**錢包預設「全部錢包」＝維持 0.1.20～0.1.23 的舊行為。**
+
+|  | 本錢包 | 全部錢包 |
+| --- | --- | --- |
+| **JSON** | 單錢包備份（含它的設定），可匯入還原 | 完整備份（全部錢包＋各自設定） |
+| **Excel** | 一個 ZIP／**一份** xlsx ＋ `images/` | 一個 ZIP／**每錢包各一份** xlsx ＋ 共用 `images/` |
+
+- ⚠ **`pool` computed 看的是 `scope`，不是 `format`**：
+  `scope === 'all' ? records.all : records.records`。
+  （0.1.23 以前是「JSON→全部、Excel→當前錢包」寫死在 `pool` 裡，改動時別把這個邏輯改回去）
+- **JSON**＝備份／還原用：含記錄＋**設定**＋圖片 base64；匯入時會問「要不要一起還原設定」。
+  **不要把設定從 JSON 拿掉**，匯入的「連設定一起還原」會直接壞掉。
+  本錢包模式下只帶那一個錢包的 `wallets` 與 `settingsByWallet`。
+- **Excel**＝給人看／拿去算：一個 `.zip`，內含 `.xlsx` ＋ `images/` 圖檔。
   **只含記錄，不含任何設定**（分類名稱是為了讓表格看得懂才顯示的，那不算匯出設定）。
   不能匯回 App。
-- 範圍＝全部 or 日期區間（含首尾，用**本地日曆日**比對 `dayKey(occurredAt)`）。
-  JSON 與 Excel 都吃同一個範圍；JSON 裡的設定一律是當下的完整設定。
+- **範圍**＝全部 or 日期區間（含首尾，用**本地日曆日**比對 `dayKey(occurredAt)`）。
+  範圍作用在「選定的錢包範圍」之上：全部錢包＋9 月＝所有錢包 9 月的記錄。
 
 ### 產出檔案（`lib/zip.ts`、`lib/xlsx.ts`、`lib/exportExcel.ts`）
 
@@ -359,24 +373,42 @@
   - `numFmtId`：0 = 一般、4 = 內建 `#,##0.00`、**自訂碼一律 >= 164**
   - 日期要寫成 Excel 序號（1899-12-30 為 0）。⚠ 用**當地時間的年月日時分**再當 UTC 算
     （`Date.UTC(getFullYear(), …)`）；直接用 `getTime()` 的話 UTC+8 的晚間記錄會被推前一天
-- `exportExcel.ts`：
+- `exportExcel.ts`（**0.1.24 起是多錢包介面**）：
+  - 入口是 `buildExcelExport({ groups: ExcelWalletGroup[], zipName?, onProgress? })`，
+    `ExcelWalletGroup = { walletId, name, records, pathNamesOf, baseCurrency }`
+  - ⚠ **每個錢包自帶 `pathNamesOf` 與 `baseCurrency`**：各錢包的分類樹與主幣別是分開的，
+    不能共用「當前錢包」那一份（同一筆 `c_food` 在一本帳叫「餐飲」、另一本叫「旅費餐飲」）
+  - ⚠ **單錢包 xlsx 檔名沿用舊行為 `ledger-YYYYMMDD-HHMM.xlsx`；多錢包才改成
+    `<錢包名>-YYYYMMDD-HHMM.xlsx`**（改單錢包的話 v98 會紅）
+  - ⚠ 圖檔名 `images/<錢包名>_<日期>_<分類>_<金額>_<序號>.<ext>`。
+    加錢包名是多錢包時必要的：否則「同一天同分類同金額」在兩本帳裡會撞名
+  - ⚠ **`pathByImage` 是全域的**（跨錢包共用的同一張圖只寫一份），
+    `pathsByWallet` 只是「各錢包自己的欄位要指到哪」的對照表
+  - `ExcelWalletGroup.name` 會進檔名 → 已過 `safePart()` 清乾淨（＋ `prefixUsed` 防重複）
   - **先讀實體再命名**——副檔名要看 blob 真正的 MIME（壓縮後可能是 webp，不是原始檔名）
-  - 圖檔名 `日期_分類_金額_序號`，撞名就往後遞號（`used` set 比對**含副檔名**的小寫全名）
   - 讀不到的圖就從表格裡拿掉，免得 Excel 指到不存在的檔案；並回報 `missingImages`
-  - 欄位依發生時間**由舊到新**排；「主幣別」欄只在記錄之間基準不一致時才多開（否則跟標題重複）
+  - 每個錢包的記錄各自依發生時間**由舊到新**排；「主幣別」欄只在該錢包內不一致時才多開
   - 大小上限 1.5 GB（保守值），超過就請使用者用日期區間分批
+  - 分類路徑取不到時回 `PICK_FALLBACK`（目前 = `'未分類'`）
 
-### 驗證（`.smoke/v98.mjs` ＋ `validate-export.py`）
+### 驗證（`.smoke/v98.mjs`、`.smoke/v103.mjs` ＋ `validate-export.py`）
 
 - 這種「產出檔案」的功能一定要**真的開起來讀**，不能只驗有沒有呼叫到函式。
   v98 會接住下載的 Blob、寫到磁碟，自己算 CRC 對每個 entry，並解兩層 ZIP
   （外層 zip 挖出 xlsx 再解一次）檢查 XML 內容。
+- **v103（84 項）＝ 0.1.24 的守門員**：種兩個錢包（含一張跨錢包共用的圖）四筆記錄，
+  驗兩組統計數字、四種匯出組合、多錢包 ZIP 裡兩份 xlsx 各歸各的、
+  圖檔欄與 ZIP 內檔案一對一對得起來。
+  ⚠ **測多錢包時 `mop-ledger.wallets.v1` 要寫成 `{ wallets, activeWalletId }`，不是裸陣列**
+  （裸陣列會被 `loadRoot` 當成沒存過 → 走遷移 → 只剩 1 個錢包，整支測試紅一片）。
+  ⚠ **`indexedDB.deleteDatabase` 要在 App 重新載入之後才呼叫**，否則 App 握著連線
+  → 卡在 `blocked` → **整支測試掛死**（見 MEMORY.md 的測試雷）。
 - ⚠ **沙箱不允許 Node 開子行程**（`spawnSync … EBUSY`）→ 沒辦法從 Node 叫 Python。
   Python 的第二意見拆到 `.smoke/v98-verify.sh`（依序跑 v98 與 `validate-export.py`）。
   ⚠ 從 Node／shell 叫 Python 時要 `PYTHONIOENCODING=utf-8`，否則 Windows 會用系統
   codepage 輸出，中文被打成 `?`。
 - ⚠ 測 Excel 的**選擇器要 scope 到彈窗的 `.box`**：設定頁自己有 `.chip`（OCR 語言），
-  不 scope 會數到 6 個「快速鈕」。
+ 不 scope 會數到 6 個「快速鈕」。
 - ⚠ 找「圖片欄」的儲存格**只能用欄名過濾，不能用樣式**：圖片欄與備註欄共用換行樣式（`s="5"`）。
 
 ## 快速備註（quick notes）
@@ -731,3 +763,31 @@ useScrollLock(toRef(props, 'open'), { scrollable: () => boxEl.value })
 - 記帳頁金額不是 `<input>`，是自製鍵盤 → 用 `page.keyboard.press('5')` 走 `onKey`，再按 Enter
 - 記錄列是 `.row__main`（點它才開明細）；圖片縮圖是 `.rec__cell`
 - 「更多分類」鈕 `.cat-more` 只在 `favoriteCategories` 非空、且總數多於常用時才出現
+
+## 設定頁「資料」的統計分兩組（0.1.24）
+
+`SettingsView.vue` 的「資料」區是**兩個 `.usage` 區塊**（不是一組三格）：
+
+```
+.usage            ← flex column，內含 .usage__hd ＋ .usage__grid
+  .usage__hd      ← .usage__tag（膠囊標籤）＋ 一行小字說明
+  .usage__grid    ← grid 三欄，每格 .usage__stat（數字 ＋ 標籤）
+  .usage__hint    ← 選用的一行說明（只有總資料那組有）
+```
+
+- **本錢包**：`records.records`（當前錢包）→ 筆記錄 / 張圖片 / 約佔空間
+- **總資料**：`records.all`（全部錢包）→ 筆記錄 / 張圖片 / localStorage，
+  標籤是 `.usage__tag--all`（灰底，跟本錢包那個墨綠底區分）
+- ⚠ **圖片數有兩種算法，別搞混**：
+  - 本錢包 ＝ 「這本帳用到幾張」＝ 走 `records.records` 的 image id 集合
+  - 總資料 ＝ 「所有錢包用到的**聯集**」＝ 走 `records.all` 的 image id 集合
+  - 圖檔 blob 是**跨錢包共用**的 → 總張數 ≠ 各錢包相加，**UI 有一行字說明這件事**
+- ⚠ **空間是估算**（`lib/storage.ts`）：
+  - `usageBytes()` ＝ localStorage 真實總量（總資料那格用）
+  - `walletUsageBytes(walletId, share)` ＝ 該錢包的設定鍵整份 ＋ 記錄鍵 × 筆數比例
+    （`share = 本錢包筆數 / 總筆數`）。**記錄鍵是全部錢包共用的一個鍵，無法整鍵拆開**
+  - ⚠ 兩者**不會剛好相加**，UI 文案也照這樣寫（本錢包那格標「約佔空間」）
+- ⚠ `.usage` **不要改回 grid**：改成 flex column 是為了塞得下 `.usage__hd` 與 `.usage__hint`；
+  三欄那一排是內層的 `.usage__grid`
+
+測試：`.smoke/v103.mjs`（84 項，見上面「匯出」那節的「驗證」）

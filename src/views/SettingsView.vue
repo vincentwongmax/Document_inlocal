@@ -12,8 +12,9 @@ import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { parseImport, restoreImages } from '@/lib/exportImport'
 import ExportModal from '@/components/ExportModal.vue'
 import WalletSection from '@/components/WalletSection.vue'
-import { usageBytes } from '@/lib/storage'
+import { usageBytes, walletUsageBytes } from '@/lib/storage'
 import { listImageIds } from '@/lib/imageDb'
+import { formatBytes } from '@/lib/imaging'
 import { offlineReady, updateSW } from '@/lib/pwa'
 import { APP_VERSION } from '@/lib/version'
 import type { Category, Settings, TxType } from '@/types'
@@ -220,6 +221,48 @@ async function refreshUsage() {
 }
 onMounted(refreshUsage)
 
+/**
+ * 資料統計分兩組（0.1.24）：
+ *   本錢包 —— 「當前錢包」的記錄數＋它用到的圖片數＋估算的 localStorage 用量
+ *   總資料 —— 全部錢包（含所有錢包）
+ *
+ * ⚠ 圖片數看的是「這個錢包用到了幾張」而不是 IndexedDB 裡有幾個 blob：
+ *   圖檔 blob 是**跨錢包共用**的（同一張圖兩個錢包都用也只存一份），
+ *   所以「總圖片數」不等於各錢包相加（聯集才是）。總數那一格直接用
+ *   IndexedDB 的 blob 數（= 真正佔空間的張數），並在文案裡說明。
+ */
+const walletShare = computed(() => {
+  const total = records.all.length
+  return total ? records.records.length / total : 0
+})
+
+/** 全部錢包裡有幾個「不重複」的圖片 id（給總資料那列用） */
+const allImageIds = computed(() => {
+  const s = new Set<string>()
+  for (const r of records.all) for (const im of r.images ?? []) s.add(im.id)
+  return s.size
+})
+
+const walletImageCount = computed(() => {
+  const s = new Set<string>()
+  for (const r of records.records) for (const im of r.images ?? []) s.add(im.id)
+  return s.size
+})
+
+const walletStats = computed(() => ({
+  records: records.records.length,
+  images: walletImageCount.value,
+  bytes: walletUsageBytes(settings.activeWalletId, walletShare.value),
+}))
+
+const totalStats = computed(() => ({
+  records: records.all.length,
+  images: allImageIds.value,
+  blobs: imageCount.value,
+  wallets: settings.wallets.length,
+  bytes: usage.value,
+}))
+
 const exportOpen = ref(false)
 
 const importInput = ref<HTMLInputElement | null>(null)
@@ -318,7 +361,8 @@ function toggleLang(code: string) {
   settings.state.ocrLangs = [...cur]
 }
 
-const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
+/** 錢包名稱（顯示在「本錢包」那組的標題上） */
+const activeWalletName = computed(() => settings.activeWallet.name)
 </script>
 
 <template>
@@ -632,24 +676,56 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
         <div class="sec__meta">
           <h2 class="sec__title">資料</h2>
           <p class="sec__desc">
-            備份與還原；資料只存在這台裝置。筆數是「當前錢包」的，JSON 匯出則涵蓋全部錢包
+            備份與還原；資料只存在這台裝置。統計分成「本錢包」與「總資料（含所有錢包）」
           </p>
         </div>
       </header>
 
+      <!-- 本錢包 -->
       <div class="usage">
-        <div class="usage__stat">
-          <strong class="num">{{ records.records.length }}</strong>
-          <span class="tiny muted">筆記錄</span>
+        <div class="usage__hd">
+          <span class="usage__tag">本錢包</span>
+          <span class="tiny muted">{{ activeWalletName }}</span>
         </div>
-        <div class="usage__stat">
-          <strong class="num">{{ imageCount }}</strong>
-          <span class="tiny muted">張圖片</span>
+        <div class="usage__grid">
+          <div class="usage__stat">
+            <strong class="num">{{ walletStats.records }}</strong>
+            <span class="tiny muted">筆記錄</span>
+          </div>
+          <div class="usage__stat">
+            <strong class="num">{{ walletStats.images }}</strong>
+            <span class="tiny muted">張圖片</span>
+          </div>
+          <div class="usage__stat">
+            <strong class="num">{{ formatBytes(walletStats.bytes) }}</strong>
+            <span class="tiny muted">約佔空間</span>
+          </div>
         </div>
-        <div class="usage__stat">
-          <strong class="num">{{ usedBytes }}</strong>
-          <span class="tiny muted">localStorage</span>
+      </div>
+
+      <!-- 總資料（含所有錢包） -->
+      <div class="usage">
+        <div class="usage__hd">
+          <span class="usage__tag usage__tag--all">總資料</span>
+          <span class="tiny muted">含所有錢包 · {{ totalStats.wallets }} 本帳</span>
         </div>
+        <div class="usage__grid">
+          <div class="usage__stat">
+            <strong class="num">{{ totalStats.records }}</strong>
+            <span class="tiny muted">筆記錄</span>
+          </div>
+          <div class="usage__stat">
+            <strong class="num">{{ totalStats.images }}</strong>
+            <span class="tiny muted">張圖片</span>
+          </div>
+          <div class="usage__stat">
+            <strong class="num">{{ formatBytes(totalStats.bytes) }}</strong>
+            <span class="tiny muted">localStorage</span>
+          </div>
+        </div>
+        <p class="usage__hint tiny muted">
+          圖片檔是跨錢包共用的（同一張圖多本帳用到也只存一份），所以總張數不一定等於各錢包相加
+        </p>
       </div>
 
       <div class="acts">
@@ -659,7 +735,7 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
             <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
           </svg>
           <span class="act__t">匯出</span>
-          <span class="act__d tiny muted">JSON（全部錢包＋設定）或 Excel（當前錢包，ZIP）</span>
+          <span class="act__d tiny muted">JSON（可還原）或 Excel（ZIP），可選本錢包或全部錢包</span>
         </button>
         <button class="act" @click="pickImport">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1143,11 +1219,46 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
 }
 
 /* ── 資料 ─────────────────────────────────────────────── */
+/* ⚠ 0.1.24 起分成兩組（本錢包 / 總資料），所以 .usage 不再帶 margin-bottom，
+   改由 .usage + .usage 隔開；.usage__grid 才是三欄那一排 */
 .usage {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.usage + .usage {
+  margin-top: 14px;
+}
+.usage__hd {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.usage__tag {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-light);
+  white-space: nowrap;
+}
+.usage__tag--all {
+  color: var(--text-2);
+  background: var(--surface-3);
+  border-color: var(--line);
+}
+.usage__grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
-  margin-bottom: 10px;
+}
+.usage__hint {
+  margin: 0;
+  line-height: 1.45;
 }
 .usage__stat {
   background: var(--surface-2);
