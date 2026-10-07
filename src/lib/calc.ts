@@ -146,7 +146,9 @@ export function input(s: CalcState, key: string): CalcState {
   }
   if (last.t === 'num') {
     if (last.v === '0') last.v = key
-    else if (last.v.replace(/[.\-]/g, '').length < 12) last.v += key
+    // 單一數字最多 11 位：顯示區只排得下 11 個位，多按的第 12 位直接不進狀態
+    // （而不是先收下再靠縮小字級硬塞）。點小數點／負號不佔這個額度。
+    else if (last.v.replace(/[.\-]/g, '').length < 11) last.v += key
   }
   return next
 }
@@ -244,4 +246,15 @@ export function displayMain(s: CalcState): string {
 export function displaySub(s: CalcState): string {
   if (!s.done) return ''
   return s.formula ? `${s.formula} =` : ''
+}
+
+/**
+ * 大字顯示要不要縮小字級。
+ *
+ * 單一數字上限是 11 位（見 `input()`），加上小數點或負號最多 12 個字元，
+ * 所以**正常輸入永遠不會觸發**——多打的那一位根本不會進狀態，字級不會被縮小。
+ * 只有長公式（`1 + 2 + 3 …`）或很大的計算結果才會走到這裡。
+ */
+export function isLongDisplay(text: string): boolean {
+  return text.length > 12
 }

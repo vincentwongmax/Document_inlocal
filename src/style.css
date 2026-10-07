@@ -233,6 +233,30 @@ h4 {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+/* ── 原生日期／時間輸入框：與其他 .field 完全同高 ──────────────
+   Safari（尤其是加到主畫面的 PWA）會把 date／datetime-local 拆成 shadow DOM 的多個
+   小欄位（年、月、日、時、分…），**每個欄位都自帶 padding**，整個輸入框因此比一般文字框
+   高一些，跟旁邊的備註欄就對不齊了。
+   這裡把那些內部內距歸零、並把高度鎖死，讓它跟 .field 一模一樣。
+   ::-webkit-datetime-edit* 在 Chrome 也支援、預設內距本來就是 0，所以設 0 沒有副作用。 */
+.field:is([type='date'], [type='time'], [type='datetime-local'], [type='month'], [type='week']) {
+  /* min-height 一定要一起寫：Safari 的 UA 樣式有最小高度，只寫 height 會被它壓過去 */
+  height: 42px;
+  min-height: 42px;
+}
+.field::-webkit-datetime-edit,
+.field::-webkit-datetime-edit-fields-wrapper,
+.field::-webkit-datetime-edit-text,
+.field::-webkit-datetime-edit-year-field,
+.field::-webkit-datetime-edit-month-field,
+.field::-webkit-datetime-edit-day-field,
+.field::-webkit-datetime-edit-hour-field,
+.field::-webkit-datetime-edit-minute-field,
+.field::-webkit-datetime-edit-second-field,
+.field::-webkit-datetime-edit-meridiem-field,
+.field::-webkit-datetime-edit-ampm-field {
+  padding: 0;
+}
 textarea.field {
   height: auto;
   padding: 10px 12px;

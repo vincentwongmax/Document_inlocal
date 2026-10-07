@@ -10,7 +10,16 @@ import ClearableInput from '@/components/ClearableInput.vue'
 import DateTimeField from '@/components/DateTimeField.vue'
 import ReviewSheet from '@/components/ReviewSheet.vue'
 import { useUpload } from '@/composables/useUpload'
-import { displayMain, displaySub, calcValue, initCalc, input, equals, type CalcState } from '@/lib/calc'
+import {
+  displayMain,
+  displaySub,
+  calcValue,
+  initCalc,
+  input,
+  equals,
+  isLongDisplay,
+  type CalcState,
+} from '@/lib/calc'
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { fromLocalInput, nowLocalInput } from '@/lib/date'
 import type { TxType } from '@/types'
@@ -33,8 +42,8 @@ const curCode = ref<string>(settings.inputCurrency)
 const amount = computed(() => Number(calcValue(calc.value).toFixed(2)))
 const expr = computed(() => displaySub(calc.value))
 const display = computed(() => displayMain(calc.value))
-/** 公式較長時縮小字級 */
-const displayLong = computed(() => display.value.length > 11)
+/** 只有長公式／很大的結果才縮小字級（單一數字最多 11 位，永遠不會觸發） */
+const displayLong = computed(() => isLongDisplay(display.value))
 /** 還沒按 = 之前不顯示換算預覽，答案要按了等於才出現 */
 const converted = computed(() => calc.value.done && curCode.value !== settings.baseCurrency)
 
