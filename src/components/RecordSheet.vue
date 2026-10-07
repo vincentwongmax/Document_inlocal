@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, toRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, toRef, watch } from 'vue'
 import { useScrollLock } from '@/composables/useScrollLock'
 import type { ImageRef, TxRecord, TxType } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
@@ -29,9 +29,17 @@ const emit = defineEmits<{
 const settings = useSettingsStore()
 const records = useRecordsStore()
 
-/** 明細內容是彈窗裡唯一可捲的地方，其餘（含背景）都要鎖住 */
+/** 明細內容是彈窗裡可捲的地方，其餘（含背景）都要鎖住 */
 const bodyEl = ref<HTMLElement | null>(null)
-useScrollLock(toRef(props, 'open'), { scrollable: () => bodyEl.value })
+/**
+ * 圖片放大檢視的捲動區（見下方）
+ *
+ * ⚠ 它一定要列進可捲區：鎖背景的 touchmove preventDefault 是掛在 document 上的，
+ *   沒放行的話手指在放大後的圖片上滑動會被整段擋掉 → 滑不動（這正是「放大後不能拖」的元凶之一）。
+ *   檢視區是整面 fixed 覆蓋層，開著的時候背後本來就不該捲，所以直接取代 bodyEl。
+ */
+const stageEl = ref<HTMLElement | null>(null)
+useScrollLock(toRef(props, 'open'), { scrollable: () => stageEl.value ?? bodyEl.value })
 
 const converted = computed(() => props.record?.currency !== props.record?.baseCurrency)
 const type = ref<TxType>('expense')
@@ -82,6 +90,69 @@ const zoomOut = computed(() => zoom.value > ZOOM_MIN)
 const clampZoom = (v: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v))
 const roundZoom = (v: number) => Math.round(v * 100) / 100
 
+/** 圖片本體（量基準尺寸用） */
+const zoomImg = ref<HTMLImageElement | null>(null)
+/** 100% 時圖片的實際版面尺寸；0 = 還沒量到（此時交給 CSS 的 max-* 撐住版面） */
+const fitW = ref(0)
+const fitH = ref(0)
+
+/**
+ * 量出「100% 時這張圖該佔多大」。
+ *
+ * ⚠ 放大**不能**只靠 `transform: scale()`：transform 不影響 layout，
+ *   外層 `overflow: auto` 的檢視區就永遠沒有可捲動的內容 → 放大後四處都滑不動
+ *   （桌機、iPhone 都一樣）。所以改成量好基準尺寸後讓 width/height 隨倍率實際長大，
+ *   捲動交給瀏覽器原生處理 —— iOS 上才有熟悉的慣性滑動，而且四個角落都到得了。
+ */
+function measureFit() {
+  const im = zoomImg.value
+  const stage = stageEl.value
+  if (!im || !stage || !im.naturalWidth || !im.naturalHeight) return
+  const cs = getComputedStyle(stage)
+  const px = (v: string) => parseFloat(v) || 0
+  const availW = stage.clientWidth - px(cs.paddingLeft) - px(cs.paddingRight)
+  const availH = stage.clientHeight - px(cs.paddingTop) - px(cs.paddingBottom)
+  if (availW <= 0 || availH <= 0) return
+  // 只縮不放：小圖按 100% 就是原尺寸（與原本 max-width/max-height 的行為一致）
+  const k = Math.min(1, availW / im.naturalWidth, availH / im.naturalHeight)
+  fitW.value = Math.max(1, Math.round(im.naturalWidth * k))
+  fitH.value = Math.max(1, Math.round(im.naturalHeight * k))
+}
+
+const zoomStyle = computed(() => {
+  if (!fitW.value || !fitH.value) return {}
+  return {
+    width: `${Math.round(fitW.value * zoom.value)}px`,
+    height: `${Math.round(fitH.value * zoom.value)}px`,
+    // 量到之後必須把 CSS 的 max-width/max-height 放掉，否則放大會被壓回畫面內
+    maxWidth: 'none',
+    maxHeight: 'none',
+  }
+})
+
+/** 檢視區是 fixed inset:0，尺寸只跟著視窗（轉向、縮放瀏覽器）變，所以聽 resize 就夠 */
+function onViewportResize() {
+  if (lightbox.value) measureFit()
+}
+watch(lightbox, async (open) => {
+  if (open) {
+    window.addEventListener('resize', onViewportResize)
+    window.addEventListener('orientationchange', onViewportResize)
+    // 保險：快取命中時 load 可能早於這裡，等 DOM 就緒後再量一次
+    await nextTick()
+    measureFit()
+  } else {
+    fitW.value = 0
+    fitH.value = 0
+    window.removeEventListener('resize', onViewportResize)
+    window.removeEventListener('orientationchange', onViewportResize)
+  }
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onViewportResize)
+  window.removeEventListener('orientationchange', onViewportResize)
+})
+
 function zoomInStep() {
   if (zoomIn.value) zoom.value = clampZoom(roundZoom(zoom.value * ZOOM_STEP))
 }
@@ -91,6 +162,21 @@ function zoomOutStep() {
 /** 回到原始大小（倍率文字本身就是這顆鈕，避免連點好幾次才能縮回去） */
 function zoomReset() {
   zoom.value = 1
+}
+
+/**
+ * 點黑色背景關閉。
+ * ⚠ 放大後使用者會在畫面上拖曳查看，放開時瀏覽器可能仍補一個 click；
+ *   用位移量判斷「這是拖曳不是點一下」，否則滑到一半就把檢視關掉了。
+ */
+const bgFrom = { x: 0, y: 0 }
+function onBgDown(e: PointerEvent) {
+  bgFrom.x = e.clientX
+  bgFrom.y = e.clientY
+}
+function onBgClick(e: MouseEvent) {
+  if (Math.hypot(e.clientX - bgFrom.x, e.clientY - bgFrom.y) > 8) return
+  closeLightbox()
 }
 
 /** 關閉圖片：關掉時要把倍率歸位，下次開才不會維持上次的放大 */
@@ -607,14 +693,17 @@ function save() {
     </div>
   </Transition>
 
-  <!-- 圖片放大：點黑色背景關閉；圖片本身不關閉，才能安心放大慢慢看 -->
+  <!-- 圖片放大：點黑色背景關閉；圖片本身不關閉，才能安心放大慢慢看。
+       放大後可上下左右拖曳查看（原生捲動），所以點背景要判斷是拖曳還是點一下 -->
   <Transition name="fade">
-    <div v-if="lightbox" class="lightbox" @click="closeLightbox">
-      <div class="lightbox__stage">
+    <div v-if="lightbox" class="lightbox" @pointerdown="onBgDown" @click="onBgClick">
+      <div ref="stageEl" class="lightbox__stage">
         <img
+          ref="zoomImg"
           :src="lightbox"
           alt=""
-          :style="{ transform: `scale(${zoom})` }"
+          :style="zoomStyle"
+          @load="measureFit"
           @click.stop
         />
       </div>
@@ -1030,7 +1119,9 @@ function save() {
 }
 /* 可捲動的檢視區：放大超過畫面時能四處拖動看細節。
    置中用 margin:auto 而不是 grid place-items:center ——
-   後者在內容超出容器時會把上半／左半裁掉且捲不到（unreachable overflow）。 */
+   後者在內容超出容器時會把上半／左半裁掉且捲不到（unreachable overflow）。
+   ⚠ 圖片放大是靠 width/height 真的長大（見 zoomStyle），不是 transform: scale()；
+   transform 不動 layout，這裡就永遠不會有可捲動的內容。 */
 .lightbox__stage {
   flex: 1;
   min-height: 0;
@@ -1041,12 +1132,14 @@ function save() {
   padding: 20px;
 }
 .lightbox__stage img {
+  /* 尺寸由 zoomStyle 給；此處的 max-* 只用在「還沒量到尺寸」的那一瞬間當保險 */
+  flex: none; /* ⚠ 不能讓 flex 把放大的圖縮回容器寬，縮回去就沒有 overflow 可捲了 */
   margin: auto;
   max-width: 100%;
   max-height: 100%;
   border-radius: 10px;
-  transform-origin: center center;
-  transition: transform 0.14s ease;
+  /* 放大／縮小改的是版面尺寸，過場就跟著放在 width/height 上 */
+  transition: width 0.14s ease, height 0.14s ease;
 }
 /* 工具列固定在底部，不隨圖片捲動 */
 .lightbox__bar {

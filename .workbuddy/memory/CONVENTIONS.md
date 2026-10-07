@@ -145,6 +145,25 @@
   `touch-action: manipulation; user-select: none`。⚠ 別套 `label`（會繼承進 input 不能選字）；
   touch-action 不是繼承屬性，要寫在元素本身且**由目標往上交集**
 
+### 放大檢視的縮放／拖曳（`RecordSheet.vue` 的 lightbox）
+
+- ⚠ **放大不能只用 `transform: scale()`**：transform 不影響 layout，外層 `overflow: auto`
+  的 `.lightbox__stage` 就永遠沒有可捲動的內容 → 放大後上下左右都滑不動（桌機滾輪也一樣）。
+  正解是開圖時量出「100% 時該多大」（`measureFit()`：用 `naturalWidth/Height` 對檢視區內距
+  取 `min(1, …)`，只縮不放），之後 `width/height` 隨倍率**實際長大**，捲動交給瀏覽器原生處理
+  （iOS 才有慣性滑動）。量到後要用 inline `max-width/height: none` 放掉，否則放大會被壓回畫面內
+- ⚠ 圖片的 flex 子項預設 `flex-shrink: 1` → 放大的圖會被硬縮回容器寬，等於又沒有 overflow。
+  必須 `flex: none`
+- ⚠ **捲動區要列進 `useScrollLock` 的白名單**：鎖背景的 `touchmove → preventDefault` 掛在
+  `document` 上，沒放行手指一滑就被整段擋掉。檢視區是整面 `fixed` 覆蓋層，
+  開著時直接取代 `bodyEl` → `scrollable: () => stageEl.value ?? bodyEl.value`
+- 置中靠 `margin: auto`：內容超出時 auto margin 會歸零，溢位只往右下長、四邊都捲得到
+  （`grid place-items: center` 則會把左上裁掉且捲不到）
+- 點背景關閉要用 `pointerdown` 記起點，位移 > 8px 視為拖曳不關（不然滑到一半放開就關掉了）
+- 量測時機：圖片 `@load` ＋ `watch(lightbox)` 的 `nextTick`（快取命中時 load 可能更早）
+  ＋ window `resize`／`orientationchange`。⚠ 檢視區是 `fixed inset: 0`，別用 ResizeObserver
+  盯它——捲軸出現會改變 clientWidth，可能來回震盪
+
 ## 統計頁 / 設定頁
 
 - 統計頁三張摘要卡用 `fmtNum()` 純數字，**幣別只在標題右邊膠囊**（`.page-cur`）；

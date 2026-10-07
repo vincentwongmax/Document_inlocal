@@ -26,8 +26,8 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
   - ⚠ **node 是 Windows binary**：curl 輸出要存到**專案內**（`.smoke/tmp/`），
     Git Bash 的 `/tmp` 讀不到
   - **維護中的回歸集＝v70～v80**；`v45/v46/v56/v57` 早已失效，別當基準
-  - 改到計算機／彈窗／通知／記錄頁時另外跑 **v82~v88**（計算機 11 位／算式／SweetAlert2／
-    最近檢視／按鍵快按／快速備註／收據圖片貼上）
+  - 改到計算機／彈窗／通知／記錄頁時另外跑 **v82~v89**（計算機 11 位／算式／SweetAlert2／
+    最近檢視／按鍵快按／快速備註／收據圖片貼上／收據圖片放大拖曳）
 - ⚠ **`npm install <pkg>` 會拔掉 `@esbuild/win32-x64`** → build 爆「needed by esbuild」。
   那是 esbuild 的 optionalDependencies（**不該**進 package.json）：把那行從 package.json
   刪掉再 `npm install` 就會裝回
