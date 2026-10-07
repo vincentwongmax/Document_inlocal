@@ -94,6 +94,40 @@
   - ⚠ 別在彈窗最外層設 `touch-action:none`（交集會把子孫的 pan-y 一起取消）
   - ⚠ 測背景有沒有動別看 `scrollTop`（body fixed 後就是 0），量 `rect.top`
 - **日期欄要跟備註同寬**：`DateTimeField` 放 `.pad__meta`（**別放回 `.pad__row`**）
+- **日期欄是「普通文字框 ＋ 日曆鈕」**（`DateTimeField.vue`，記帳頁與明細共用）
+  - 看得見的是 `<input type="text">`（值＝`YYYY/MM/DD HH:mm` 文字）→ 手機點它只出鍵盤，
+    不會彈系統日期滾輪；Safari 把原生日期框拆成多個 shadow DOM 小欄位、
+    各自帶 padding 導致比備註框高的問題也一併消失
+  - 右側兩顆 26px 小鈕：`.dt__pick`（日曆，`right:34px`）、`.dt__now`（設為現在，`right:5px`）
+    → `padding-right: 72px`。**刻意與 `ClearableInput` 的兩顆（`.cf__extra` 34px／`.cf__x` 5px）
+    對齊**，兩列的鈕會落在同一條垂直線上
+  - 日曆鈕的「真身」是**蓋在上面的透明原生 `datetime-local`（`.dt__native`）**：
+    指尖直接落在原生輸入框上，由系統自己開選擇器
+    - ⚠ 只能 `opacity: 0`（加 `top/bottom:-6px` 擴大熱區）。**不能用 `display:none`／
+      `visibility:hidden`／`pointer-events:none`**——那三種都會讓它收不到手指，等於鈕壞掉
+    - ⚠ `font-size` 一定要 ≥16px，否則 iOS 聚焦時會把整頁 zoom in
+    - 為什麼不用 `showPicker()`：iOS 對它的支援反覆，靠「真的按到原生框」才穩
+  - 打字走寬鬆解析 `lib/date.ts` 的 **`parseLooseDateTime(text, fallback)`**：
+    `2026/10/7 8:05`、`2026-10-07 20:53`、`2026年10月7日 14:30`、`20261007 2053`、
+    只寫 `10/7`（沿用原本時分）、只寫 `20:53`（沿用原本日期）；看不懂回 `null` → 還原
+    顯示用 `toDisplayInput()`。**在 `blur` 才提交**（按「記錄」時 blur 早於 click，
+    所以打完字直接按按鈕也存得到）
+  - 回歸：`.smoke/v92.mjs`（v74 的「設為現在」、v82 的同高斷言已跟著改成新行為）
+- **底部面板下拉關閉用 `composables/usePullToClose.ts`**（目前只有 `RecordSheet` 用）
+  - 手指走 **touch 事件（非 passive ＋ preventDefault）**：pointer 事件在瀏覽器決定
+    接管捲動時會收到 `pointercancel`，壓不過原生捲動
+  - 判定順序（`mode` -1→0/1）：橫向滑、往上滑、**可捲區還沒到頂** → 交還瀏覽器；
+    否則拖面板。⚠ 決定方向前要**先 preventDefault**（iOS 只要放掉第一個 touchmove
+    就會把整次手勢鎖定成原生捲動，之後再擋也擋不回來）
+  - ⚠ 沒收到 `touchstart` 的野生 touchmove 一律不理（`armed` 旗標）——
+    否則 v75 那種「直接丟一個 touchmove 驗有沒有被擋」的測試會被誤擋
+  - 門檻＝面板高的 22%（夾 64～160px）或甩速 > 0.55 px/ms；關閉時把 `offset`
+    設成 `面板高 + 48` 讓它順著手勢滑出去
+  - ⚠ `offset` **不能在收起時歸零**（inline transform 還撐著送出動畫），
+    靠 `watch(panel)` 在面板重新出現時歸零
+  - 滑鼠只能從 `.sheet__grab`／`.sheet__head` 起拖（在內容上拖是選字）；
+    抓把有 `touch-action: none`；`.sheet__body` 加 `overscroll-behavior: contain`
+  - 回歸：`.smoke/v92.mjs`
 - 數主頁 chips 用 `.catbox .picker > .cats .cat__name`（`.catbox .cat` 會混入子分類列）
 - **分類第一列永遠只有大類**：`CategoryPicker` 的 `list` 在 collapsed（記帳頁）模式會
   「保證選中的分類看得到」，但**子分類不補進第一列**——它已經有自己的子分類列，

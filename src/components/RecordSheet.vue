@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, toRef, watch } from 'vue'
 import { useScrollLock } from '@/composables/useScrollLock'
+import { usePullToClose } from '@/composables/usePullToClose'
 import type { ImageRef, TxRecord, TxType } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
@@ -31,6 +32,8 @@ const records = useRecordsStore()
 
 /** 明細內容是彈窗裡可捲的地方，其餘（含背景）都要鎖住 */
 const bodyEl = ref<HTMLElement | null>(null)
+/** 整個面板（下拉關閉時跟著手指移動的就是它） */
+const sheetEl = ref<HTMLElement | null>(null)
 /**
  * 圖片放大檢視的捲動區（見下方）
  *
@@ -40,6 +43,19 @@ const bodyEl = ref<HTMLElement | null>(null)
  */
 const stageEl = ref<HTMLElement | null>(null)
 useScrollLock(toRef(props, 'open'), { scrollable: () => stageEl.value ?? bodyEl.value })
+
+/**
+ * 向下拉即可關掉明細（底部面板的習慣操作）。
+ * 內容捲到頂之後繼續往下拉才是拖面板，所以不會跟「捲動內容」打架。
+ */
+const {
+  dragging: pulling,
+  style: pullStyle,
+  onTouchStart: onSheetTouchStart,
+  onTouchMove: onSheetTouchMove,
+  onTouchEnd: onSheetTouchEnd,
+  onMouseDown: onSheetMouseDown,
+} = usePullToClose({ panel: sheetEl, scroller: bodyEl, onClose: () => close() })
 
 const converted = computed(() => props.record?.currency !== props.record?.baseCurrency)
 const type = ref<TxType>('expense')
@@ -512,7 +528,22 @@ function save() {
 <template>
   <Transition name="sheet">
     <div v-if="open && record" class="mask" @click.self="close">
-      <div class="sheet card" role="dialog" aria-modal="true">
+      <div
+        ref="sheetEl"
+        class="sheet card"
+        :class="{ 'is-dragging': pulling }"
+        :style="pullStyle"
+        role="dialog"
+        aria-modal="true"
+        @touchstart="onSheetTouchStart"
+        @touchmove="onSheetTouchMove"
+        @touchend="onSheetTouchEnd"
+        @touchcancel="onSheetTouchEnd"
+        @mousedown="onSheetMouseDown"
+      >
+        <!-- 抓把：明示「這裡可以往下拉」（順便當滑鼠的握把） -->
+        <div class="sheet__grab" aria-hidden="true"></div>
+
         <header class="sheet__head">
           <div class="sheet__hd">
             <span
@@ -773,6 +804,28 @@ function save() {
   border-radius: var(--r-xl) var(--r-xl) 0 0;
   box-shadow: var(--shadow-3);
   overflow: hidden;
+  /* 下拉回彈／送出畫面用；拖曳中會由 .is-dragging 關掉 */
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.sheet.is-dragging {
+  transition: none;
+}
+/* 抓把：往下拉的握把（純裝飾，但滑鼠也靠它起拖） */
+.sheet__grab {
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: 9px 0 2px;
+  cursor: grab;
+  /* 這一小塊不參與原生捲動，免得拖曳一開始就被瀏覽器搶走 */
+  touch-action: none;
+}
+.sheet__grab::before {
+  content: '';
+  width: 40px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line-strong);
 }
 .sheet__head {
   display: flex;
@@ -838,6 +891,8 @@ function save() {
 .sheet__body {
   padding: 14px 16px 16px;
   overflow-y: auto;
+  /* 捲到頂／底就停住，不要把捲動連鎖給後面（下拉關閉也是靠它才乾淨） */
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 15px;
