@@ -28,7 +28,7 @@ export interface ImageRef {
   name: string
   /** 縮圖 data URL，直接可顯示（小尺寸，避免每次讀 IndexedDB） */
   thumb?: string
-  /** 壓縮後的寬／高（480p） */
+  /** 壓縮後的寬／高（長邊上限見 imaging.ts 的 MAX_EDGE） */
   w?: number
   h?: number
   /** 壓縮後實際位元組數 */

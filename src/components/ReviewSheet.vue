@@ -113,7 +113,7 @@ function applyDate(d: DraftRecord, iso: string) {
                   <template v-else>無拍攝時間資訊</template>
                 </span>
                 <span v-if="sizeInfo(d)" class="tiny muted">
-                  已壓縮 480p · {{ sizeInfo(d) }}
+                  {{ sizeInfo(d) }}
                 </span>
                 <span v-if="d.status === 'error'" class="tag tag--warn">辨識失敗，請手動輸入</span>
                 <span v-else-if="d.status === 'ocr'" class="tag">辨識中…</span>

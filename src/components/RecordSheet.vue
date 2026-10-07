@@ -128,7 +128,7 @@ function pickImages() {
   fileInput.value?.click()
 }
 
-/** 上傳多張：MD5 去重 → 壓縮 480p（同主頁流程）→ 存 IndexedDB → 產生縮圖 */
+/** 上傳多張：MD5 去重 → 壓縮（同主頁流程）→ 存 IndexedDB → 產生縮圖 */
 async function onFiles(e: Event) {
   const input = e.target as HTMLInputElement
   const files = Array.from(input.files ?? []).filter((f) => f.type.startsWith('image/'))
@@ -343,7 +343,7 @@ function save() {
               <input ref="fileInput" class="hidden" type="file" accept="image/*" multiple @change="onFiles" />
             </div>
             <p class="tiny muted imgs__hint">
-              {{ images.length ? '可上傳多張；點圖片放大檢視' : '可上傳多張圖片（自動壓縮為 480p）' }}
+              {{ images.length ? '可上傳多張；點圖片放大檢視' : '可上傳多張圖片（自動壓縮，保留文字清晰度）' }}
             </p>
           </div>
 

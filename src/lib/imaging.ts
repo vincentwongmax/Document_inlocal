@@ -1,20 +1,29 @@
 /**
- * 圖片壓縮：統一縮到長邊 480px，並降到目標容量（預設 40KB）以內。
+ * 圖片壓縮：縮到長邊 1600px，並降到目標容量（預設 300KB）以內。
  * 全部在瀏覽器端完成，不依賴網路。
+ *
+ * ⚠ 尺寸與容量不能再往下砍：收據上有金額、日期等小字，
+ *   480p／40KB 那組參數（品質會被逼到 0.3、甚至再縮到 0.4 倍）放大後完全看不清。
+ *   1600px 長邊在手機與桌面上都可以看清文字，300KB 也比原檔（動輒數 MB）省很多。
  */
 
-/** 480p：長邊上限 */
-export const MAX_EDGE = 480
+/** 存檔用的長邊上限 */
+export const MAX_EDGE = 1600
 /** 單張圖片的容量目標（bytes） */
-export const TARGET_BYTES = 40 * 1024
+export const TARGET_BYTES = 300 * 1024
 /** OCR 用的工作尺寸（長邊），兼顧辨識率與速度 */
 const OCR_EDGE = 1400
 /** 縮圖上限（存進 localStorage 的 data URL，越小越好） */
 const THUMB_EDGE = 144
 const THUMB_TARGET = 6 * 1024
 
-const QUALITIES = [0.82, 0.72, 0.62, 0.52, 0.44, 0.36, 0.3]
-const SHRINKS = [0.75, 0.55, 0.4]
+/**
+ * 品質階梯：盡量維持高品質，真的超過容量目標才往下退。
+ * 最低只到 0.62 —— 再低收據上的小字就會糊掉，寧可多存一點容量。
+ */
+const QUALITIES = [0.9, 0.82, 0.75, 0.68, 0.62]
+/** 品質退到底還太大才縮尺寸，而且只退兩階（0.8 → 0.62），避免整張變小到看不清 */
+const SHRINKS = [0.8, 0.62]
 
 let webpOk: boolean | null = null
 
@@ -91,7 +100,7 @@ export interface CompressedImage {
 }
 
 /**
- * 壓縮成 480p 小檔：先降品質，品質到底還太大就再縮尺寸。
+ * 壓縮成長邊 1600 的清晰圖：先降品質，品質退到底還太大才縮尺寸。
  * 任何一步失敗都退回原檔，不讓上傳流程中斷。
  */
 export async function compressImage(
@@ -121,11 +130,11 @@ export async function compressImage(
         if (blob.size <= targetBytes) break
       }
 
-      // 品質降到最低仍超過目標：再縮尺寸
+      // 品質退到底仍超過目標：再縮尺寸（最多兩階，盡量保留可辨識度）
       if (best && best.bytes > targetBytes) {
         for (const r of SHRINKS) {
           const canvas = drawScaled(bmp, maxEdge, r)
-          const blob = await toBlob(canvas, type, 0.6)
+          const blob = await toBlob(canvas, type, 0.72)
           if (!blob) continue
           best = {
             blob,
