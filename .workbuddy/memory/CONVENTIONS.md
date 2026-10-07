@@ -116,6 +116,26 @@
   - 放開後底色仍停在 `--surface-3` 是**觸控的 sticky :hover**（Chrome／iOS 都會把最後
     碰到的元素留在 hover 態），全站既有行為、不是 bug，驗收時不要當成沒還原
 
+## 收據圖片：貼上（剪貼簿）
+
+- **iOS 只在「可編輯元素」取得焦點時才發 `paste`**（`document.addEventListener('paste')` 在
+  WebKit 上靜默失效）→ 做法是在「貼上圖片」磚上鋪一層**鋪滿整顆磚的隱形 `contenteditable`**
+  當接收面，點磚＝聚焦，使用者再長按選「貼上」。⚠ 接收面要 `inputmode="none"` ＋
+  `virtualkeyboardpolicy="manual"`，不然 iOS 會彈鍵盤
+- ⚠ **必須把全站規則關掉的兩件事打開**：`style.css` 給 `button, [role='button'], a` 的
+  `-webkit-touch-callout: none` 與 `user-select: none` 正是 iOS 長按選單的開關，
+  關著就永遠貼不了。覆寫要用**兩層選擇器**（`.imgs .imgs__pasteArea`）確定蓋得過，
+  同權重只靠載入順序太脆（元件樣式是 lazy chunk，順序會變）
+- 點磚的處理函式裡**聚焦要同步做**，不能等 `await` 之後：iOS 只認手勢的同步階段；
+  且要先站穩「長按可貼」這條保證路徑，再去試 `navigator.clipboard.read()`（加分項，
+  Safari 支援反覆、失敗是常態，一律 try/catch）
+- `preventDefault()` 必須**同步**決定（事件派送完就跑預設行為，await 回來才擋太遲）：
+  在接收面上一律擋；其他位置只在**真的夾帶圖片檔案**時才擋 → 純文字貼上不受影響
+- 剪貼簿來源有三種，都要接：① `files`／`items` 的檔案（桌機／Android）
+  ② iOS 常給的 `text/html` 內含 `<img src="blob:">` 或 `data:` ③ `text/plain` 裡的 data URL。
+  外部 `http(s)` 網址刻意不處理（跨域只會拿到不透明回應）
+- 貼上與上傳共用 `addFiles()`，壓縮／縮圖／IndexedDB／孤兒清理才一致
+
 ## 收據圖片 / iOS 觸控
 
 - `lib/imaging.ts`：`MAX_EDGE=1600`、`TARGET_BYTES=300KB`、品質最低 0.62、縮尺寸只退兩階。

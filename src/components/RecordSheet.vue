@@ -136,11 +136,11 @@ function pickImages() {
   fileInput.value?.click()
 }
 
-/** 上傳多張：MD5 去重 → 壓縮（同主頁流程）→ 存 IndexedDB → 產生縮圖 */
-async function onFiles(e: Event) {
-  const input = e.target as HTMLInputElement
-  const files = Array.from(input.files ?? []).filter((f) => f.type.startsWith('image/'))
-  input.value = ''
+/**
+ * 真正把檔案收進來：MD5 去重 → 壓縮（同主頁流程）→ 存 IndexedDB → 產生縮圖。
+ * 上傳（檔案選擇器）與貼上（剪貼簿）都走這裡，兩邊行為才會一致。
+ */
+async function addFiles(files: File[]) {
   if (!files.length) return
   busyImg.value = true
   try {
@@ -177,6 +177,174 @@ async function onFiles(e: Event) {
   }
 }
 
+/** 上傳多張（檔案選擇器） */
+async function onFiles(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = Array.from(input.files ?? []).filter((f) => f.type.startsWith('image/'))
+  input.value = ''
+  await addFiles(files)
+}
+
+/* ── 貼上圖片（剪貼簿）──────────────────────────────────────
+ * 情境：從 WeChat／相簿／Messenger 複製一張圖，回到這裡貼上。
+ *
+ * 兩條路都要有，因為兩邊的支援度剛好互補：
+ *
+ * 1. `paste` 事件（**保證可用**）：iOS 的 WebKit 只在「可編輯元素」取得焦點時才發
+ *    paste 事件，所以在「貼上圖片」磚上鋪一層看不見的 contenteditable 當接收面
+ *    （點磚＝把焦點放上去，接著長按選「貼上」）。桌機／Android 直接 Ctrl+V 即可，
+ *    所以監聽掛在 document 上——焦點在明細裡任何地方（連備註欄都算）都收得到。
+ * 2. `navigator.clipboard.read()`（**加分項**）：支援的瀏覽器點一下就完成、不必長按。
+ *    但 Safari 對它的支援反覆，失敗是常態 → 一律 try/catch，失敗就默默退回第 1 條。
+ *    所以不能只做這一條。
+ */
+
+/** 「貼上圖片」磚上那層接收焦點的隱形可編輯面 */
+const pasteEl = ref<HTMLElement | null>(null)
+/** 按過「貼上圖片」之後才顯示「長按 → 貼上」的提示（平常不用嚇使用者） */
+const pasteMode = ref(false)
+
+const IMG_MIME = /^image\//i
+
+function extOf(mime: string) {
+  const m = mime.toLowerCase()
+  if (m === 'image/jpeg' || m === 'image/jpg') return 'jpg'
+  if (m === 'image/webp') return 'webp'
+  if (m === 'image/gif') return 'gif'
+  if (m === 'image/heic') return 'heic'
+  if (m === 'image/heif') return 'heif'
+  return 'png'
+}
+
+/** 剪貼簿來的 blob 不會有檔名，自己取一個（列表上會顯示） */
+function pastedFile(blob: Blob, i: number, total: number) {
+  const type = blob.type || 'image/png'
+  const t = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  const stamp = `${p(t.getHours())}${p(t.getMinutes())}${p(t.getSeconds())}`
+  return new File(
+    [blob],
+    `貼上-${stamp}${total > 1 ? `-${i + 1}` : ''}.${extOf(type)}`,
+    { type },
+  )
+}
+
+/**
+ * 從剪貼簿事件撈出圖片。
+ * iOS 常常不是給「檔案」，而是給一段內含 `<img>` 的 HTML（src 是 blob: 或 data:），
+ * 所以兩條都要試。外部 http(s) 網址刻意不處理——跨域只會拿到不透明回應，讀不出內容。
+ */
+async function filesFromClipboard(dt: DataTransfer | null): Promise<File[]> {
+  if (!dt) return []
+  const out: File[] = []
+
+  for (const f of Array.from(dt.files ?? [])) if (IMG_MIME.test(f.type)) out.push(f)
+  if (out.length) return out
+  for (const it of Array.from(dt.items ?? [])) {
+    if (it.kind === 'file' && IMG_MIME.test(it.type)) {
+      const f = it.getAsFile()
+      if (f) out.push(f)
+    }
+  }
+  if (out.length) return out
+
+  const srcs: string[] = []
+  const html = dt.getData('text/html')
+  if (html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    for (const img of Array.from(doc.querySelectorAll('img'))) {
+      const src = img.getAttribute('src') ?? ''
+      if (/^(blob:|data:)/.test(src)) srcs.push(src)
+    }
+  }
+  // 有些 App 是把 data URL 塞在純文字裡
+  const text = dt.getData('text/plain')
+  if (text && /^data:image\//.test(text.trim())) srcs.push(text.trim())
+
+  for (const src of srcs) {
+    try {
+      const blob = await (await fetch(src)).blob()
+      if (IMG_MIME.test(blob.type || 'image/png')) out.push(pastedFile(blob, out.length, srcs.length))
+    } catch {
+      /* 讀不到就跳過，不讓一張壞圖擋掉其他張 */
+    }
+  }
+  return out
+}
+
+/**
+ * paste 的統一入口（document 的 capture 階段）。
+ * ⚠ preventDefault 必須**同步**決定：事件派送完就會執行預設行為，等 await 回來才擋已經太遲。
+ * 所以在「接收面」上的貼上一律擋掉（不該有任何東西被塞進 DOM），
+ * 其他位置的貼上只有在真的夾帶圖片檔案時才擋（純文字要正常貼進備註欄）。
+ */
+function onPaste(e: ClipboardEvent) {
+  const dt = e.clipboardData
+  const onTile = e.target === pasteEl.value
+  const hasImageFile =
+    !!dt &&
+    (Array.from(dt.files ?? []).some((f) => IMG_MIME.test(f.type)) ||
+      Array.from(dt.items ?? []).some((it) => it.kind === 'file' && IMG_MIME.test(it.type)))
+
+  if (onTile || hasImageFile) e.preventDefault()
+  void (async () => {
+    const files = await filesFromClipboard(dt)
+    if (!files.length) return
+    pasteMode.value = false
+    await addFiles(files)
+  })()
+}
+
+/**
+ * 點「貼上圖片」磚。
+ * ⚠ 聚焦要**同步**做（不能等 await 之後才做）：iOS 只在使用者手勢的同步階段認焦點，
+ * 而且不依賴剪貼簿 API 的成功與否——先站穩「長按可以貼」這條保證路徑，
+ * 再去試加分項。
+ */
+function pasteFromClipboard() {
+  pasteMode.value = true
+  pasteEl.value?.focus()
+  void readClipboardApi()
+}
+
+/** 加分項：支援的瀏覽器點一下就貼好，不必長按（Safari 對它的支援反覆，失敗是常態） */
+async function readClipboardApi() {
+  if (!navigator.clipboard?.read) return
+  try {
+    const items = await navigator.clipboard.read()
+    const files: File[] = []
+    for (const it of items) {
+      const type = it.types.find((t) => IMG_MIME.test(t))
+      if (!type) continue
+      files.push(pastedFile(await it.getType(type), files.length, items.length))
+    }
+    if (!files.length) {
+      notify('剪貼簿裡沒有圖片', 'info')
+      return
+    }
+    pasteMode.value = false
+    await addFiles(files)
+  } catch {
+    /* 未授權／不支援 → 就這樣，使用者已經可以長按貼上了 */
+  }
+}
+
+/** 有人真的在那層隱形面上打字就打掉：它只是接收貼上的靶，不該留任何內容 */
+function clearPasteBox(e: Event) {
+  const el = e.target as HTMLElement
+  if (el.textContent) el.textContent = ''
+}
+
+/** 明細開著時才攔文件層級的貼上，其他頁面不受影響 */
+watch(
+  () => props.open,
+  (open) => {
+    if (open) document.addEventListener('paste', onPaste, true)
+    else document.removeEventListener('paste', onPaste, true)
+  },
+  { immediate: true },
+)
+
 /** 從明細移除圖片（實際刪除在儲存 / 關閉時處理） */
 function removeImage(im: ImageRef) {
   images.value = images.value.filter((x) => x.id !== im.id)
@@ -200,6 +368,7 @@ function close() {
 onBeforeUnmount(() => {
   releaseUrls()
   discardPending()
+  document.removeEventListener('paste', onPaste, true)
 })
 
 watch(
@@ -362,10 +531,41 @@ function save() {
                 </svg>
                 <span>{{ busyImg ? '處理中…' : '上傳圖片' }}</span>
               </button>
+              <!-- 貼上：磚本身是「接收面」，點它＝把焦點放上去，接著長按選「貼上」 -->
+              <div class="imgs__add imgs__paste" :class="{ 'is-armed': pasteMode }">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="8" y="3.2" width="8" height="3.6" rx="1.2" />
+                  <path d="M9.4 5H6.8A1.8 1.8 0 0 0 5 6.8v11.4A1.8 1.8 0 0 0 6.8 20h10.4a1.8 1.8 0 0 0 1.8-1.8V6.8A1.8 1.8 0 0 0 17.2 5h-2.6" />
+                  <path d="M8.6 11.6h6.8M8.6 15.2h4.4" />
+                </svg>
+                <!-- 看得見的字給眼睛看就好（讀屏名稱統一由下面那層 aria-label 提供，免得唸兩次） -->
+                <span aria-hidden="true">{{ busyImg ? '處理中…' : '貼上圖片' }}</span>
+                <span
+                  ref="pasteEl"
+                  class="imgs__pasteArea"
+                  contenteditable="true"
+                  inputmode="none"
+                  virtualkeyboardpolicy="manual"
+                  role="button"
+                  tabindex="0"
+                  :aria-label="busyImg ? '正在處理圖片' : '貼上圖片'"
+                  :aria-busy="busyImg"
+                  @click="pasteFromClipboard"
+                  @keydown.enter.prevent="pasteFromClipboard"
+                  @keydown.space.prevent="pasteFromClipboard"
+                  @input="clearPasteBox"
+                ></span>
+              </div>
               <input ref="fileInput" class="hidden" type="file" accept="image/*" multiple @change="onFiles" />
             </div>
             <p class="tiny muted imgs__hint">
-              {{ images.length ? '可上傳多張；點圖片放大檢視' : '可上傳多張圖片（自動壓縮，保留文字清晰度）' }}
+              {{
+                pasteMode
+                  ? '長按「貼上圖片」磚 → 選「貼上」（電腦可直接 Ctrl／⌘ + V）'
+                  : images.length
+                    ? '可上傳或貼上多張；點圖片放大檢視'
+                    : '可上傳或貼上多張圖片（自動壓縮，保留文字清晰度）'
+              }}
             </p>
           </div>
 
@@ -636,6 +836,43 @@ function save() {
   stroke: currentColor;
   stroke-width: 1.8;
   stroke-linecap: round;
+}
+
+/* ── 貼上圖片磚 ──────────────────────────────────────────── */
+.imgs__paste {
+  position: relative;
+}
+/* 按過之後維持強調，提示使用者「現在要長按這裡」 */
+.imgs__paste.is-armed {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  border-style: solid;
+  color: var(--accent);
+}
+/**
+ * 接收貼上的隱形面：鋪滿整顆磚，只負責「能被聚焦」。
+ *
+ * ⚠ 下面那組 `.imgs .imgs__pasteArea` 刻意把全站規則關掉的兩件事打開
+ * （style.css 的 `button, [role='button'], a` 有 `-webkit-touch-callout: none`
+ * 與 `user-select: none`）：那兩條正是 iOS「長按 → 貼上」選單的開關，關著就永遠貼不了。
+ * 看到它們請不要「順手統一」，會直接把功能弄壞。
+ * 用兩層選擇器是為了**確定蓋得過**那條全域規則（同權重時只靠載入順序太脆）。
+ */
+.imgs__pasteArea {
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+  outline: none;
+  cursor: pointer;
+  white-space: nowrap;
+  /* 不要讓游標閃現：它看起來該是一顆按鈕，不是輸入框 */
+  caret-color: transparent;
+}
+.imgs .imgs__pasteArea {
+  -webkit-touch-callout: default;
+  user-select: text;
+  -webkit-user-select: text;
 }
 .imgs__hint {
   margin: -8px 0 0;
