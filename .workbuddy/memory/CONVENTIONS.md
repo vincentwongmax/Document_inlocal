@@ -297,6 +297,58 @@
 - 共用件（改動要一併回歸）：`DateTimeField`、`ClearableInput`、`CategoryIcon`、
   `CategoryPicker`、`RecordList`、`RecordRow`、`HighlightText`
 
+## 匯出（JSON ╱ Excel）
+
+設定頁的「匯出」不直接下載，先開 `components/ExportModal.vue` 選**格式**與**範圍**。
+
+- **JSON**＝備份／還原用：單一 `.json`，含記錄＋**設定**＋圖片 base64；
+  匯入時會問「要不要一起還原設定」。**不要把設定從 JSON 拿掉**，匯入的
+  「連設定一起還原」會直接壞掉。
+- **Excel**＝給人看／拿去算：一個 `.zip`，內含一個 `.xlsx` ＋ `images/` 圖檔。
+  **只含記錄，不含任何設定**（分類名稱是為了讓表格看得懂才顯示的，那不算匯出設定）。
+  不能匯回 App。
+- 範圍＝全部 or 日期區間（含首尾，用**本地日曆日**比對 `dayKey(occurredAt)`）。
+  JSON 與 Excel 都吃同一個範圍；JSON 裡的設定一律是當下的完整設定。
+
+### 產出檔案（`lib/zip.ts`、`lib/xlsx.ts`、`lib/exportExcel.ts`）
+
+- ⚠ **零依賴是刻意的**：ZIP 與 XLSX 都自己寫。候選的 JSZip／SheetJS／exceljs 都不理想
+  ——SheetJS 在 npm 上的版本有已知安全問題、exceljs 近 1 MB，而這是離線 PWA。
+  要加東西進來之前先想想值不值得。
+- `zip.ts`：STORE ＋ DEFLATE。DEFLATE 走瀏覽器內建的 `CompressionStream('deflate-raw')`
+  （Chrome 103+／Safari 16.4+／Firefox 113+），**不支援就自動退回 STORE**，功能不受影響。
+  ⚠ 圖檔一律 `compress: false`（WebP／JPEG 已壓縮，再 deflate 只是白花時間）。
+  ⚠ 沒做 ZIP64：單檔或總量 > 4 GiB、檔案數 > 65535 就會失敗，呼叫端要先擋。
+  ⚠ 檔名一律設 UTF-8 旗標（bit 11），否則中文分類名會變亂碼。
+- `xlsx.ts`：手寫 OOXML。字串用 `inlineStr`（省掉 sharedStrings），只產生必要部件。
+  幾個一錯就會「Excel 說檔案損毀」的地方：
+  - `fills[0]` 必須是 `patternType="none"`、`fills[1]` 必須是 `gray125`（Excel 的硬性規定）
+  - XML 1.0 **不接受大部分控制字元**（0x00–0x08、0x0B、0x0C、0x0E–0x1F）→ 文字一律清掉，
+    備註裡混到一個整個檔案就開不起來
+  - `sheetView` 裡 `pane` 必須排在 `selection` **前面**
+  - `numFmtId`：0 = 一般、4 = 內建 `#,##0.00`、**自訂碼一律 >= 164**
+  - 日期要寫成 Excel 序號（1899-12-30 為 0）。⚠ 用**當地時間的年月日時分**再當 UTC 算
+    （`Date.UTC(getFullYear(), …)`）；直接用 `getTime()` 的話 UTC+8 的晚間記錄會被推前一天
+- `exportExcel.ts`：
+  - **先讀實體再命名**——副檔名要看 blob 真正的 MIME（壓縮後可能是 webp，不是原始檔名）
+  - 圖檔名 `日期_分類_金額_序號`，撞名就往後遞號（`used` set 比對**含副檔名**的小寫全名）
+  - 讀不到的圖就從表格裡拿掉，免得 Excel 指到不存在的檔案；並回報 `missingImages`
+  - 欄位依發生時間**由舊到新**排；「主幣別」欄只在記錄之間基準不一致時才多開（否則跟標題重複）
+  - 大小上限 1.5 GB（保守值），超過就請使用者用日期區間分批
+
+### 驗證（`.smoke/v98.mjs` ＋ `validate-export.py`）
+
+- 這種「產出檔案」的功能一定要**真的開起來讀**，不能只驗有沒有呼叫到函式。
+  v98 會接住下載的 Blob、寫到磁碟，自己算 CRC 對每個 entry，並解兩層 ZIP
+  （外層 zip 挖出 xlsx 再解一次）檢查 XML 內容。
+- ⚠ **沙箱不允許 Node 開子行程**（`spawnSync … EBUSY`）→ 沒辦法從 Node 叫 Python。
+  Python 的第二意見拆到 `.smoke/v98-verify.sh`（依序跑 v98 與 `validate-export.py`）。
+  ⚠ 從 Node／shell 叫 Python 時要 `PYTHONIOENCODING=utf-8`，否則 Windows 會用系統
+  codepage 輸出，中文被打成 `?`。
+- ⚠ 測 Excel 的**選擇器要 scope 到彈窗的 `.box`**：設定頁自己有 `.chip`（OCR 語言），
+  不 scope 會數到 6 個「快速鈕」。
+- ⚠ 找「圖片欄」的儲存格**只能用欄名過濾，不能用樣式**：圖片欄與備註欄共用換行樣式（`s="5"`）。
+
 ## 快速備註（quick notes）
 
 - 資料在 `Settings.quickNotes: string[]`；`merge()` 用 `Array.isArray` 判斷**不要用 `?.length`**，

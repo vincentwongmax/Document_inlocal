@@ -9,7 +9,8 @@ import CategoryIcon from '@/components/CategoryIcon.vue'
 import { iconForCategory } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
-import { buildExport, downloadJson, parseImport, restoreImages } from '@/lib/exportImport'
+import { parseImport, restoreImages } from '@/lib/exportImport'
+import ExportModal from '@/components/ExportModal.vue'
 import { usageBytes } from '@/lib/storage'
 import { clearImages, listImageIds } from '@/lib/imageDb'
 import { offlineReady, updateSW } from '@/lib/pwa'
@@ -205,18 +206,7 @@ async function refreshUsage() {
 }
 onMounted(refreshUsage)
 
-const exporting = ref(false)
-async function doExport() {
-  exporting.value = true
-  try {
-    const payload = await buildExport(records.records, settings.state)
-    const name = downloadJson(payload)
-    notify(`已匯出 ${payload.records.length} 筆 → ${name}`, 'ok')
-  } catch (e) {
-    notify(e instanceof Error ? e.message : '匯出失敗', 'warn')
-  }
-  exporting.value = false
-}
+const exportOpen = ref(false)
 
 const importInput = ref<HTMLInputElement | null>(null)
 type ParsedImport = ReturnType<typeof parseImport>
@@ -628,13 +618,13 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
       </div>
 
       <div class="acts">
-        <button class="act" :disabled="exporting || !records.records.length" @click="doExport">
+        <button class="act" :disabled="!records.records.length" @click="exportOpen = true">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 4v10m0 0 4-4m-4 4-4-4" />
             <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
           </svg>
           <span class="act__t">匯出</span>
-          <span class="act__d tiny muted">單一 JSON 檔，含圖片</span>
+          <span class="act__d tiny muted">JSON（含設定）或 Excel（ZIP）</span>
         </button>
         <button class="act" @click="pickImport">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -719,6 +709,9 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
       @save="onSaveCat"
       @remove="onRemoveCat"
     />
+
+    <!-- 匯出：先選格式（JSON／Excel）與範圍，再下載 -->
+    <ExportModal :open="exportOpen" @close="exportOpen = false" />
   </div>
 </template>
 

@@ -20,6 +20,58 @@
 
 ---
 
+## [0.1.19] — 2026-10-07
+
+### 新增
+
+- **匯出多了 Excel 選項**。設定頁的「匯出」不再直接下載，而是先開一個彈窗，讓你先選
+  **格式**（JSON／Excel）與 **範圍**（全部記錄／自訂日期區間，附「本月／上月／今年」快速鈕）：
+  - **JSON**（原本就有的）：單一 `.json`，含記錄＋設定＋圖片（base64），可以再匯入還原。
+    這次只多了「範圍」可以篩選，其他行為完全不變。
+  - **Excel**（新的）：一個 `.zip`，內含
+    - `ledger-YYYYMMDD-HHMM.xlsx` —— 工作表名「記錄」，凍結標題列＋自動篩選，
+      日期是**真正的日期**（不是文字）、金額與匯率是真的數字（各有對應的數字格式）
+    - `images/` —— 收據圖檔，命名為 `日期_分類_金額_序號`（例：`2026-10-07_餐飲_85.00_1.webp`）。
+      Excel 的「圖片檔名（ZIP 內）」欄寫的是 `images/xxx.webp` 這個相對路徑，
+      一筆有多張就換行列出，所以解壓縮後從表格就能直接對到檔案
+    - **只匯出記錄，不匯出任何設定**（分類樹、匯率表、常用備註、幣別偏好都不在裡面），
+      所以這包是「給人看／拿去算」的，不能匯回 App。要備份還原請用 JSON。
+  - 欄位（12 欄）：日期時間、收支、分類、子分類、幣別、金額、匯率、主幣金額、備註、算式、
+    圖片檔名（ZIP 內）、圖片張數。記錄依發生時間由舊到新排。
+    - 「主幣金額」欄的標題會帶上主幣別（例如 `主幣金額 (MOP)`）；
+      只有在**記錄之間的主幣別不一致**時（換過主幣別）才會多開一欄「主幣別」
+  - 圖檔撞名（同一天、同分類、同金額）會自動往後遞號，不會蓋掉對方
+  - 匯出時顯示進度（讀取圖片 N/M → 打包中 N/M）
+
+### 實作
+
+- **零依賴**：ZIP 與 XLSX 都是自己寫的（`src/lib/zip.ts`、`src/lib/xlsx.ts`）。
+  原本的候選是 JSZip／SheetJS／exceljs，但 xlsx（SheetJS）npm 上的版本有已知安全問題、
+  exceljs 又接近 1 MB，而這個 App 是離線 PWA，不該為了「偶爾匯出一次」把主包養肥。
+  - `zip.ts`：STORE／DEFLATE 都支援，走瀏覽器內建的 `CompressionStream('deflate-raw')`，
+    不支援就自動退回 STORE（功能不受影響）；圖檔一律 STORE（WebP／JPEG 已經壓縮過了）
+  - `xlsx.ts`：手寫 OOXML，只產生必要部件（`[Content_Types].xml`、`_rels/.rels`、
+    `xl/workbook.xml`、`xl/_rels/workbook.xml.rels`、`xl/styles.xml`、`xl/worksheets/sheetN.xml`），
+    字串用 inlineStr（省掉 sharedStrings）、刻意不做 docProps／theme
+  - 產出的大小：`SettingsView` 這塊 lazy chunk 從 28 KB 變成 48 KB（gzip 10.5 → 17.4 KB）
+
+### 修正
+
+- **匯出彈窗的內容列進了 `useScrollLock` 的可捲白名單**：鎖背景的 `touchmove preventDefault`
+  掛在 document 上，沒放行手指在彈窗裡滑不動（窄機身展開「自訂區間」時就會碰到）
+
+### 測試
+
+- 新增 `.smoke/v98.mjs`（**98 項，全過**）。這支是**端到端**的：真的按匯出、真的接住那個 Blob，
+  再把位元組寫到磁碟驗證 —— 包括自己算 CRC 對每一個 ZIP entry、檢查 EOCD、
+  兩層 ZIP（外層 zip 裡挖出 xlsx 再解一次）、以及 xlsx 的 XML 內容
+- 新增 `.smoke/validate-export.py` + `.smoke/v98-verify.sh`：拿 **Python 的 zipfile + openpyxl**
+  當第二意見（完全不同的實作），確認檔案真的開得起來、日期讀出來是 `datetime`、
+  數字格式正確、表格裡的圖片路徑與 ZIP 裡的檔案一對一對得起來
+- 回歸：`v70 v74 v77 v79 v80 v82～v98` 全過
+
+---
+
 ## [0.1.18] — 2026-10-07
 
 ### 新增

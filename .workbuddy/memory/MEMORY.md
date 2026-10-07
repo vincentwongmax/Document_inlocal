@@ -8,7 +8,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 
 ## 版本號
 
-- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.18`
+- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.19`
 - 單一來源＝`package.json` 的 `version` → `vite.config.ts` `define` 注入 `__APP_VERSION__`
   （型別在 `env.d.ts`）→ `src/lib/version.ts` → 設定頁「離線與版本」膠囊
 - 每次更新要改 `package.json` ＋ 補一筆 `CHANGELOG.md`
@@ -30,15 +30,21 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
   - ⚠ **node 是 Windows binary**：curl 輸出要存到**專案內**（`.smoke/tmp/`），
     Git Bash 的 `/tmp` 讀不到
   - **維護中的回歸集＝v70～v80**；`v45/v46/v56/v57` 早已失效，別當基準
-  - 改到計算機／彈窗／通知／記錄頁時另外跑 **v82~v97**（計算機 11 位／算式／SweetAlert2／
+  - 改到計算機／彈窗／通知／記錄頁／設定頁匯出時另外跑 **v82~v98**（計算機 11 位／算式／SweetAlert2／
     最近檢視／按鍵快按／快速備註／收據圖片貼上／收據圖片放大拖曳／統計頁自訂日期框／
     分類第一列不塞子分類／日期欄＝普通文字框＋下拉關閉明細／算式不留空格／
     記錄頁檢視＋篩選兩列排版／記錄頁搜尋框縮小＋放大鏡可見／統計頁自訂從到日期列填滿不跑位／
-    記帳頁收據圖片區塊）
+    記帳頁收據圖片區塊／設定頁匯出彈窗（JSON＋Excel））
   - ⚠ **動到圖片／放大檢視／剪貼簿時，v77（收據壓縮）與 v89（明細放大後可拖曳）是守門員**，
     一定要跑（0.1.18 把明細的 lightbox 抽成共用件時就是靠它們證明沒改壞）
   - ⚠ **測試圖別用兩張「內容相同」的**：MD5 去重會擋掉第二張，多張上傳就測不到
   - ⚠ **測試用 `os.tmpdir()` 生暫存檔**（`fs.mkdtempSync`），別寫死 `/tmp`（Windows 讀不到）
+  - ⚠⚠ **沙箱不允許 Node 開子行程**（`execFileSync`／`spawnSync` → `EBUSY`，連 `python -c` 都擋）
+    → 要「換個實作再驗一次」的步驟得拆成 shell 腳本（例：`.smoke/v98-verify.sh`）
+  - ⚠ **Node 直接 import `src/lib/*.ts` 會 ERR_MODULE_NOT_FOUND**（副檔名與 `@/` 別名只有 Vite 認得）
+    → 要單獨試 lib 就先打包：見 `.smoke/run-probe.mjs`（`build({configFile:false, build:{ssr}})`，
+    並用 `import { x } from '../src/lib/x'`，**從 `.smoke/` 出發是 `../` 不是 `../../`**）
+  - ⚠ **Python 的管線輸出要 `PYTHONIOENCODING=utf-8`**，否則 Windows 用系統 codepage，中文被打成 `?`
     （別跑 `v73`：沒有 `v73.mjs`，只有 `v73-edge/-locale/...` 等變體）
   - ⚠⚠ **測試裡「等固定秒數」比想像中不可靠**：v84 用 `sleep(900)` 等 SweetAlert2 彈窗，
     慢的時候會量到「還沒渲染完的空彈窗」，變成偶發紅燈（約 1/10）。**要等狀態、不要等時間**
@@ -79,6 +85,11 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 - PWA 看到舊版先 Ctrl+Shift+R／無痕；測試用全新 profile
 
 ## 資料
+
+- **匯出**：設定頁 → 彈窗選格式（JSON／Excel）與範圍。
+  JSON＝含設定的完整備份；**Excel＝只含記錄的 .zip（xlsx + `images/`，不含任何設定）**。
+  兩種格式的 ZIP 與 XLSX 都是**自己寫的**（`lib/zip.ts`／`lib/xlsx.ts`，零依賴）→
+  ⚠ 動到那裡之前先讀 `CONVENTIONS.md` 的「匯出（JSON ╱ Excel）」那節（有一堆一錯就檔案損毀的雷）
 
 - localStorage `mop-ledger.{records,settings,draft}.v1`；收據原圖在 IndexedDB（`idb-keyval`）
 - 分類 `{ id, name, type, color, icon?, builtin, archived }`；舊資料載入時 `withIcons()` 補 icon 並回寫
