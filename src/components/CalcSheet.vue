@@ -32,7 +32,6 @@ const displayLong = computed(() => display.value.length > 11)
 /** 還沒按 = 之前不顯示換算預覽，答案要按了等於才出現 */
 const converted = computed(() => props.calc.done && props.curCode !== settings.baseCurrency)
 const convertedAmount = computed(() => Number((amount.value * settings.rate(props.curCode)).toFixed(2)))
-const isEmpty = computed(() => props.calc.tokens.length === 0)
 
 /**
  * 背景不滑動：
@@ -65,7 +64,6 @@ useScrollLock(toRef(props, 'open'))
           <div v-if="converted && amount > 0" class="calcdisp__conv num tiny">
             ≈ {{ fmtMoney(convertedAmount, settings.baseCurrency) }}
           </div>
-          <div v-else-if="isEmpty" class="calcdisp__conv tiny muted">按數字鍵開始輸入</div>
         </div>
 
         <Keypad class="calccard__pad" @press="(k: string) => emit('press', k)" />
@@ -167,9 +165,10 @@ useScrollLock(toRef(props, 'open'))
 .calccard__pad {
   margin-top: auto;
 }
-/* 畫面高度不夠時讓按鍵縮小，維持「卡片不滑動」 */
+/* 畫面高度不夠時讓按鍵縮小，維持「卡片不滑動」。
+   鍵盤固定 5 列（見 Keypad.vue），橫向小螢幕也要塞得下，所以下限給得比較小 */
 .calccard :deep(.key) {
-  height: clamp(42px, 8vh, 54px);
+  height: clamp(34px, 6.6vh, 54px);
 }
 
 /* ── 進出場 ─────────────────────────────────────────────── */

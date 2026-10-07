@@ -1,130 +1,98 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-
 const emit = defineEmits<{ press: [key: string] }>()
 
-/** 運算鍵（＋ − × ÷ 與括號 C）由左下角的「計算機」圖示切換，預設收起 */
-const adv = ref(false)
-
-type Kind = 'num' | 'op' | 'fn' | 'eq' | 'tool'
+type Kind = 'num' | 'op' | 'fn' | 'eq'
+/** 運算符號一律用描邊圖示（各字型對 ÷ × − 的畫法差很多，用 SVG 才一致） */
+type IconName = 'back' | 'div' | 'mul' | 'sub' | 'add'
 
 interface PadKey {
-  /** 按下時送出的鍵值（tool 鍵不送出） */
+  /** 按下時送出的鍵值（見 src/lib/calc.ts） */
   k: string
   kind: Kind
-  /** 顯示文字，預設同 k */
-  label?: string
-  /** 圖示鍵 */
-  icon?: 'back' | 'calc'
-  /** 橫跨欄數（預設 1） */
-  w?: number
-  /** 縱跨列數（預設 1） */
-  h?: number
+  /** 圖示鍵：顯示圖示而不是文字 */
+  icon?: IconName
+  /** 圖示鍵的讀屏名稱（圖示沒有文字可讀） */
+  name?: string
 }
 
-/** 運算模式開啟時，數字區「上方」多出的兩列 */
-const advRows: PadKey[][] = [
-  // 最上排：括號與清除
-  [{ k: '(', kind: 'fn' }, { k: ')', kind: 'fn' }, { k: 'C', kind: 'fn', label: 'C', w: 2 }],
-  // 緊鄰數字：四則運算，方便連續輸入
-  [
-    { k: '÷', kind: 'op' },
-    { k: '×', kind: 'op' },
-    { k: '-', kind: 'op', label: '−' },
-    { k: '+', kind: 'op' },
-  ],
-]
-
 /**
- * 數字區固定 4 欄 × 4 列：
- *   7  8  9  ⌫
- *   4  5  6  =
- *   1  2  3  =      ← = 佔第 4 欄、跨第 2~4 列（一整顆長按鈕）
- *   🧮 0  .  =
+ * 固定 5 列 × 4 欄：
+ *   ⌫  (  )  ÷
+ *   7  8  9  ×
+ *   4  5  6  −
+ *   1  2  3  ＋
+ *   C  0  .  ＝
+ *
+ * 運算鍵全部直接顯示，不必再靠左下角的鍵展開（原本那個切換鈕已移除）。
  */
-const baseRows: PadKey[][] = [
+const rows: PadKey[][] = [
+  [
+    { k: '⌫', kind: 'fn', icon: 'back', name: '刪除' },
+    { k: '(', kind: 'fn' },
+    { k: ')', kind: 'fn' },
+    { k: '÷', kind: 'op', icon: 'div', name: '除' },
+  ],
   [
     { k: '7', kind: 'num' },
     { k: '8', kind: 'num' },
     { k: '9', kind: 'num' },
-    { k: '⌫', kind: 'fn', icon: 'back' },
+    { k: '×', kind: 'op', icon: 'mul', name: '乘' },
   ],
   [
     { k: '4', kind: 'num' },
     { k: '5', kind: 'num' },
     { k: '6', kind: 'num' },
-    { k: '=', kind: 'eq', h: 3 },
+    { k: '-', kind: 'op', icon: 'sub', name: '減' },
   ],
-  [{ k: '1', kind: 'num' }, { k: '2', kind: 'num' }, { k: '3', kind: 'num' }],
   [
-    { k: 'calc', kind: 'tool', icon: 'calc' },
+    { k: '1', kind: 'num' },
+    { k: '2', kind: 'num' },
+    { k: '3', kind: 'num' },
+    { k: '+', kind: 'op', icon: 'add', name: '加' },
+  ],
+  [
+    { k: 'C', kind: 'fn' },
     { k: '0', kind: 'num' },
     { k: '.', kind: 'num' },
+    { k: '=', kind: 'eq' },
   ],
 ]
 
-interface PlacedKey extends PadKey {
-  /** 第幾欄（1 起算） */
-  c: number
-  /** 第幾列（1 起算） */
-  r: number
-}
-
-/**
- * 攤平成帶座標的清單交給 CSS Grid 定位。
- * 這樣「運算模式多兩列」時只要把起始列往後推，所有鍵都會自動跟著位移，不會錯位。
- */
-const placed = computed<PlacedKey[]>(() => {
-  const rows = adv.value ? [...advRows, ...baseRows] : baseRows
-  const out: PlacedKey[] = []
-  rows.forEach((row, i) => {
-    let c = 1
-    for (const key of row) {
-      out.push({ ...key, c, r: i + 1 })
-      c += key.w ?? 1
-    }
-  })
-  return out
-})
-
-function onKey(key: PlacedKey) {
-  if (key.kind === 'tool') {
-    adv.value = !adv.value
-    return
-  }
-  emit('press', key.k)
-}
+/** 20 顆鍵沒有跨欄跨列，直接依序排進 4 欄格線就好 */
+const keys = rows.flat()
 </script>
 
 <template>
   <div class="keypad">
     <button
-      v-for="key in placed"
-      :key="`${key.r}-${key.c}-${key.k}`"
+      v-for="key in keys"
+      :key="key.k"
       type="button"
       class="key"
-      :class="[
-        `key--${key.kind}`,
-        { 'key--tall': (key.h ?? 1) > 1, 'key--wide': (key.w ?? 1) > 1, 'is-on': key.kind === 'tool' && adv },
-      ]"
-      :style="{ gridColumn: `${key.c} / span ${key.w ?? 1}`, gridRow: `${key.r} / span ${key.h ?? 1}` }"
-      :title="key.kind === 'tool' ? '切換運算鍵：＋ − × ÷ 與括號' : undefined"
-      :aria-label="key.kind === 'tool' ? '切換運算鍵' : key.icon === 'back' ? '回退' : undefined"
-      :aria-pressed="key.kind === 'tool' ? adv : undefined"
-      @click="onKey(key)"
+      :class="`key--${key.kind}`"
+      :data-key="key.k"
+      :aria-label="key.name"
+      @click="emit('press', key.k)"
     >
       <svg v-if="key.icon === 'back'" class="kic" viewBox="0 0 24 24" aria-hidden="true">
         <path d="M9.2 6h9.4a2.5 2.5 0 0 1 2.5 2.5v7a2.5 2.5 0 0 1-2.5 2.5H9.2L3.3 12z" />
         <path d="M13.1 10.1l3.8 3.8M16.9 10.1l-3.8 3.8" />
       </svg>
-      <svg v-else-if="key.icon === 'calc'" class="kic kic--calc" viewBox="0 0 24 24" aria-hidden="true">
-        <rect x="4.7" y="2.7" width="14.6" height="18.6" rx="2.8" />
-        <path d="M8.2 7h7.6" />
-        <path d="M8.6 11.4h.01M12 11.4h.01M15.4 11.4h.01" />
-        <path d="M8.6 14.6h.01M12 14.6h.01M15.4 14.6h.01" />
-        <path d="M8.6 17.8h3.6" />
+      <svg v-else-if="key.icon === 'div'" class="kic kic--op" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7.4 12h9.2" />
+        <circle class="kic__dot" cx="12" cy="7.7" r="1.5" />
+        <circle class="kic__dot" cx="12" cy="16.3" r="1.5" />
       </svg>
-      <template v-else>{{ key.label ?? key.k }}</template>
+      <svg v-else-if="key.icon === 'mul'" class="kic kic--op" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7.9 7.9l8.2 8.2M16.1 7.9l-8.2 8.2" />
+      </svg>
+      <svg v-else-if="key.icon === 'sub'" class="kic kic--op" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7.4 12h9.2" />
+      </svg>
+      <svg v-else-if="key.icon === 'add'" class="kic kic--op" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 7.4v9.2M7.4 12h9.2" />
+      </svg>
+      <template v-else>{{ key.k }}</template>
     </button>
   </div>
 </template>
@@ -161,11 +129,10 @@ function onKey(key: PlacedKey) {
 }
 .key--op {
   color: var(--accent);
-  font-size: 22px;
 }
 .key--fn {
   color: var(--text-2);
-  font-size: 17px;
+  font-size: 18px;
 }
 .key--eq {
   background: var(--accent-light);
@@ -178,18 +145,6 @@ function onKey(key: PlacedKey) {
   background: var(--accent-light-hover);
   border-color: var(--accent-light-hover);
 }
-.key--tool {
-  color: var(--text-2);
-}
-.key--tool.is-on {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-/* 跨列（= 長按鈕）由 Grid 撐滿，不能寫死高度 */
-.key.key--tall {
-  height: auto;
-}
 .kic {
   display: block;
   width: 24px;
@@ -200,8 +155,14 @@ function onKey(key: PlacedKey) {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.kic--calc {
-  stroke-width: 1.8;
+/* 運算鍵的線要跟數字同一個視覺重量，比回退鍵再粗一點 */
+.kic--op {
+  stroke-width: 2.1;
+}
+/* ÷ 的兩點用實心（CSS 的 fill: none 會蓋掉 fill 屬性，所以一定要用 class） */
+.kic__dot {
+  fill: currentColor;
+  stroke: none;
 }
 
 @media (min-width: 768px) {
