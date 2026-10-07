@@ -16,30 +16,41 @@ const props = withDefaults(
     emptyText?: string
     /** 搜尋關鍵字（已 trim 並轉小寫），往下傳給 RecordRow 做黃底高亮 */
     highlight?: string
+    /**
+     * 日期分組要用哪個時間：
+     * - `occurred`（預設）＝交易發生時間，也就是使用者填的時間
+     * - `created`＝記錄被新增的時間（記錄頁的「最近」檢視用）
+     */
+    dateBasis?: 'occurred' | 'created'
   }>(),
-  { showTime: true, collapseAfter: 0, emptyText: '這個範圍沒有記錄', highlight: '' },
+  { showTime: true, collapseAfter: 0, emptyText: '這個範圍沒有記錄', highlight: '', dateBasis: 'occurred' },
 )
 const emit = defineEmits<{ edit: [id: string]; remove: [id: string] }>()
 
 const settings = useSettingsStore()
 const showAll = ref(false)
 
+/** 這一筆要用哪個時間戳（分組、排序、日期標籤都用同一個來源，才不會互相打架） */
+function timeOf(r: TxRecord): string {
+  return props.dateBasis === 'created' ? r.createdAt : r.occurredAt
+}
+
 const groups = computed(() => {
   const m = new Map<string, TxRecord[]>()
   for (const r of props.records) {
-    const k = dayKey(r.occurredAt)
+    const k = dayKey(timeOf(r))
     if (!m.has(k)) m.set(k, [])
     m.get(k)!.push(r)
   }
   return [...m.entries()]
     .sort((a, b) => (a[0] < b[0] ? 1 : -1))
     .map(([key, list]) => {
-      const sorted = [...list].sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1))
+      const sorted = [...list].sort((a, b) => (timeOf(a) < timeOf(b) ? 1 : -1))
       const exp = sorted.reduce((s, r) => s + (r.type === 'expense' ? r.baseAmount : 0), 0)
       const inc = sorted.reduce((s, r) => s + (r.type === 'income' ? r.baseAmount : 0), 0)
       return {
         key,
-        parts: dayParts(list[0].occurredAt),
+        parts: dayParts(timeOf(list[0])),
         exp,
         inc,
         list: sorted,
@@ -108,6 +119,7 @@ watch(
               :record="r"
               :show-time="showTime"
               :highlight="highlight"
+              :time-prefix="dateBasis === 'created' ? '交易' : ''"
               @edit="emit('edit', $event)"
               @remove="emit('remove', $event)"
             />

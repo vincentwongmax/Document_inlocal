@@ -39,6 +39,18 @@ const end = ref(todayKey())
 /** 收支篩選 */
 const typeFilter = ref<'all' | 'expense' | 'income'>('all')
 
+/**
+ * 「最近」檢視：改用**記錄被新增的時間**（createdAt）查詢，而不是使用者填的交易時間。
+ * 用途：今天才補登前幾天（甚至上個月）的發票時，用交易時間是找不到的，
+ * 切成新增時間才看得到「我最近才輸入的那些」。
+ */
+const recent = ref(false)
+
+/** 這個範圍／排序要用哪個時間戳；整頁（含列表分組）都靠它，才不會互相打架 */
+function timeOf(r: TxRecord): string {
+  return recent.value ? r.createdAt : r.occurredAt
+}
+
 /** 關鍵字搜尋：只比對「備註」與「分類名稱」 */
 const q = ref('')
 /** trim + 轉小寫後的關鍵字（空字串代表沒在搜尋） */
@@ -79,13 +91,18 @@ const rangeText = computed(() =>
     : formatRange(range.value.start, range.value.end),
 )
 
-/** 區間與筆數兩顆小標籤（依單位模式靠「日／月／年」右側，自訂範圍模式靠日期列下方） */
-const rangeTags = computed(() => [rangeText.value, `${rows.value.length} 筆`])
+/** 區間與筆數兩顆小標籤（依單位模式靠「日／月／年」右側，自訂範圍模式靠日期列下方）。
+ *  開著「最近」時多一顆提示，否則光看區間看不出來是用哪個時間在查。 */
+const rangeTags = computed(() => [
+  ...(recent.value ? ['依新增時間'] : []),
+  rangeText.value,
+  `${rows.value.length} 筆`,
+])
 
 const rows = computed(() =>
   records.records
     .filter((r) => {
-      const k = dayKey(r.occurredAt)
+      const k = dayKey(timeOf(r))
       if (k < range.value.start || k > range.value.end) return false
       if (typeFilter.value !== 'all' && r.type !== typeFilter.value) return false
       if (!kw.value) return true
@@ -94,13 +111,14 @@ const rows = computed(() =>
         note.toLowerCase().includes(kw.value) || catNameOf(r.categoryId).toLowerCase().includes(kw.value)
       )
     })
-    .sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1)),
+    .sort((a, b) => (timeOf(a) < timeOf(b) ? 1 : -1)),
 )
 
 /** 有在搜尋時，空列表的文案要帶出關鍵字，否則看不出是「找不到」還是「這個範圍本來就沒有」 */
-const emptyText = computed(() =>
-  kw.value ? `找不到符合「${q.value.trim()}」的記錄` : '這個範圍沒有記錄',
-)
+const emptyText = computed(() => {
+  if (kw.value) return `找不到符合「${q.value.trim()}」的記錄`
+  return recent.value ? '這段時間沒有新增的記錄' : '這個範圍沒有記錄'
+})
 
 /* ── 檢視方式：逐筆 / 依分類 ────────────────────────────── */
 const byCat = ref(false)
@@ -145,7 +163,7 @@ const catGroups = computed<CatGroup[]>(() => {
   return [...m.entries()]
     .map(([rootId, list]) => {
       const c = settings.category(rootId)
-      const sorted = [...list].sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1))
+      const sorted = [...list].sort((a, b) => (timeOf(a) < timeOf(b) ? 1 : -1))
 
       // 先把每一筆按它自己的分類累加，才知道各子分類佔多少
       const per = new Map<string, { exp: number; inc: number }>()
@@ -194,8 +212,8 @@ function visibleCat(row: CatGroup): TxRecord[] {
   return catOpen(row.id) ? row.list : row.list.slice(0, CAT_PREVIEW)
 }
 
-// 換範圍／篩選／關鍵字時把展開狀態清掉，免得殘留不相關的分類
-watch([range, typeFilter, kw], () => {
+// 換範圍／篩選／關鍵字／時間基準時把展開狀態清掉，免得殘留不相關的分類
+watch([range, typeFilter, kw, recent], () => {
   byCatOpen.value.clear()
 })
 
@@ -340,6 +358,21 @@ function removeEditing(id: string) {
             </svg>
             分類
           </button>
+          <!-- 時間基準：切到「最近」＝用新增時間查詢（補登舊帳時用交易時間找不到） -->
+          <button
+            type="button"
+            class="bycat"
+            :class="{ 'is-on': recent }"
+            :aria-pressed="recent"
+            :title="recent ? '改回依交易時間查詢' : '改為依新增時間查詢（不是交易時間）'"
+            @click="recent = !recent"
+          >
+            <svg class="bycat__ic" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="8.4" />
+              <path d="M12 7.4V12l3.1 1.9" />
+            </svg>
+            最近
+          </button>
           <div class="seg2 rangebar__mode">
             <button :class="{ 'is-on': mode === 'unit' }" @click="mode = 'unit'">依單位</button>
             <button :class="{ 'is-on': mode === 'custom' }" @click="mode = 'custom'">自訂範圍</button>
@@ -425,6 +458,7 @@ function removeEditing(id: string) {
       :show-time="true"
       :empty-text="emptyText"
       :highlight="kw"
+      :date-basis="recent ? 'created' : 'occurred'"
       @edit="editingId = $event"
       @remove="removeEditing($event)"
     />
@@ -475,6 +509,7 @@ function removeEditing(id: string) {
               :record="r"
               :show-time="true"
               :highlight="kw"
+              :time-prefix="recent ? '交易' : ''"
               @edit="editingId = $event"
               @remove="removeEditing($event)"
             />

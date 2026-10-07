@@ -15,8 +15,14 @@ const props = withDefaults(
     showTime?: boolean
     /** 搜尋關鍵字（已 trim 並轉小寫）：命中處在分類名與備註上以黃底標示 */
     highlight?: string
+    /**
+     * 時間標籤的前綴文字。
+     * 「最近」檢視（依新增時間分組）時傳「交易」，因為那時分組標題代表的是**新增日期**，
+     * 而這顆標籤是**交易時間**——不標出來會以為是壞掉（今天的分組裡卻寫 5 天前）。
+     */
+    timePrefix?: string
   }>(),
-  { showTime: false, highlight: '' },
+  { showTime: false, highlight: '', timePrefix: '' },
 )
 const emit = defineEmits<{ edit: [id: string]; remove: [id: string] }>()
 const settings = useSettingsStore()
@@ -51,7 +57,7 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
             <circle class="ttag__face" cx="8" cy="8" r="6.3" />
             <path d="M8 4.55v3.75l2.3 1.4" />
           </svg>
-          <span>{{ relativeTime(record.occurredAt) }}</span>
+          <span>{{ timePrefix ? `${timePrefix} ` : '' }}{{ relativeTime(record.occurredAt) }}</span>
         </span>
         <span v-if="imgCount" class="imtag">
           <svg class="imtag__ic" viewBox="0 0 16 16" aria-hidden="true">
