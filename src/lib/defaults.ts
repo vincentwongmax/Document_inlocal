@@ -29,6 +29,8 @@ export function defaultSettings(base = 'MOP'): Settings {
     preferredCurrency: 'MOP',
     categories: JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)) as Category[],
     favoriteCategories: [],
+    // 空字串＝沒有指定預設分類（記帳頁就沿用「上次用過的 / 該類型第一個」的舊行為）
+    defaultCategoryId: '',
     visibleCurrencies: [],
     rateCurrencies: ['MOP', 'CNY', 'HKD'],
     // 只是給個起手式（打開就有東西可按），使用者可以在設定頁改掉或刪光

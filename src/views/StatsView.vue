@@ -23,6 +23,8 @@ import RecordList from '@/components/RecordList.vue'
 import RecordSheet from '@/components/RecordSheet.vue'
 import DateField from '@/components/DateField.vue'
 import CategoryIcon from '@/components/CategoryIcon.vue'
+import SumDetailSheet from '@/components/SumDetailSheet.vue'
+import type { DetailRow, DetailRank } from '@/components/SumDetailSheet.vue'
 import { iconForCategory } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
 
@@ -262,6 +264,112 @@ const dailyPoints = computed(() => st.daily.value)
 const dailyTitle = computed(() => (st.granularity.value === 'month' ? '每月收支' : '每日收支'))
 
 const mom = computed(() => st.momChange.value)
+
+/* ── 摘要卡詳情（0.1.22）───────────────────────────────────
+ * 三張摘要卡都可以點開一張小卡看關鍵數字。
+ * 使用者要求「有動畫、顯示資訊、不要太多資訊」→ 每張最多 4 列數字 + 收入那張多一個前 3 名排行。
+ */
+type SumKey = 'expense' | 'income' | 'balance'
+const sumOpen = ref<SumKey | null>(null)
+
+/** 支出：跟前期比、本期日均、筆數。前期不存在（沒資料）時就只放本期數字 */
+const expenseRows = computed<DetailRow[]>(() => {
+  const out: DetailRow[] = []
+  if (mom.value !== null) {
+    out.push({
+      label: `前期（${prevLabel.value}）`,
+      value: fmtMoney(st.prevExpense.value, base.value),
+    })
+    const diff = st.expense.value - st.prevExpense.value
+    out.push({
+      label: diff >= 0 ? '比前期多' : '比前期少',
+      value: (diff >= 0 ? '+' : '−') + fmtMoney(Math.abs(diff), base.value),
+      tone: diff >= 0 ? 'up' : 'down',
+    })
+  }
+  const days = Math.max(1, st.spanDays.value)
+  out.push({ label: '本期日均', value: fmtMoney(st.expense.value / days, base.value) })
+  out.push({ label: '支出筆數', value: `${st.rows.value.filter((r) => r.type === 'expense').length} 筆` })
+  return out
+})
+
+const expenseCaption = computed(() =>
+  mom.value === null
+    ? '前期沒有記錄，無從比較'
+    : `較前期 ${mom.value > 0 ? '+' : ''}${(mom.value * 100).toFixed(0)}%`,
+)
+
+/** 收入：來源前 3 名（帶比例長條） */
+const incomeRanks = computed<DetailRank[]>(() => {
+  const list = st.incomeByCat.value
+  const top = list.slice(0, 3)
+  const grand = top[0]?.total || 1
+  return top.map((c) => ({
+    name: c.name,
+    value: fmtMoney(c.total, base.value),
+    ratio: c.total / grand,
+    color: c.color,
+  }))
+})
+
+const incomeRows = computed<DetailRow[]>(() => {
+  const rows = st.rows.value.filter((r) => r.type === 'income')
+  const avg = rows.length ? st.income.value / rows.length : 0
+  return [
+    { label: '來源數', value: `${st.incomeByCat.value.length} 個` },
+    { label: '收入筆數', value: `${rows.length} 筆` },
+    { label: '平均每筆', value: fmtMoney(avg, base.value) },
+  ]
+})
+
+/** 結餘：兩邊筆數與日均 */
+const balanceRows = computed<DetailRow[]>(() => {
+  const days = Math.max(1, st.spanDays.value)
+  const inc = st.rows.value.filter((r) => r.type === 'income').length
+  const exp = st.rows.value.filter((r) => r.type === 'expense').length
+  return [
+    { label: '收入合計', value: fmtMoney(st.income.value, base.value), tone: 'down' },
+    { label: '支出合計', value: fmtMoney(st.expense.value, base.value), tone: 'up' },
+    { label: '記錄筆數', value: `${st.rows.value.length} 筆（收 ${inc}／支 ${exp}）` },
+    { label: '平均每日結餘', value: fmtMoney(st.balance.value / days, base.value) },
+  ]
+})
+
+/** 目前打開的是哪一張卡（用來決定小卡要顯示什麼） */
+const sumDetail = computed(() => {
+  const k = sumOpen.value
+  if (k === 'expense') {
+    return {
+      title: '支出明細',
+      amount: fmtMoney(st.expense.value, base.value),
+      tone: 'up' as const,
+      caption: expenseCaption.value,
+      rows: expenseRows.value,
+      ranks: [] as DetailRank[],
+      rankTitle: '',
+    }
+  }
+  if (k === 'income') {
+    return {
+      title: '收入明細',
+      amount: fmtMoney(st.income.value, base.value),
+      tone: 'down' as const,
+      caption: `${st.incomeByCat.value.length} 個來源 · ${st.rows.value.filter((r) => r.type === 'income').length} 筆`,
+      rows: incomeRows.value,
+      ranks: incomeRanks.value,
+      rankTitle: '來源前 3 名',
+    }
+  }
+  return {
+    title: '結餘明細',
+    amount: fmtMoney(st.balance.value, base.value),
+    tone: (st.balance.value < 0 ? 'up' : 'down') as 'up' | 'down',
+    caption: rangeLabel.value,
+    rows: balanceRows.value,
+    ranks: [] as DetailRank[],
+    rankTitle: '',
+  }
+})
 </script>
 
 <template>
@@ -361,9 +469,9 @@ const mom = computed(() => st.momChange.value)
       </p>
     </div>
 
-    <!-- 摘要 -->
+    <!-- 摘要（三張都可以點開看明細，0.1.22） -->
     <div class="sums">
-      <div class="card sum">
+      <button class="card sum" type="button" @click="sumOpen = 'expense'">
         <span class="tiny muted">支出</span>
         <strong class="num sum__exp">{{ fmtNum(st.expense.value) }}</strong>
         <span
@@ -374,20 +482,36 @@ const mom = computed(() => st.momChange.value)
         >
           較前期 {{ mom > 0 ? '+' : '' }}{{ (mom * 100).toFixed(0) }}%
         </span>
-      </div>
-      <div class="card sum">
+        <span v-else class="tiny muted">尚無前期可比較</span>
+        <span class="sum__more" aria-hidden="true">明細 ›</span>
+      </button>
+      <button class="card sum" type="button" @click="sumOpen = 'income'">
         <span class="tiny muted">收入</span>
         <strong class="num sum__inc">{{ fmtNum(st.income.value) }}</strong>
         <span class="tiny muted">{{ st.incomeByCat.value.length }} 個來源</span>
-      </div>
-      <div class="card sum">
+        <span class="sum__more" aria-hidden="true">明細 ›</span>
+      </button>
+      <button class="card sum" type="button" @click="sumOpen = 'balance'">
         <span class="tiny muted">結餘</span>
         <strong class="num" :class="st.balance.value < 0 ? 'sum__exp' : 'sum__inc'">
           {{ fmtNum(st.balance.value) }}
         </strong>
         <span class="tiny muted">{{ st.rows.value.length }} 筆</span>
-      </div>
+        <span class="sum__more" aria-hidden="true">明細 ›</span>
+      </button>
     </div>
+
+    <SumDetailSheet
+      :open="sumOpen !== null"
+      :title="sumDetail.title"
+      :amount="sumDetail.amount"
+      :tone="sumDetail.tone"
+      :caption="sumDetail.caption"
+      :rows="sumDetail.rows"
+      :ranks="sumDetail.ranks"
+      :rank-title="sumDetail.rankTitle"
+      @close="sumOpen = null"
+    />
 
     <div v-if="!st.rows.value.length" class="empty card">
       <p class="muted">{{ rangeLabel }} 沒有記錄</p>
@@ -657,6 +781,36 @@ const mom = computed(() => st.momChange.value)
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  /* 現在是 <button>：把瀏覽器預設的外觀歸零，外觀完全由 .card 決定 */
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  position: relative;
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+/* 可按的提示：邊框微亮 + 輕微抬起 */
+.sum:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.sum:active {
+  transform: scale(0.985);
+}
+.sum:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* 右下角的「明細 ›」：不做成獨立鈕，只當可按的視覺提示 */
+.sum__more {
+  margin-top: 3px;
+  font-size: 10.5px;
+  font-weight: 650;
+  color: var(--accent);
+  opacity: 0.85;
 }
 .sum strong {
   font-size: 15px;

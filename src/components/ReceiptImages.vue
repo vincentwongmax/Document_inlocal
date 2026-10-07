@@ -8,6 +8,7 @@ import { compressImage, makeThumb } from '@/lib/imaging'
 import { uid } from '@/lib/id'
 import { notify } from '@/lib/alerts'
 import { IMG_MIME } from '@/lib/clipboard'
+import { dupNotice } from '@/lib/receiptDup'
 import { usePasteImages } from '@/composables/usePasteImages'
 import ImageLightbox from '@/components/ImageLightbox.vue'
 
@@ -71,17 +72,24 @@ async function addFiles(files: File[]) {
   if (!list.length) return
   busy.value = true
   try {
-    const known = new Set(records.knownMd5)
     const batch = new Set<string>()
     let skipped = 0
+    /** 跟**別筆記錄**重複的：照收，但收集起來一起提醒使用者 */
+    let dupOther = 0
     const next = [...props.modelValue]
     for (const file of list) {
       const md5 = await md5OfFile(file)
-      // 100% 相同的圖片（MD5 一致）不重複收
-      if (known.has(md5) || batch.has(md5) || next.some((im) => im.md5 === md5)) {
+      /**
+       * ⚠⚠ 兩級不同（0.1.22 使用者指定）：
+       *  - **這一筆裡面**已經有同一張（含同一批重複）→ 靜默略過，連提示都不用
+       *  - **其他記錄**已有同一張 → 還是收下（同一張發票分兩筆記是正常用法），
+       *    但最後彈一個提醒讓使用者知道「這張圖別筆用過了，可能是重複記帳」
+       */
+      if (batch.has(md5) || next.some((im) => im.md5 === md5)) {
         skipped++
         continue
       }
+      if (records.ownersOfMd5(md5).length) dupOther++
       batch.add(md5)
       const id = uid('img')
       const comp = await compressImage(file)
@@ -102,6 +110,8 @@ async function addFiles(files: File[]) {
     }
     emit('update:modelValue', next)
     if (skipped) notify(`已略過 ${skipped} 張重複圖片`, 'warn')
+    // 跨記錄重複：收了但提醒（訊息由 lib/receiptDup 統一組，明細那邊文案一致）
+    if (dupOther) notify(dupNotice(dupOther), 'warn')
   } finally {
     busy.value = false
   }

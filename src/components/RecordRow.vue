@@ -66,7 +66,7 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
             <circle cx="6.1" cy="6.9" r="1.15" />
             <path d="M3.6 11.9 6.6 9l2.1 1.9 2-1.8 2.2 2.5" />
           </svg>
-          <span>有圖片</span>
+          <span>圖</span>
           <span v-if="imgCount > 1" class="imtag__n">· {{ imgCount }}</span>
         </span>
         <span v-else-if="record.source === 'image'" class="imtag imtag--plain">收據</span>

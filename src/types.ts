@@ -134,6 +134,15 @@ export interface Settings {
   categories: Category[]
   /** 主頁直接顯示的常用分類（空陣列 = 全部分類都顯示） */
   favoriteCategories: string[]
+  /**
+   * 預設分類：每次打開 App、以及每次記錄完成後，記帳頁自動預選的那一個。
+   * 空字串 = 沒有設定（照舊：沿用上次用過的，沒有就用該類型第一個）。
+   *
+   * ⚠ 跟 `favoriteCategories`（主頁那排常用分類按鈕）是**兩件完全獨立的事**：
+   *   常用分類決定「主頁顯示哪幾顆按鈕」，預設分類決定「記帳頁預先選中哪一個」。
+   *   設了預設分類不會動到常用分類，反之亦然。
+   */
+  defaultCategoryId: string
   /** 主頁記帳幣別選單顯示的幣別（空陣列 = 全部顯示） */
   visibleCurrencies: string[]
   /** 匯率表顯示的幣別（空陣列 = 全部顯示；可自行新增） */

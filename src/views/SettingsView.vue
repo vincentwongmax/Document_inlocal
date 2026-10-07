@@ -170,11 +170,14 @@ type CatForm = {
   icon: string
   parentId: string | null
 }
-function onCreateCat(p: CatForm) {
+function onCreateCat(p: CatForm & { makeDefault?: boolean }) {
   const c = settings.addCategory(p.name, p.type, p.color, p.icon, p.parentId)
+  // 建立時勾了「建立後設為預設分類」：分類 id 這一刻才生出來，所以在這裡補設定
+  if (p.makeDefault && c) settings.setDefaultCategory(c.id)
   showCatMgr.value = false
   const under = p.parentId ? settings.category(p.parentId)?.name : ''
-  notify(under ? `已在「${under}」底下新增子分類` : '已新增分類', 'ok')
+  const tail = p.makeDefault && c ? '，並設為記帳預設' : ''
+  notify((under ? `已在「${under}」底下新增子分類` : '已新增分類') + tail, 'ok')
   return c
 }
 function onSaveCat(p: CatForm & { id: string }) {
@@ -187,6 +190,16 @@ function onSaveCat(p: CatForm & { id: string }) {
   })
   showCatMgr.value = false
   notify('已儲存分類', 'ok')
+}
+/** 「記帳預設」切換：空字串＝取消預設 */
+function onSetDefaultCat(id: string) {
+  settings.setDefaultCategory(id)
+  if (!id) {
+    notify('已取消預設分類', 'ok')
+    return
+  }
+  const c = settings.category(id)
+  notify(c ? `記帳時會預選「${c.name}」` : '已設定預設分類', 'ok')
 }
 function onRemoveCat(id: string) {
   const check = settings.canRemove(id)
@@ -726,10 +739,12 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
       :open="showCatMgr"
       :categories="manageCats"
       :usage="catUsage"
+      :default-id="settings.defaultCategoryId"
       @close="showCatMgr = false"
       @create="onCreateCat"
       @save="onSaveCat"
       @remove="onRemoveCat"
+      @set-default="onSetDefaultCat"
     />
 
     <!-- 匯出：先選格式（JSON／Excel）與範圍，再下載 -->

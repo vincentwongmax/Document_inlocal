@@ -66,16 +66,51 @@ const currencyOptions = computed(() => {
 })
 const convertedAmount = computed(() => Number((amount.value * settings.rate(curCode.value)).toFixed(2)))
 
-// 分類預設：上次使用 → 該類型第一個
+/**
+ * 分類預設的優先順序：
+ *   1. **設定的「預設分類」**（使用者在分類管理裡按了「設為預設」）—— 類型要對得上
+ *   2. 上次用過的那一個（存在 draft 裡）
+ *   3. 該類型的第一個
+ *
+ * ⚠ 「預設分類」是 0.1.22 的新功能，跟主頁的**常用分類按鈕**完全無關：
+ *   常用分類決定主頁顯示哪幾顆，這裡決定的是「預先選中誰」。
+ */
+function pickInitialCategory() {
+  const list = settings.categoriesByType(type.value)
+  const def = settings.defaultCategory
+  // 預設分類的收支類型要跟目前的分頁一致，否則會選到一個這頁看不到的分類
+  if (def && def.type === type.value && list.some((c) => c.id === def.id)) return def.id
+  if (list.some((c) => c.id === categoryId.value)) return categoryId.value
+  return list[0]?.id ?? ''
+}
+
+/** 每次記錄完成後，記帳頁要回到哪一個分類（有設預設就一律回到它） */
+function resetCategory() {
+  const def = settings.defaultCategory
+  if (def && def.type === type.value) {
+    categoryId.value = def.id
+    return
+  }
+  // 沒設預設：維持舊行為（保留剛剛用的那一個，方便連續記帳）
+}
+
 watch(
   [type, () => settings.categories.length],
   () => {
     const list = settings.categoriesByType(type.value)
     if (!list.some((c) => c.id === categoryId.value)) {
-      categoryId.value = list[0]?.id ?? ''
+      categoryId.value = pickInitialCategory()
     }
   },
   { immediate: true },
+)
+
+// 開啟 App（或換到記帳頁）時，有設預設分類就直接跳到它
+watch(
+  () => settings.defaultCategoryId,
+  () => {
+    if (settings.defaultCategory) categoryId.value = pickInitialCategory()
+  },
 )
 
 watch([type, categoryId], () => {
@@ -143,12 +178,14 @@ function onKey(e: KeyboardEvent) {
 /* ── 送出 ───────────────────────────────────────────────── */
 /**
  * 回到乾淨狀態：金額、備註、時間。
- * 收支類型、分類、幣別刻意保留，方便連續記帳。
+ * 收支類型、分類、幣別刻意保留，方便連續記帳
+ * —— 除非使用者設了「預設分類」，那時分類一律跳回它。
  */
 function resetForm() {
   calc.value = initCalc()
   note.value = ''
   occurredAt.value = nowLocalInput()
+  resetCategory()
 }
 
 /** 清空鈕：沒有內容時不動作，避免彈出沒意義的提示 */

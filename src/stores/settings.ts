@@ -36,6 +36,10 @@ function merge(base: Settings, saved: Partial<Settings>): Settings {
     favoriteCategories: Array.isArray(saved.favoriteCategories)
       ? saved.favoriteCategories
       : base.favoriteCategories,
+    // ⚠ 缺欄位（舊資料）時要回空字串＝「沒有設定預設分類」，不能拿 base 的（base 是空的，
+    //   但萬一以後改了預設值，舊使用者不該被莫名其妙預選）
+    defaultCategoryId:
+      typeof saved.defaultCategoryId === 'string' ? saved.defaultCategoryId : '',
     visibleCurrencies: Array.isArray(saved.visibleCurrencies)
       ? saved.visibleCurrencies
       : base.visibleCurrencies,
@@ -412,6 +416,25 @@ export const useSettingsStore = defineStore('settings', () => {
     return true
   }
 
+  /* ── 預設分類（跟上面的「常用分類」完全獨立）──────────────
+   * 常用分類＝主頁顯示哪幾顆按鈕；預設分類＝記帳頁預先選中哪一個。
+   * 兩者互不影響：這裡的動作不會去動 favoriteCategories。
+   */
+  const defaultCategoryId = computed(() => state.value.defaultCategoryId)
+  /** 被指定為預設的那個分類（已封存或不存在時回 null，呼叫端要自己退回預設行為） */
+  const defaultCategory = computed(() => {
+    const id = state.value.defaultCategoryId
+    if (!id) return null
+    const c = category(id)
+    return c && !c.archived ? c : null
+  })
+
+  /** 設為預設分類；傳空字串 = 取消預設 */
+  function setDefaultCategory(id: string) {
+    const c = id ? category(id) : null
+    state.value.defaultCategoryId = c && !c.archived ? c.id : ''
+  }
+
   /* ── 主頁常用分類 ─────────────────────────────────────── */
   const favoriteCategories = computed(() => state.value.favoriteCategories)
 
@@ -513,6 +536,9 @@ export const useSettingsStore = defineStore('settings', () => {
     addCategory,
     updateCategory,
     removeCategory,
+    defaultCategoryId,
+    defaultCategory,
+    setDefaultCategory,
     favoriteCategories,
     isFavorite,
     toggleFavorite,

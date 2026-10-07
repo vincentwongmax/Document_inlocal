@@ -67,6 +67,24 @@ export const useRecordsStore = defineStore('records', () => {
     return s
   })
 
+  /**
+   * 這個 md5 已經被哪些記錄用過了（全部錢包都算，因為圖檔 blob 是跨錢包共用的）。
+   *
+   * ⚠⚠ 存在的理由（0.1.22）：**同一張圖在不同記錄之間是允許重複的**
+   *    （例如同一張發票分兩筆記，或補登時又貼一次），
+   *    但同一筆記錄內不給重複。所以不能再拿 `knownMd5` 當「一律擋掉」的判準 ——
+   *    那個集合是「整個 App 有沒有這張圖」，會把跨記錄的重複也靜默吃掉。
+   *    現在改成：跨記錄 → 收下但提醒使用者；同一筆 → 靜默略過。
+   *
+   * @param md5    要比對的圖片指紋
+   * @param except 排除這一筆（編輯既有記錄時，它自己身上的圖不算「別人」）
+   */
+  function ownersOfMd5(md5: string, except?: string): TxRecord[] {
+    return all.value.filter(
+      (r) => r.id !== except && (r.images ?? []).some((im) => im.md5 === md5),
+    )
+  }
+
   /** walletId -> 筆數（錢包卡片顯示與「有記錄不給刪」用） */
   const countByWallet = computed(() => {
     const m: Record<string, number> = {}
@@ -194,6 +212,7 @@ export const useRecordsStore = defineStore('records', () => {
     all,
     persistError,
     knownMd5,
+    ownersOfMd5,
     countByWallet,
     add,
     update,

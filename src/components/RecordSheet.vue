@@ -10,6 +10,7 @@ import { getImage, putImage, deleteImage } from '@/lib/imageDb'
 import { compressImage, makeThumb } from '@/lib/imaging'
 import { md5OfFile } from '@/lib/md5'
 import { uid } from '@/lib/id'
+import { dupNotice } from '@/lib/receiptDup'
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { displayExpr } from '@/lib/calc'
 import { formatFull, fromLocalInput, toLocalInput } from '@/lib/date'
@@ -137,20 +138,27 @@ function pickImages() {
 /**
  * 真正把檔案收進來：MD5 去重 → 壓縮（同主頁流程）→ 存 IndexedDB → 產生縮圖。
  * 上傳（檔案選擇器）與貼上（剪貼簿）都走這裡，兩邊行為才會一致。
+ *
+ * ⚠⚠ 去重是「兩級」的（0.1.22 使用者指定，跟主頁 ReceiptImages 同一套規則）：
+ *   - **這一筆裡面**已有同一張 → 靜默略過
+ *   - **其他記錄**已有同一張   → 照收，但提醒使用者可能重複記帳
+ *     （排除自己：編輯既有記錄時，它身上的圖當然算「自己的」）
  */
 async function addFiles(files: File[]) {
   if (!files.length) return
   busyImg.value = true
   try {
-    const known = new Set(records.knownMd5)
     const batch = new Set<string>()
+    const selfId = props.record?.id
     let skipped = 0
+    let dupOther = 0
     for (const file of files) {
       const md5 = await md5OfFile(file)
-      if (known.has(md5) || batch.has(md5) || images.value.some((im) => im.md5 === md5)) {
+      if (batch.has(md5) || images.value.some((im) => im.md5 === md5)) {
         skipped++
         continue
       }
+      if (records.ownersOfMd5(md5, selfId).length) dupOther++
       batch.add(md5)
       const id = uid('img')
       const comp = await compressImage(file)
@@ -170,6 +178,7 @@ async function addFiles(files: File[]) {
       addedIds.add(id)
     }
     if (skipped) notify(`已略過 ${skipped} 張重複圖片`, 'warn')
+    if (dupOther) notify(dupNotice(dupOther), 'warn')
   } finally {
     busyImg.value = false
   }
@@ -360,11 +369,6 @@ function save() {
                 <option v-for="c in CURRENCIES" :key="c.code" :value="c.code">{{ c.code }}</option>
               </select>
             </div>
-            <!-- 記帳當下用計算機算出來的算式（唯讀；改了金額就會消失） -->
-            <span v-if="exprValid" class="expr tiny muted">
-              輸入金額時的算式
-              <b class="expr__f num">{{ displayExpr(expr) }}=</b>
-            </span>
           </label>
 
           <!-- 匯率 -->
@@ -457,6 +461,11 @@ function save() {
             <div class="meta__row">
               <span class="tiny muted">新增時間</span>
               <span class="tiny num">{{ formatFull(record.createdAt) }}</span>
+            </div>
+            <!-- 記帳當下用計算機算出來的公式（唯讀；改了金額就不再成立，會自己消失） -->
+            <div v-if="exprValid" class="meta__row">
+              <span class="tiny muted">計算公式</span>
+              <span class="tiny num expr__v">{{ displayExpr(expr) }}=</span>
             </div>
             <div class="meta__row">
               <span class="tiny muted">主幣金額</span>
@@ -766,12 +775,9 @@ function save() {
   letter-spacing: 0.1em;
   color: var(--text-3);
 }
-/* 唯讀的算式提示：貼在金額欄下面，比標籤再輕一階 */
-.expr {
-  margin-top: -3px;
-  color: var(--text-3);
-}
-.expr__f {
+/* 唯讀的計算公式：0.1.22 起改放在「詳細資訊」裡、新增時間的正下方，
+   跟同一區的數值一樣右對齊（.meta__row 是 flex + space-between）。 */
+.expr__v {
   color: var(--text-2);
   font-weight: 600;
 }

@@ -8,7 +8,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 
 ## 版本號
 
-- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.21`
+- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.22`
 - 單一來源＝`package.json` 的 `version` → `vite.config.ts` `define` 注入 `__APP_VERSION__`
   （型別在 `env.d.ts`）→ `src/lib/version.ts` → 設定頁「離線與版本」膠囊
 - 每次更新要改 `package.json` ＋ 補一筆 `CHANGELOG.md`
@@ -29,7 +29,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
     `dist/` 沒重建 → v79（拿 `package.json` 對畫面版本號）必紅。這是「假紅燈」，不是程式壞
   - ⚠ **node 是 Windows binary**：curl 輸出要存到**專案內**（`.smoke/tmp/`），
     Git Bash 的 `/tmp` 讀不到
-  - **維護中的回歸集＝v70～v100**；`v45/v46/v56/v57` 早已失效，別當基準
+  - **維護中的回歸集＝v70～v101**；`v45/v46/v56/v57` 早已失效，別當基準
   - 改到計算機／彈窗／通知／記錄頁／設定頁匯出／錢包時另外跑 **v82~v99**（計算機 11 位／算式／
     SweetAlert2／最近檢視／按鍵快按／快速備註／收據圖片貼上／收據圖片放大拖曳／
     統計頁自訂日期框／分類第一列不塞子分類／日期欄＝普通文字框＋下拉關閉明細／
@@ -37,8 +37,12 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
     統計頁自訂從到日期列填滿不跑位／記帳頁收據圖片區塊／設定頁匯出彈窗（JSON＋Excel）／
     **錢包（多帳本）**）
   - **v100（42 項）＝日期輸入框約定 ＋ iOS 貼上 ＋ 向左滑空白 ＋ Toast「知道了」的守門員**
+  - **v101（51 項）＝0.1.22 六需求的守門員**（徽章「圖」／計算公式位置／圖片去重兩層／
+    摘要卡詳情／預設分類／彈窗鎖背景）
   - ⚠ **動到錢包／記錄／設定的存取時，v99 是守門員**（遷移、隔離、匯出匯入都在那）；
-    **動到圖片／放大檢視／剪貼簿時，v77（收據壓縮）與 v89（明細放大後可拖曳）是守門員**
+    **動到圖片／放大檢視／剪貼簿時，v77（收據壓縮）與 v89（明細放大後可拖曳）是守門員**；
+    **動到明細的算式顯示時，v83 與 v93 會紅**（它們抓 `.sheet .expr__v`，
+    0.1.22 把算式從金額底下移到「詳細資訊」了）
   - ⚠ **測試圖別用兩張「內容相同」的**：MD5 去重會擋掉第二張，多張上傳就測不到
   - ⚠ **測試用 `os.tmpdir()` 生暫存檔**（`fs.mkdtempSync`），別寫死 `/tmp`（Windows 讀不到）
   - ⚠⚠ **沙箱不允許 Node 開子行程**（`execFileSync`／`spawnSync` → `EBUSY`，連 `python -c` 都擋）
@@ -127,6 +131,30 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
   → 往左滑出現一大片空白）；原生 input 與可見文字框都要 `font-size: 16px`（<16px 被
   iOS 聚焦放大，一樣會把整頁撐寬）
 - 細節與三條硬性 CSS 規則 → `CONVENTIONS.md` 的「日期輸入框（全站約定，0.1.21 起永久適用）」
+
+## ⚠⚠ 全站約定：彈窗／子頁面開著時背景不能滑動（0.1.22 起，含未來所有新畫面）
+
+> 使用者原話：「**用戶在滾動時，背景不能滑動，請把這個記憶，任何子頁面滾動時，
+> 背景都不能滑動**」
+
+- 任何 `position: fixed` 的全螢幕彈窗／子頁面，一律接 `composables/useScrollLock.ts`：
+  `useScrollLock(toRef(props,'open'), { scrollable: () => 內容區 })`
+- ⚠⚠ **`scrollable` 幾乎都要給**：不給的話 document 的 `touchmove` preventDefault
+  會連內容一起擋住，iOS 上整個卡住滑不動。指的要是**真正 overflow 的那一層**
+- 內容區再加 `overscroll-behavior: contain`（捲到底不連鎖帶動背景）
+- 目前已接：`CalcSheet`／`CategorySheet`／`CategoryManageModal`（0.1.22 補）／
+  `ExportModal`／`RecordSheet`／`SumDetailSheet`
+- 細節 → `CONVENTIONS.md` 的「彈窗／子頁面開著時，背景一律不能滑動（全站約定，0.1.22 起永久適用）」
+
+## 記帳頁預設分類（0.1.22）
+
+- `settings.defaultCategoryId`（單一 id，每個錢包各自一份）
+- **與主頁 `favoriteCategories`（常用分類）完全獨立**：常用分類管主頁顯示哪幾顆按鈕，
+  預設分類管記帳頁一打開選中哪一個；設定預設分類**不會**動到常用分類
+- 入口在 `CategoryManageModal.vue` 的「記帳預設」：編輯＝切換鈕（emit `set-default`，
+  空字串取消）；新增＝勾選框 `makeDefault`（id 要等 `create` 才知道，由
+  `SettingsView.onCreateCat` 補設）→ ⚠ 兩者要用 `v-if/v-else` 互斥
+- 已封存分類不能當預設；`HomeView.pickInitialCategory()` 負責開頁預選、`resetCategory()` 負責記完一筆後重置
 
 ## 視覺基調
 

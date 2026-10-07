@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, toRef, watch } from 'vue'
 import type { Category, TxType } from '@/types'
 import { ICON_KEYS, CATEGORY_ICONS, DEFAULT_ICON, guessIcon, iconForCategory } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
 import { flattenCategories } from '@/lib/tree'
+import { useScrollLock } from '@/composables/useScrollLock'
 import CategoryIcon from './CategoryIcon.vue'
 import CategorySelect from './CategorySelect.vue'
 import { confirmDialog } from '@/lib/alerts'
@@ -16,12 +17,24 @@ const props = withDefaults(
     defaultType?: TxType
     /** 每個分類被幾筆記錄使用，用來在刪除前提醒 */
     usage?: Record<string, number>
+    /** 目前設定的「預設分類」id（記帳頁每次打開都自動預選的那一個） */
+    defaultId?: string
   }>(),
-  { defaultType: 'expense', usage: () => ({}) },
+  { defaultType: 'expense', usage: () => ({}), defaultId: '' },
 )
 const emit = defineEmits<{
   close: []
-  create: [payload: { name: string; color: string; type: TxType; icon: string; parentId: string | null }]
+  create: [
+    payload: {
+      name: string
+      color: string
+      type: TxType
+      icon: string
+      parentId: string | null
+      /** 新增時就勾了「記帳時預選這個分類」 */
+      makeDefault?: boolean
+    },
+  ]
   save: [
     payload: {
       id: string
@@ -33,7 +46,18 @@ const emit = defineEmits<{
     },
   ]
   remove: [id: string]
+  /** 要求把某個分類設為記帳頁的預設分類（空字串＝取消預設） */
+  'set-default': [id: string]
 }>()
+
+/**
+ * 鎖住背景捲動。
+ * ⚠⚠ 這是**全站約定**（使用者 0.1.22 指定）：任何子頁面／彈窗打開時，
+ *    背景一律不能跟著手指滑動。這裡的內容 `.box` 會超高，必須列進可捲清單，
+ *    否則 useScrollLock 的 document touchmove preventDefault 會讓 iOS 上根本滑不動。
+ */
+const boxEl = ref<HTMLElement | null>(null)
+useScrollLock(toRef(props, 'open'), { scrollable: () => boxEl.value })
 
 const NEW = '' // 下拉的「新增分類」佔位值
 /** 剛打開、什麼都還沒選的狀態：只露出「類型」與「選擇分類」 */
@@ -51,6 +75,13 @@ const parentSel = ref(TOP)
 /** 使用者手動挑過圖示後，就不再依名稱自動推薦 */
 const iconPicked = ref(false)
 const custom = ref(false)
+/**
+ * 新增分類時就勾「設為預設分類」。
+ * ⚠ 只在**新增**模式有意義：分類的 id 要等 `create` 事件送出去才生得出來，
+ *   所以這裡不能直接寫 settings，只能在送出時把旗標一起帶出去，
+ *   由外部（SettingsView）拿到剛建立的分類後再呼叫 setDefaultCategory()。
+ */
+const makeDefault = ref(false)
 
 const parentId = computed(() => {
   const v = parentSel.value
@@ -139,6 +170,21 @@ const kidCount = computed(() =>
 const typeLocked = computed(() => !!parentId.value)
 const parentCat = computed(() => (parentId.value ? byId.value.get(parentId.value) : undefined))
 
+/**
+ * 目前正在編輯的分類，是不是「記帳頁預設分類」。
+ * ⚠ 子分類也可以當預設（記帳頁本來就選得到子分類），所以不排除 parentId。
+ */
+const isDefault = computed(() => !!editing.value && editing.value.id === props.defaultId)
+/** 編輯中的分類可以當預設嗎：封存的不行（記帳頁選不到，設了等於沒設） */
+const canDefault = computed(() => !!editing.value && !editing.value.archived)
+
+/** 設為預設／取消預設（再按一下同一顆就取消） */
+function toggleDefault() {
+  const c = editing.value
+  if (!c || !canDefault.value) return
+  emit('set-default', isDefault.value ? '' : c.id)
+}
+
 /** 回到「新增」模式的空白表單（可指定要掛在哪個分類底下、以及預設收支） */
 function resetNew(under: string | null = null, type: TxType = props.defaultType) {
   name.value = ''
@@ -150,6 +196,7 @@ function resetNew(under: string | null = null, type: TxType = props.defaultType)
   iconPicked.value = false
   custom.value = false
   parentSel.value = under ?? TOP
+  makeDefault.value = false
 }
 
 /** 把表單填成某個分類的現況 */
@@ -262,7 +309,7 @@ function submit() {
     parentId: parentId.value,
   }
   if (isEdit.value && editing.value) emit('save', { id: editing.value.id, ...payload })
-  else emit('create', payload)
+  else emit('create', { ...payload, makeDefault: makeDefault.value })
 }
 
 /** 刪除前先問一次（SweetAlert2 彈窗） */
@@ -287,7 +334,7 @@ async function askRemove() {
 <template>
   <Transition name="fade">
     <div v-if="open" class="mask" @click.self="emit('close')">
-      <div class="card box">
+      <div ref="boxEl" class="card box">
         <h3>{{ title }}</h3>
 
         <!-- 類型放最上面：它決定下面兩個下拉各會列出哪些分類（只列同一種收支） -->
@@ -377,6 +424,42 @@ async function askRemove() {
               placeholder="無（最上層大類）"
               allow-empty
             />
+          </div>
+
+          <!--
+            記帳頁的預設分類。
+            ⚠ 這跟主頁的「常用分類」（favoriteCategories）是**兩件獨立的事**：
+              常用分類＝主頁那排快速按鈕（使用者自己排的常用清單）；
+              預設分類＝每次打開記帳頁時「一開始就選好」的那一個（單選）。
+              兩者互不影響、各有各的儲存欄位。
+          -->
+          <div class="lb">
+            <span>
+              記帳預設
+              <em class="lb__hint">每次打開記帳頁、或記完一筆之後，自動選回這個分類</em>
+            </span>
+            <!-- 編輯既有分類：一顆切換鈕（按一下設定，再按一下取消） -->
+            <button
+              v-if="isEdit"
+              type="button"
+              class="dflt"
+              :class="{ 'is-on': isDefault }"
+              :disabled="!canDefault"
+              :title="canDefault ? undefined : '已封存的分類不能設為預設'"
+              @click="toggleDefault"
+            >
+              <span class="dflt__dot" />
+              <span class="dflt__txt">
+                {{ isDefault ? '已設為預設分類' : '設為預設分類' }}
+              </span>
+              <span class="dflt__hint">{{ isDefault ? '再按一下取消' : '按一下設定' }}</span>
+            </button>
+            <!-- 新增分類：id 還沒生出來，先用勾選，建立時一併設定 -->
+            <label v-else class="dflt dflt--check" :class="{ 'is-on': makeDefault }">
+              <input v-model="makeDefault" type="checkbox" class="dflt__cb" />
+              <span class="dflt__dot" />
+              <span class="dflt__txt">建立後設為預設分類</span>
+            </label>
           </div>
 
           <!-- 即時預覽 -->
@@ -498,6 +581,8 @@ async function askRemove() {
   max-width: 356px;
   max-height: calc(100vh - 40px);
   overflow-y: auto;
+  /* 捲到底不要連鎖帶動背景（跟鎖背景一起用的第二道保險） */
+  overscroll-behavior: contain;
   padding: 18px;
   display: flex;
   flex-direction: column;
@@ -731,6 +816,89 @@ async function askRemove() {
   border: 0;
   padding: 0;
 }
+/* 「記帳預設」切換鈕（編輯）／勾選列（新增）：同一套外觀，選中時用 accent 底 */
+.dflt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 11px;
+  border-radius: 11px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text-2);
+  text-align: left;
+  /* 給隱藏的 checkbox 當定位基準 */
+  position: relative;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+.dflt:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.dflt.is-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.dflt:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+/* 小圓點：未選＝空心框，已選＝填滿 accent 並打勾（用 ::after 畫勾，免圖示依賴） */
+.dflt__dot {
+  position: relative;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1.5px solid var(--line-strong);
+  background: var(--surface);
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+.dflt.is-on .dflt__dot {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.dflt.is-on .dflt__dot::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(43deg);
+}
+.dflt__txt {
+  font-size: 13px;
+  font-weight: 600;
+}
+/* 右側的「按一下設定／再按一下取消」小提示 */
+.dflt__hint {
+  margin-left: auto;
+  flex: none;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+/* 新增模式的勾選列：真的 checkbox 藏在 label 裡當接收面（≥16px 防 iOS 縮放） */
+.dflt--check {
+  cursor: pointer;
+}
+.dflt__cb {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
 /* 刪除前提醒：這個分類已經被多少筆記錄用到 */
 .used {
   margin: 0;
@@ -740,8 +908,7 @@ async function askRemove() {
   color: var(--text-3);
   font-size: 11.5px;
   line-height: 1.5;
-}
-.foot {
+}.foot {
   display: flex;
   gap: 10px;
   align-items: center;

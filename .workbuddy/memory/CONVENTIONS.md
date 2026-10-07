@@ -563,6 +563,39 @@
 真的有東西溢出時至少不會出現空白區，但**不該拿它當解法**——上面的三條規則
 才是正解，加了新的輸入框還是要照做。
 
+## ⚠⚠ 彈窗／子頁面開著時，背景一律不能滑動（全站約定，0.1.22 起永久適用）
+
+**使用者 0.1.22 明說「請把這個記憶，任何子頁面滾動時，背景都不能滑動」。**
+
+規則：**任何**全螢幕彈窗／子頁面（`position: fixed` 的遮罩＋卡片）打開時，背景（body）
+都不能跟著手指或滾輪滑動。做法一律用 `composables/useScrollLock.ts`：
+
+```ts
+import { ref, toRef } from 'vue'
+import { useScrollLock } from '@/composables/useScrollLock'
+
+const boxEl = ref<HTMLElement | null>(null)
+useScrollLock(toRef(props, 'open'), { scrollable: () => boxEl.value })
+```
+
+⚠⚠ **`scrollable` 一定要給**（除非這個彈窗真的完全不捲，例如計算機）：
+`useScrollLock` 是靠在 document 上 `touchmove` preventDefault 來擋背景，
+如果你沒把「內容區」列進可捲清單，**iOS 上連內容自己都滑不動**（整個卡住）。
+給的時候記得指到**真正 overflow 的那一層**（例如 `.box`／`.catsheet__body`／
+`RecordSheet` 的 `lbEl.stageEl`）。
+
+搭配的 CSS（第二道保險）：內容區要有 `overscroll-behavior: contain`，
+捲到底才不會「連鎖」帶動背景。
+
+**目前接了鎖的全部彈窗**（新彈窗要照這個清單補上）：
+`CalcSheet`、`CategorySheet`、`CategoryManageModal`、`ExportModal`、`RecordSheet`、
+`SumDetailSheet`。
+（`CategorySelect`／`QuickNotePicker` 是短的 Teleported 下拉，不算子頁面，
+只需 `overscroll-behavior: contain`，不用整套鎖。）
+
+⚠ 背景解鎖後 `useScrollLock` 會把 `window.scrollTo(0, savedY)` 還原位置；
+因此**不能**在彈窗開著時去改 `window.scrollY` 的預期值。
+
 ## PWA 向左滑出現大片空白（0.1.21 修）
 
 - 症狀只在 **HomeView 與 RecordSheet**（唯二用 `DateTimeField` 的頁）→ 直接指向
@@ -585,3 +618,62 @@
 - **`page.waitForFunction` 預設用 rAF 輪詢**，在跑完 canvas 壓圖那種重活之後會被餓死
   → 明明元素存在卻等到 timeout。解法：`{ polling: 200 }` ＋ 包一層不拋錯的 `waitSel()`
 - 明細的 row 是 `div`，**要點 `.row__main`** 才會開；匯出彈窗的根是 `.mask` 不是 `.modal`
+
+## 收據圖片去重：兩層（0.1.22）
+
+原本 `records.knownMd5` 是**跨全部記錄**在擋重複，導致「同一張收據想在另一筆再記一次」
+被無聲吃掉。0.1.22 拆成兩層：
+
+| 情境 | 行為 |
+| --- | --- |
+| **同一筆記錄內**重複上傳同圖 | 靜默略過，只提示「已略過 N 張重複圖片」 |
+| **不同筆記錄之間**出現同圖 | **收下**（不擋），但彈提示「這張圖片和其他記錄重複了，可能重複記帳」 |
+
+- 新增 `records.ownersOfMd5(md5, except?)` —— 找「除了自己以外還有哪些記錄用了這張圖」。
+  ⚠ 一定要看 store 內部的 `all`（全部錢包），因為**圖檔 blob 是跨錢包共用的**；
+  只看當前錢包的 `records` computed 會漏掉別的錢包用過的圖。
+- 提示字串統一在 `lib/receiptDup.ts` 的 `dupNotice(count)`（單張／多張兩種講法）。
+- 改動的兩個入口：`RecordSheet.vue` 的 `addFiles` 與 `ReceiptImages.vue`，兩邊邏輯一致。
+- 每個檔案迴圈裡用一個 `batch: Set<string>` 記「這一批 already 進來的 md5」，
+  再各自比對 `images` 與 `ownersOfMd5`，最後一次性 `notify()`。
+
+## 統計頁摘要卡 → 詳情小卡（0.1.22）
+
+- 三張 `.sums .sum` 從 `div` 改成 `<button>`（所以要自己去瀏覽器預設外觀：
+  `text-align:left; font:inherit; color:inherit`）。
+- 詳情卡元件 `SumDetailSheet.vue`，吃三種資料：`title/amount/caption` ＋ `rows[]` ＋ `ranks[]`。
+  **刻意精簡**（使用者要求「不要太多資訊」）：最多 4 列數字＋一個前 3 名排行。
+- 動畫用 Vue `<Transition name="pop">`：`.pop-enter-from .box { transform: translateY(10px) scale(0.94) }`
+  → 卡片從略小浮出。另有 `@media (prefers-reduced-motion)` 關掉。
+- ⚠ 測動畫**不要量「當下」的 transition-duration**：進場只有 ~220ms，
+  等把卡抓出來早就播完、computed 回到 `0s`（假紅燈）。
+  要在 `requestAnimationFrame` 的同一格內量，或去 `document.styleSheets` 找 `.pop-enter-*` 規則。
+
+## 記帳頁預設分類（0.1.22）
+
+- 設定欄位 `settings.defaultCategoryId`（單一字串）。
+- **與 `favoriteCategories`（主頁常用分類）完全獨立**：常用分類管主頁顯示哪幾顆按鈕；
+  預設分類管記帳頁「一開始選中哪一個」。設定預設分類**不會**動到常用分類。
+- 元件 `CategoryManageModal.vue` 的「記帳預設」區塊：
+  - **編輯既有分類** → 一顆 `.dflt` 切換鈕（emit `set-default`，傳空字串＝取消）
+  - **新增分類** → 一個 `.dflt--check` 勾選框（`makeDefault`）——
+    ⚠ 分類 id 要等 `create` 事件送出去才生得出來，所以**不能在元件內直接寫 settings**，
+    要把旗標帶出去，由 `SettingsView.onCreateCat` 拿到剛建立的分類後再 `setDefaultCategory(c.id)`。
+  ⚠ 兩者要用 `v-if="isEdit"` / `v-else` 互斥，否則編輯模式會同時冒出兩顆。
+- 已封存（`archived`）的分類不能設為預設（`canDefault`），記帳頁選不到，設了等於沒設。
+- `HomeView` 的 `pickInitialCategory()`：預設分類存在且屬於當前收支類型 → 用它；
+  否則沿用舊行為（現有 `categoryId` → 第一個）。`resetForm()` 會呼叫 `resetCategory()`。
+
+## 測試（`.smoke/v101.mjs`，51 項）
+
+六段對應 0.1.22 的六個需求：① 記錄列徽章 `.imtag` 是「圖」② 明細 `.meta__row` 裡
+「計算公式」緊跟在「新增時間」下一列、值以 `=` 結尾 ③ 圖片去重兩層（**用真的
+`DataTransfer` 塞 `<input type=file>`**；先存第一筆取 md5，再開第二筆上傳同圖驗提示）
+④ 三張摘要卡可按、彈出小卡、有動畫、內容精簡 ⑤ 分類「記帳預設」可設 →
+回記帳頁自動預選，且常用分類沒被改 ⑥ 分類彈窗開著時 `body` 是 `fixed` ＋ `.is-locked`
+
+⚠ 這支踩到的坑（新測試要留意）：
+- `CategorySelect` 的下拉選項是 **Teleport 到 body** 的，選擇器要用 `.pop__item`（**不要** `.box .pop__item`）
+- 記帳頁金額不是 `<input>`，是自製鍵盤 → 用 `page.keyboard.press('5')` 走 `onKey`，再按 Enter
+- 記錄列是 `.row__main`（點它才開明細）；圖片縮圖是 `.rec__cell`
+- 「更多分類」鈕 `.cat-more` 只在 `favoriteCategories` 非空、且總數多於常用時才出現
