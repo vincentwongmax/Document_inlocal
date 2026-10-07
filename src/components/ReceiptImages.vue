@@ -1,0 +1,470 @@
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import type { ImageRef } from '@/types'
+import { useRecordsStore } from '@/stores/records'
+import { md5OfFile } from '@/lib/md5'
+import { deleteImage, getImage, putImage } from '@/lib/imageDb'
+import { compressImage, makeThumb } from '@/lib/imaging'
+import { uid } from '@/lib/id'
+import { notify } from '@/lib/alerts'
+import { IMG_MIME, filesFromClipboard, pastedFile } from '@/lib/clipboard'
+import ImageLightbox from '@/components/ImageLightbox.vue'
+
+/**
+ * 「收據圖片」區塊：上傳／貼上／拖曳收圖，縮圖排排站，點一下放大檢視。
+ *
+ * 生命週期（這個元件只管**還沒存檔**的圖片）：
+ *   - 使用者按 ✕ 移除 → 直接刪 blob（這時候還沒有任何記錄引用它）
+ *   - 存檔成功 → 呼叫 `release()`：清空清單但**保留 blob**（現在歸那筆記錄所有）
+ *   - 清空表單／離開頁面 → 呼叫 `discard()`（或由 onBeforeUnmount 自動處理）：
+ *     把本次新增的 blob 全刪掉，不讓 IndexedDB 留孤兒
+ *
+ * ⚠ 記錄明細（`RecordSheet.vue`）用的是另一套政策（要跟「原始圖片」比對才知道誰該刪），
+ *   所以那邊沒有改用這個元件；但剪貼簿解析與放大檢視是共用的
+ *   （`lib/clipboard.ts`、`components/ImageLightbox.vue`）。
+ */
+const props = withDefaults(
+  defineProps<{
+    modelValue: ImageRef[]
+    label?: string
+  }>(),
+  { label: '收據圖片' },
+)
+const emit = defineEmits<{ 'update:modelValue': [v: ImageRef[]] }>()
+
+const records = useRecordsStore()
+
+const busy = ref(false)
+const over = ref(false)
+/** 本次新增、還沒存檔的圖片 id（放棄時要把這些 blob 刪掉） */
+const added = new Set<string>()
+/** 已經被記錄接手的圖片：卸載時不要再刪 */
+let kept = false
+
+/* ── 縮圖點開放大 ───────────────────────────────────────── */
+const urls = ref<Record<string, string>>({})
+const lightbox = ref<string | null>(null)
+
+function revoke(id: string) {
+  if (urls.value[id]) {
+    URL.revokeObjectURL(urls.value[id])
+    delete urls.value[id]
+  }
+}
+
+async function openImage(im: ImageRef) {
+  if (!urls.value[im.id]) {
+    const blob = await getImage(im.id)
+    if (!blob) {
+      notify('圖片已不存在（可能已被清除）', 'warn')
+      return
+    }
+    urls.value[im.id] = URL.createObjectURL(blob)
+  }
+  lightbox.value = urls.value[im.id]
+}
+
+/* ── 收圖：上傳、拖曳、貼上最後都走 addFiles ─────────────── */
+async function addFiles(files: File[]) {
+  const list = files.filter((f) => IMG_MIME.test(f.type))
+  if (!list.length) return
+  busy.value = true
+  try {
+    const known = new Set(records.knownMd5)
+    const batch = new Set<string>()
+    let skipped = 0
+    const next = [...props.modelValue]
+    for (const file of list) {
+      const md5 = await md5OfFile(file)
+      // 100% 相同的圖片（MD5 一致）不重複收
+      if (known.has(md5) || batch.has(md5) || next.some((im) => im.md5 === md5)) {
+        skipped++
+        continue
+      }
+      batch.add(md5)
+      const id = uid('img')
+      const comp = await compressImage(file)
+      await putImage(id, comp.blob)
+      const thumb = await makeThumb(comp.blob)
+      next.push({
+        id,
+        md5,
+        shotAt: null,
+        name: file.name,
+        thumb,
+        w: comp.width || undefined,
+        h: comp.height || undefined,
+        bytes: comp.bytes,
+        originalBytes: comp.originalBytes || file.size,
+      })
+      added.add(id)
+    }
+    emit('update:modelValue', next)
+    if (skipped) notify(`已略過 ${skipped} 張重複圖片`, 'warn')
+  } finally {
+    busy.value = false
+  }
+}
+
+const fileInput = ref<HTMLInputElement | null>(null)
+function pick() {
+  fileInput.value?.click()
+}
+async function onFiles(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+  await addFiles(files)
+}
+
+function remove(im: ImageRef) {
+  emit(
+    'update:modelValue',
+    props.modelValue.filter((x) => x.id !== im.id),
+  )
+  // 先比對再 revoke：revoke 會把 urls 裡那一筆刪掉，順序顛倒就永遠關不掉正在看的那張
+  if (lightbox.value && lightbox.value === urls.value[im.id]) lightbox.value = null
+  revoke(im.id)
+  if (added.has(im.id)) {
+    added.delete(im.id)
+    void deleteImage(im.id)
+  }
+}
+
+/* ── 貼上（剪貼簿）────────────────────────────────────────
+ * 兩條路都要有，因為兩邊的支援度剛好互補，細節見 lib/clipboard.ts。
+ * iOS 只在「可編輯元素」取得焦點時才發 paste，所以在磚上鋪一層看不見的
+ * contenteditable 當接收面；監聽掛在 document 的 capture 階段，
+ * 焦點在頁面任何地方（連備註欄都算）都收得到。
+ */
+const pasteEl = ref<HTMLElement | null>(null)
+const pasteMode = ref(false)
+
+function onPaste(e: ClipboardEvent) {
+  const dt = e.clipboardData
+  const onTile = e.target === pasteEl.value
+  const hasImageFile =
+    !!dt &&
+    (Array.from(dt.files ?? []).some((f) => IMG_MIME.test(f.type)) ||
+      Array.from(dt.items ?? []).some((it) => it.kind === 'file' && IMG_MIME.test(it.type)))
+
+  // ⚠ preventDefault 必須**同步**決定：事件派送完就執行預設行為，等 await 回來才擋已經太遲。
+  //   在接收面上的貼上一律擋掉；其他位置只有真的夾帶圖片檔時才擋（純文字要能正常貼進備註欄）
+  if (onTile || hasImageFile) e.preventDefault()
+  void (async () => {
+    const files = await filesFromClipboard(dt)
+    if (!files.length) return
+    pasteMode.value = false
+    await addFiles(files)
+  })()
+}
+
+/**
+ * 點「貼上圖片」磚。
+ * ⚠ 聚焦要**同步**做（不能等 await 之後才做）：iOS 只在使用者手勢的同步階段認焦點，
+ * 而且不依賴剪貼簿 API 的成功與否——先站穩「長按可以貼」這條保證路徑，再試加分項。
+ */
+function pasteFromClipboard() {
+  pasteMode.value = true
+  pasteEl.value?.focus()
+  void readClipboardApi()
+}
+
+/** 加分項：支援的瀏覽器點一下就貼好（Safari 對它的支援反覆，失敗是常態） */
+async function readClipboardApi() {
+  if (!navigator.clipboard?.read) return
+  try {
+    const items = await navigator.clipboard.read()
+    const files: File[] = []
+    for (const it of items) {
+      const type = it.types.find((t) => IMG_MIME.test(t))
+      if (!type) continue
+      files.push(pastedFile(await it.getType(type), files.length, items.length))
+    }
+    if (!files.length) {
+      notify('剪貼簿裡沒有圖片', 'info')
+      return
+    }
+    pasteMode.value = false
+    await addFiles(files)
+  } catch {
+    /* 未授權／不支援 → 就這樣，使用者已經可以長按貼上了 */
+  }
+}
+
+/** 有人真的在那層隱形面上打字就打掉：它只是接收貼上的靶，不該留任何內容 */
+function clearPasteBox(e: Event) {
+  const el = e.target as HTMLElement
+  if (el.textContent) el.textContent = ''
+}
+
+/* ── 拖曳（頁面的掉落判斷交給 HomeView，這裡只負責亮起來）─── */
+function onDragEnter(e: DragEvent) {
+  if (!e.dataTransfer?.types.includes('Files')) return
+  over.value = true
+}
+function onDragLeave(e: DragEvent) {
+  const to = e.relatedTarget as Node | null
+  if (!to || !(e.currentTarget as HTMLElement).contains(to)) over.value = false
+}
+
+/* ── 生命週期 ───────────────────────────────────────────── */
+/** 存檔成功：清單清空，但 blob 歸那筆記錄所有，不能刪 */
+function release() {
+  kept = true
+  for (const id of Object.keys(urls.value)) revoke(id)
+  added.clear()
+  lightbox.value = null
+  emit('update:modelValue', [])
+}
+
+/** 放棄（清空表單／離開頁面）：把這次新增的 blob 全刪掉 */
+function discard() {
+  for (const id of added) void deleteImage(id)
+  added.clear()
+  for (const id of Object.keys(urls.value)) revoke(id)
+  lightbox.value = null
+  // ⚠ 一定要清空清單：blob 刪了但縮圖還掛著的話，畫面會留著一張點不開的破圖，
+  //   而且「清空」看起來像沒生效（張數沒歸零）。
+  if (props.modelValue.length) emit('update:modelValue', [])
+}
+
+onMounted(() => document.addEventListener('paste', onPaste, true))
+onBeforeUnmount(() => {
+  document.removeEventListener('paste', onPaste, true)
+  if (!kept) discard()
+})
+
+defineExpose({ addFiles, release, discard })
+
+const hintText = computed(() => {
+  if (pasteMode.value) return '長按「貼上圖片」磚 → 選「貼上」（電腦可直接 Ctrl／⌘ + V）'
+  if (props.modelValue.length) return `共 ${props.modelValue.length} 張 · 點圖片放大檢視、✕ 可移除`
+  return '可上傳、貼上或拖曳圖片（自動壓縮，保留文字清晰度）'
+})
+</script>
+
+<template>
+  <div
+    class="rec"
+    :class="{ 'is-over': over }"
+    data-drop="receipt"
+    @dragenter="onDragEnter"
+    @dragleave="onDragLeave"
+  >
+    <span class="rec__label">{{ label }}</span>
+
+    <div class="rec__grid">
+      <div v-for="im in modelValue" :key="im.id" class="rec__cell">
+        <button class="rec__item" type="button" :title="im.name || '收據圖片'" @click="openImage(im)">
+          <img v-if="im.thumb" :src="im.thumb" alt="" />
+        </button>
+        <button class="rec__x" type="button" title="移除圖片" aria-label="移除圖片" @click="remove(im)">
+          ✕
+        </button>
+      </div>
+
+      <button class="rec__add" type="button" :disabled="busy" @click="pick">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        <span>{{ busy ? '處理中…' : '上傳圖片' }}</span>
+      </button>
+
+      <!-- 貼上：磚本身是「接收面」，點它＝把焦點放上去，接著長按選「貼上」 -->
+      <div class="rec__add rec__paste" :class="{ 'is-armed': pasteMode }">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="8" y="3.2" width="8" height="3.6" rx="1.2" />
+          <path
+            d="M9.4 5H6.8A1.8 1.8 0 0 0 5 6.8v11.4A1.8 1.8 0 0 0 6.8 20h10.4a1.8 1.8 0 0 0 1.8-1.8V6.8A1.8 1.8 0 0 0 17.2 5h-2.6"
+          />
+          <path d="M8.6 11.6h6.8M8.6 15.2h4.4" />
+        </svg>
+        <!-- 看得見的字給眼睛看就好（讀屏名稱統一由下面那層 aria-label 提供，免得唸兩次） -->
+        <span aria-hidden="true">{{ busy ? '處理中…' : '貼上圖片' }}</span>
+        <span
+          ref="pasteEl"
+          class="rec__pasteArea"
+          contenteditable="true"
+          inputmode="none"
+          virtualkeyboardpolicy="manual"
+          role="button"
+          tabindex="0"
+          :aria-label="busy ? '正在處理圖片' : '貼上圖片'"
+          :aria-busy="busy"
+          @click="pasteFromClipboard"
+          @keydown.enter.prevent="pasteFromClipboard"
+          @keydown.space.prevent="pasteFromClipboard"
+          @input="clearPasteBox"
+        ></span>
+      </div>
+
+      <input ref="fileInput" class="hidden" type="file" accept="image/*" multiple @change="onFiles" />
+    </div>
+
+    <p class="tiny muted rec__hint">{{ hintText }}</p>
+  </div>
+
+  <Teleport to="body">
+    <ImageLightbox :src="lightbox" @close="lightbox = null" />
+  </Teleport>
+</template>
+
+<style scoped>
+.rec {
+  padding: 10px 11px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
+}
+/* 拖曳到這個區塊上＝附加圖片（拖到頁面其他地方是「辨識建立記錄」，見 HomeView） */
+.rec.is-over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.rec__label {
+  display: block;
+  margin: 0 0 8px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+}
+.rec__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.rec__cell {
+  position: relative;
+}
+.rec__item {
+  display: block;
+  width: 76px;
+  height: 76px;
+  padding: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--surface-3);
+  cursor: zoom-in;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s,
+    transform 0.12s;
+}
+.rec__item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.rec__item:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-2);
+  transform: translateY(-1px);
+}
+.rec__x {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--surface);
+  font-size: 11px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.rec__x:hover {
+  background: var(--expense);
+  color: #fff;
+}
+.rec__add {
+  width: 76px;
+  height: 76px;
+  border-radius: 12px;
+  border: 1px dashed var(--line-strong);
+  background: var(--surface);
+  color: var(--text-2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+.rec__add:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  border-style: solid;
+  color: var(--accent);
+}
+.rec__add:disabled {
+  opacity: 0.6;
+}
+.rec__add svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* ── 貼上圖片磚 ──────────────────────────────────────────── */
+.rec__paste {
+  position: relative;
+}
+/* 按過之後維持強調，提示使用者「現在要長按這裡」 */
+.rec__paste.is-armed {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  border-style: solid;
+  color: var(--accent);
+}
+/**
+ * 接收貼上的隱形面：鋪滿整顆磚，只負責「能被聚焦」。
+ *
+ * ⚠ 下面那組 `.rec .rec__pasteArea` 刻意把全站規則關掉的兩件事打開
+ * （style.css 的 `button, [role='button'], a` 有 `-webkit-touch-callout: none`
+ * 與 `user-select: none`）：那兩條正是 iOS「長按 → 貼上」選單的開關，關著就永遠貼不了。
+ * 看到它們請不要「順手統一」，會直接把功能弄壞。
+ * 用兩層選擇器是為了**確定蓋得過**那條全域規則（同權重時只靠載入順序太脆）。
+ */
+.rec__pasteArea {
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+  outline: none;
+  cursor: pointer;
+  white-space: nowrap;
+  /* 不要讓游標閃現：它看起來該是一顆按鈕，不是輸入框 */
+  caret-color: transparent;
+}
+.rec .rec__pasteArea {
+  -webkit-touch-callout: default;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.rec__hint {
+  margin: 9px 0 0;
+}
+.hidden {
+  display: none;
+}
+</style>

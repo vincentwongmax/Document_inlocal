@@ -218,6 +218,36 @@
   ＋ window `resize`／`orientationchange`。⚠ 檢視區是 `fixed inset: 0`，別用 ResizeObserver
   盯它——捲軸出現會改變 clientWidth，可能來回震盪
 
+### 共用元件：`ImageLightbox.vue` ╱ `lib/clipboard.ts`
+
+- 放大檢視自 0.1.18 起抽成 **`components/ImageLightbox.vue`**（props `src`、emit `close`），
+  記帳頁的 `ReceiptImages.vue` 與明細的 `RecordSheet.vue` **共用同一份**。
+  class 名稱刻意沿用舊的（`.lightbox`／`.lightbox__stage`／`.lightbox__bar`／`.lbbtn`／
+  `.lbzoom`／`.lightbox__x`），v89 才不必改。**改動時別改名**。
+- ⚠ 明細要把檢視區列進 `useScrollLock` 白名單，而檢視區現在在子元件裡 →
+  `ImageLightbox` 必須 `defineExpose({ stageEl })`，明細端用
+  `lbEl.value?.stageEl ?? bodyEl.value`。**拿掉 expose 就會重現「放大後拖不動」**。
+- 剪貼簿解析抽成 **`lib/clipboard.ts`**：`IMG_MIME`、`extOf`、`pastedFile`、`filesFromClipboard`。
+  ⚠ 兩個呼叫端各自在 `document` capture 階段掛 `paste`（記帳頁 `onMounted`、
+  明細看 `props.open`），各自決定要不要 `preventDefault`——**不要**把監聽也收進 lib，
+  明細的開關時機跟記帳頁不同。
+
+## 記帳頁：收據圖片區塊（`ReceiptImages.vue`）
+
+- 位置：`.pad__meta` 裡、`.pad__row`（清空／記錄）**之前**。最上方那顆
+  `.upload`「上傳收據圖片」是**辨識記帳**（OCR → 清單 → 建記錄），跟這塊是兩件事，**兩個都留**。
+- 生命週期（元件只管「還沒存檔」的圖）：
+  - ✕ 移除 → 若那張是自己加的，**直接刪 blob**（還沒有記錄引用它）
+  - 送出成功 → `release()`：清單清空但 **blob 保留**（已歸記錄所有）
+  - 清空表單／卸載 → `discard()`：刪掉本次新增的 blob ＋ **emit `update:modelValue = []`**
+    ⚠ 只刪 blob 不清清單的話，「清空」看起來像沒生效（張數沒歸零、留一張點不開的破圖）
+- 拖曳分流靠 `[data-drop="receipt"]`：拖在區塊上＝附加圖片（區塊自己 `is-over` 亮），
+  拖在頁面其他地方＝走辨識流程（`.page.home` 掛 `is-drag` ＋ `.dropzone`）。
+  判斷寫在 HomeView 的 `overReceipts(e)`（`e.target.closest(...)`），
+  ⚠ 兩個 `dragleave` 都要用 `relatedTarget` 判斷「是否還在容器內」，不然滑過子元素就閃一下。
+- MD5 去重跟主頁一致：`records.knownMd5` ＋ 本批 ＋ 目前清單，重複的略過並提示張數。
+- 縮圖點開放大時，要去 IndexedDB 撈**原圖**（blob）而不是用縮圖 dataURL。
+
 ## 統計頁 / 設定頁
 
 - 統計頁三張摘要卡用 `fmtNum()` 純數字，**幣別只在標題右邊膠囊**（`.page-cur`）；

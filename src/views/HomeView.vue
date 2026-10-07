@@ -10,6 +10,7 @@ import ClearableInput from '@/components/ClearableInput.vue'
 import QuickNotePicker from '@/components/QuickNotePicker.vue'
 import DateTimeField from '@/components/DateTimeField.vue'
 import ReviewSheet from '@/components/ReviewSheet.vue'
+import ReceiptImages from '@/components/ReceiptImages.vue'
 import { useUpload } from '@/composables/useUpload'
 import {
   displayMain,
@@ -24,7 +25,7 @@ import {
 } from '@/lib/calc'
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { fromLocalInput, nowLocalInput } from '@/lib/date'
-import type { TxType } from '@/types'
+import type { ImageRef, TxType } from '@/types'
 import { readJSON, writeJSON } from '@/lib/storage'
 
 const records = useRecordsStore()
@@ -44,6 +45,9 @@ const curCode = ref<string>(settings.inputCurrency)
 const amount = computed(() => Number(calcValue(calc.value).toFixed(2)))
 const expr = computed(() => displaySub(calc.value))
 const display = computed(() => displayMain(calc.value))
+/** 這次記帳要附加的收據圖片（存檔前的暫存；上傳／貼上／拖曳都在 ReceiptImages 裡處理） */
+const images = ref<ImageRef[]>([])
+const imgEl = ref<InstanceType<typeof ReceiptImages> | null>(null)
 /** 只有長公式／很大的結果才縮小字級（單一數字最多 11 位，永遠不會觸發） */
 const displayLong = computed(() => isLongDisplay(display.value))
 /** 還沒按 = 之前不顯示換算預覽，答案要按了等於才出現 */
@@ -149,8 +153,11 @@ function resetForm() {
 
 /** 清空鈕：沒有內容時不動作，避免彈出沒意義的提示 */
 function clearForm() {
-  const dirty = calc.value.tokens.length > 0 || note.value !== ''
+  const hadImages = images.value.length > 0
+  const dirty = calc.value.tokens.length > 0 || note.value !== '' || hadImages
   resetForm()
+  // 還沒存檔的圖片要一起丟掉（連 IndexedDB 的 blob 也刪，不留孤兒）
+  if (hadImages) imgEl.value?.discard()
   if (dirty) notify('已清空', 'info')
 }
 
@@ -172,8 +179,11 @@ function submit() {
     note: note.value.trim(),
     // 算出來的才記算式（單純輸入一個數字不記）
     expr: calcExpr(calc.value),
+    images: [...images.value],
     source: 'manual',
   })
+  // 圖片已經被這筆記錄接手：清空面板但**不能**刪 blob
+  imgEl.value?.release()
   const label = `${fmtMoney(rec.baseAmount, rec.baseCurrency)} · ${settings.category(rec.categoryId)?.name ?? ''}`
   notify(`已記錄 ${label}`, 'ok', { label: '復原', run: () => records.remove(rec.id) })
 
@@ -183,18 +193,34 @@ function submit() {
 /* ── 圖片上傳（可多張、可拖曳） ─────────────────────────── */
 const dragOver = ref(false)
 
+/**
+ * 拖到哪裡決定要做什麼：
+ *   - 拖在「收據圖片」區塊上 → 附加到這次記帳（區塊自己會亮起來）
+ *   - 拖在頁面其他地方   → 走原本的收據辨識流程（OCR → 清單 → 建立記錄）
+ * 兩邊共用同一個 dragover / drop，所以用 `[data-drop="receipt"]` 判斷落點。
+ */
+function overReceipts(e: DragEvent) {
+  const t = e.target as HTMLElement | null
+  return !!t?.closest?.('[data-drop="receipt"]')
+}
+
 function onDragOver(e: DragEvent) {
   e.preventDefault()
-  dragOver.value = true
+  dragOver.value = !overReceipts(e)
 }
-function onDragLeave() {
+function onDragLeave(e: DragEvent) {
+  // 只在真的離開整個頁面時才收掉遮罩，不然滑過任何子元素都會閃一下
+  const to = e.relatedTarget as Node | null
+  if (to && (e.currentTarget as HTMLElement).contains(to)) return
   dragOver.value = false
 }
 async function onDrop(e: DragEvent) {
   e.preventDefault()
   dragOver.value = false
   const files = Array.from(e.dataTransfer?.files ?? [])
-  if (files.length) await up.addFiles(files)
+  if (!files.length) return
+  if (overReceipts(e)) await imgEl.value?.addFiles(files)
+  else await up.addFiles(files)
 }
 
 onMounted(() => window.addEventListener('keydown', onKey))
@@ -229,13 +255,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           </div>
         </div>
 
-        <button class="upload" type="button" @click="up.pick()">
+        <!-- 收據辨識流程：上傳後自動 OCR，彈出清單幫你建立記錄。
+             跟下面「收據圖片」區塊（附加圖片到這次記帳）是兩件事，所以文案要分得開 -->
+        <button
+          class="upload"
+          type="button"
+          title="上傳收據後自動辨識，幫你建立記錄"
+          @click="up.pick()"
+        >
           <svg class="uic" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 16V5m0 0 4 4m-4-4L8 9" />
             <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
           </svg>
           <span>上傳收據圖片</span>
-          <em class="tiny muted">可一次選多張</em>
+          <em class="tiny muted">自動辨識記帳</em>
         </button>
 
         <!-- 金額：只留顯示欄位，點一下開計算機子頁面 -->
@@ -286,6 +319,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <!-- 日期跟備註同層（同一個 flex 直欄），寬度永遠一致，
                不會被下面「清空／記錄」那列的 min-width 撐寬而跑掉 -->
           <DateTimeField v-model="occurredAt" />
+          <!-- 收據圖片：上傳／貼上／拖曳，附在這次記帳上 -->
+          <ReceiptImages ref="imgEl" v-model="images" />
           <div class="pad__row">
             <button class="btn btn--clear" @click="clearForm">清空</button>
             <button class="btn btn--primary btn--save" @click="submit">記錄</button>
