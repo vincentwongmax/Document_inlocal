@@ -43,6 +43,18 @@
 - `CategoryManageModal` 分段展開（哨兵 `PICK='__pick__'`）；**表單載入別 `watch(pickedId)`**
   （非同步會蓋值）→ 用 `@update:model-value="choose"`；切類型用同步 `setType()`
 - 記錄頁「分類」檢視只依根大類分組，大類自身金額補「未細分」列（id 加 `__own`）
+- **記錄頁的「最近」檢視**（`RecordsView.vue` 的 `recent` ref）：
+  開啟後整頁改用 **`createdAt`（新增時間）** 查詢，而不是 `occurredAt`（使用者填的交易時間）。
+  用途＝補登舊帳時用交易時間找不到
+  - 畫面上一律走 `timeOf(r)` 這一個函式（篩選、排序、`catGroups` 排序）——
+    ⚠ 只要有一處漏改，就會出現「標題寫今天、內容排在別天」
+  - `RecordList` 用 **`date-basis`** 屬性（`'occurred' | 'created'`，預設 occurred）決定分組鍵、
+    組內排序與 `dayParts()`；統計頁沒傳 → 行為不變
+  - 開啟時多兩處提示，否則使用者看不出基準換了：
+    ①「日／月／年」右側多一顆 **「依新增時間」** rangetag
+    ② 列上的時間標籤加前綴 **「交易」**（`RecordRow` 的 `timePrefix`）——
+       不然分組標題寫「今天」、列上卻寫「5 天前」，會被當成 bug
+  - 空清單文案跟著變「這段時間沒有新增的記錄」
 - 統計頁分類佔比含整棵子樹，展開後百分比是「佔上一層」
 
 ## 記帳頁 / 彈窗
