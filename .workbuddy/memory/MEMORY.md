@@ -17,6 +17,10 @@ Repo：**`C:\Users\User\Desktop\AI`**（本機沒有 E: 槽），分支 `main`�
 - ⚠ 兩個埠的 localStorage 分開，真實資料只在其中一邊
 - ⚠ **只 commit 本機，不主動 push／部署**（使用者指示）；要動遠端先問、先拿 PAT
 - Repo `vincentwongmax/Document_inlocal`，部署走 `gh-pages`，線上 `…github.io/Document_inlocal/`
+- **push 到 main 會觸發 `.github/workflows/deploy.yml`**（npm ci → build → 把 `dist/` 推到
+  gh-pages），所以正常情況**不用**手動部署；Actions 沒跑時才 `GH_TOKEN=… npm run deploy`
+- ⚠ 這台電腦**完全沒有 GitHub 憑證**：沒 PAT、沒有 `~/.ssh`、GCM 也沒存任何條目
+  （`git push` 會直接 `could not read Username`）→ 要推一定得跟使用者拿 token
 - ⚠ **別用 Pages base 蓋掉 `dist/`**（白畫面）；base 由 `resolveBase()` 自動判斷
 - PWA 快取：看到舊版先 Ctrl+Shift+R／無痕；測試一律用全新 profile
 ## 驗證流程
@@ -51,6 +55,8 @@ Repo：**`C:\Users\User\Desktop\AI`**（本機沒有 E: 槽），分支 `main`�
   （≥1024px 改 22px）
 - sheet 開著（body 被釘成 fixed）時 SweetAlert 仍正確疊在最上層 —— fixed 的包含塊是視窗
 - ⚠ 想驗「Toast 沒遮罩」別看 `body.swal2-shown`（Toast 也會加），要看容器的計算底色
+- ⚠ `v45`／`v46`／`v56`／`v57` 是舊測試（引用首頁 `.key--eq`、`.toast__text`、舊 `.catbox`），
+  早就失效，別拿它們當基準；維護中的是 v70～v80
 
 ## 分類階層
 
@@ -113,6 +119,4 @@ Repo：**`C:\Users\User\Desktop\AI`**（本機沒有 E: 槽），分支 `main`�
   `grid-template-columns: max-content minmax(0, 1fr)`
 - 共用件（改動要一併回歸）：`DateTimeField`、`ClearableInput`、`CategoryIcon`、
   `CategoryPicker`、`RecordList`、`RecordRow`、`HighlightText`- **維護中的回歸集＝v70～v80**（41／31／18／21／39／17／15／48／20／42）
-  - ⚠ `v45`／`v46`／`v56`／`v57` 是舊的（引用首頁 `.key--eq`、`.toast__text`、舊 `.catbox`），
-    早就陸續失效，別拿它們當基準
 - ⚠ 已知未修：`ReviewSheet.vue` 的 `.grid` 在 ≥768px 變兩欄，「時間」只剩半寬、對不齊「備註」
