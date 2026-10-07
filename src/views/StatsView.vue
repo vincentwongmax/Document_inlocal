@@ -549,8 +549,14 @@ const mom = computed(() => st.momChange.value)
 }
 .custom__dates {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* 兩欄各自只佔「原生日期框真正需要的寬度」，而不是硬切一半。
+     ⚠ 原生日期框（日期文字＋日曆圖示）最少要 140～166px，各佔一半的話手機上每欄只有
+     120～160px → 日期文字和圖示被迫疊在一起（就是「爆掉」的樣子）。
+     minmax(0, …) 是保險：真的放不下時可以再縮，不會把卡片撐爆。
+     用 space-between 讓「從」貼左、「到」貼右，跟卡片裡其他列左右對齊。 */
+  grid-template-columns: repeat(2, minmax(0, max-content));
   gap: 10px;
+  justify-content: space-between;
 }
 .custom__date {
   display: flex;
@@ -558,8 +564,24 @@ const mom = computed(() => st.momChange.value)
   gap: 4px;
   min-width: 0;
 }
+/* 日期框自己的內距與字級直接決定它「最少需要多寬」：
+   15px＋左右各 12px 內距要 166px，兩個並排塞不進任何手機（390px 也只有 157px／欄），
+   所以這一列收成 13px＋左右各 8px（實測只要 141px）。
+   高度維持 42px 與其他欄位一致。
+   ⚠ max-width 再保險一次：有些引擎的原生日期框會用自己的內建寬度壓過 width，
+   補一條 max-width 才不會反過來撐爆欄位。 */
 .custom__date .field {
   min-width: 0;
+  max-width: 100%;
+  padding-left: 8px;
+  padding-right: 8px;
+  font-size: 13px;
+}
+/* 超窄螢幕（< 360px）兩欄再怎麼收都會擠到，直接改成上下堆疊 */
+@media (max-width: 359px) {
+  .custom__dates {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .presets {
   display: flex;
