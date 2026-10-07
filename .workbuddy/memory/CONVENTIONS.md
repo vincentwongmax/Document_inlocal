@@ -95,6 +95,18 @@
   - ⚠ 測背景有沒有動別看 `scrollTop`（body fixed 後就是 0），量 `rect.top`
 - **日期欄要跟備註同寬**：`DateTimeField` 放 `.pad__meta`（**別放回 `.pad__row`**）
 - 數主頁 chips 用 `.catbox .picker > .cats .cat__name`（`.catbox .cat` 會混入子分類列）
+- **分類第一列永遠只有大類**：`CategoryPicker` 的 `list` 在 collapsed（記帳頁）模式會
+  「保證選中的分類看得到」，但**子分類不補進第一列**——它已經有自己的子分類列，
+  補上去會插一顆到最前面（使用者反映「選了早餐就變成 早餐(選取), 餐飲, 交通」）。
+  改成補「**所屬大類**」（`selectedRoot = settings.pathOf(id)[0]`），
+  並由 `activeId` 決定第一列標亮誰：子分類自己不在第一列時，標亮它所屬的大類
+  - 例外：子分類被勾成常用分類、本來就在第一列時，`activeId` 標它自己（不要兩個一起亮）
+  - 每一層子分類列只亮「真正選中的那一顆」：選「餐飲 › 早餐 › 麵」時，
+    餐飲那層**不亮**早餐，只有麵亮
+  - 非 collapsed 的地方（`CategorySheet` 分類彈窗、`ReviewSheet` 收據複核）同步適用：
+    選子分類時標亮所屬大類，而不是整個第一列沒東西亮
+  - ⚠ 大類若已封存就不補（`root.archived`），免得冒出已封存的大類
+  - 回歸：`.smoke/v91.mjs`
 
 ## 計算機鍵盤 `Keypad.vue`
 

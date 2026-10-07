@@ -18,7 +18,9 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 - `npm run preview` → :4173（服務 `dist/`，改完要先 build）；`npm run dev` → :5173。
   兩埠 localStorage 分開，真資料只在其中一邊
 - 流程：`npx vue-tsc --noEmit` → `npm run build` → `.smoke/vNN.mjs` → 截圖 → commit
-  - 跑：`"C:/Users/User/.workbuddy/binaries/node/versions/22.22.2-3/node.exe" .smoke/vNN.mjs`
+  - 跑：`"/c/Users/User/.workbuddy/binaries/node/versions/22.22.2-6/node" .smoke/vNN.mjs`
+    ⚠ **版本目錄會變**（用過 `22.22.2-3`、現在 `22.22.2-6`）→ 找不到就先
+    `ls ~/.workbuddy/binaries/node/versions/` 挑當下的，或直接 `node`（已在 PATH）
     （別設 `TEMP=E:\wb-tmp`，沒 E: 槽會 mkdtemp ENOENT）
   - Chrome `C:/Program Files/Google/Chrome/Application/chrome.exe`；puppeteer-core 在
     `C:\Users\user\.workbuddy\binaries\node\workspace\`
@@ -26,8 +28,16 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
   - ⚠ **node 是 Windows binary**：curl 輸出要存到**專案內**（`.smoke/tmp/`），
     Git Bash 的 `/tmp` 讀不到
   - **維護中的回歸集＝v70～v80**；`v45/v46/v56/v57` 早已失效，別當基準
-  - 改到計算機／彈窗／通知／記錄頁時另外跑 **v82~v90**（計算機 11 位／算式／SweetAlert2／
-    最近檢視／按鍵快按／快速備註／收據圖片貼上／收據圖片放大拖曳／統計頁自訂日期框）
+  - 改到計算機／彈窗／通知／記錄頁時另外跑 **v82~v91**（計算機 11 位／算式／SweetAlert2／
+    最近檢視／按鍵快按／快速備註／收據圖片貼上／收據圖片放大拖曳／統計頁自訂日期框／
+    分類第一列不塞子分類）
+  - ⚠⚠ **測試裡「等固定秒數」比想像中不可靠**：v84 用 `sleep(900)` 等 SweetAlert2 彈窗，
+    慢的時候會量到「還沒渲染完的空彈窗」，變成偶發紅燈（約 1/10）。**要等狀態、不要等時間**
+    → `waitForFunction(() => !!document.querySelector(目標))` 再 `sleep(400)` 緩衝
+  - ⚠⚠ **`index.html` 有 Google Fonts 外鏈**，網路一抖 console 就噴 `ERR_NAME_NOT_RESOLVED`，
+    害所有斷言「沒有 JS 錯誤」的測試偶發紅燈（跟程式無關）。已於**全部 82 支測試**插入
+    `isRealErr()` 濾掉環境雜訊（`ENV_NOISE` regex）。**新測試要照抄這個 helper**，
+    否則又會被環境雜訊干擾
 - ⚠ **`npm install <pkg>` 會拔掉 `@esbuild/win32-x64`** → build 爆「needed by esbuild」。
   那是 esbuild 的 optionalDependencies（**不該**進 package.json）：把那行從 package.json
   刪掉再 `npm install` 就會裝回

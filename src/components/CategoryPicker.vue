@@ -83,6 +83,11 @@ const favorites = computed<Category[]>(() =>
     .filter((c): c is Category => !!c),
 )
 
+/** 選中分類所屬的「大類」（自己就是大類時＝自己） */
+const selectedRoot = computed<Category | undefined>(() =>
+  props.modelValue ? settings.pathOf(props.modelValue)[0] : undefined,
+)
+
 /** 實際顯示的第一列清單 */
 const list = computed<Category[]>(() => {
   let out = all.value
@@ -99,12 +104,25 @@ const list = computed<Category[]>(() => {
   // 有勾選就只顯示勾選的；沒勾選則全部顯示（不限制數量）
   const fav = favorites.value.length ? favorites.value : out
 
-  // 目前選中的分類一定要看得到，不然會出現「看不到自己選了什麼」
-  if (props.modelValue && !fav.some((c) => c.id === props.modelValue)) {
-    const sel = allWithSubs.value.find((c) => c.id === props.modelValue)
-    if (sel) return [sel, ...fav]
-  }
+  // 選中的分類一定要看得到，不然會出現「看不到自己選了什麼」。
+  // ⚠ 但**子分類不補進第一列**：它已經在下面的子分類列裡了，
+  //   再塞一顆到第一列會插到最前面、整列愈長愈亂。
+  //   第一列只保證「它隸屬的大類」看得到（並標亮它，見 activeId）。
+  const root = selectedRoot.value
+  if (root && !root.archived && !fav.some((c) => c.id === root.id)) return [root, ...fav]
   return fav
+})
+
+/**
+ * 第一列要標亮哪一顆：選到子分類時，標亮它所屬的**大類**
+ *（子分類只在下面的子分類列亮，不會多一顆到第一列）。
+ * 例外：子分類自己也在第一列時（被勾成常用分類）就標它自己——
+ * 兩個一起亮反而看不出到底選了哪一個。
+ */
+const activeId = computed(() => {
+  if (!props.modelValue) return ''
+  if (list.value.some((c) => c.id === props.modelValue)) return props.modelValue
+  return selectedRoot.value?.id ?? props.modelValue
 })
 
 /**
@@ -176,7 +194,7 @@ watch(
         :key="c.id"
         type="button"
         class="cat"
-        :class="{ 'is-on': c.id === modelValue }"
+        :class="{ 'is-on': c.id === activeId }"
         @click="pick(c.id)"
       >
         <span
