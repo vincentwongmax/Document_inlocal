@@ -618,7 +618,9 @@ function save() {
   display: flex;
   gap: 10px;
   justify-content: space-between;
-  padding: 12px 16px calc(16px + var(--safe-b));
+  /* ⚠ 0.1.27：`var(--safe-b)` 已由共用的 `.bsheet` 統一處理（見 style.css），
+     這裡不要再加一次，否則會加到兩份、footer 離底部太遠。 */
+  padding: 12px 16px 16px;
   border-top: 1px solid var(--line);
 }
 

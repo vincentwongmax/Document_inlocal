@@ -392,7 +392,9 @@ function applyDate(d: DraftRecord, iso: string) {
 .ft {
   display: flex;
   gap: 10px;
-  padding: 12px 18px calc(14px + var(--safe-b));
+  /* ⚠ 0.1.27：`var(--safe-b)` 已由共用的 `.bsheet` 統一處理（見 style.css），
+     這裡不要再加一次。 */
+  padding: 12px 18px 14px;
   border-top: 1px solid var(--line);
   background: var(--surface);
 }

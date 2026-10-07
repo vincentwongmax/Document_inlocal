@@ -253,14 +253,34 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       這一頁不需要任何拖放監聽了 —— 拖放改由「收據圖片」區塊自己接。
   -->
   <div class="page home">
+    <!--
+      0.1.27 加上標題（使用者：「記帳的頁面也加上標題」）。
+      跟記錄／統計／設定三頁同一套 `.page-head`／`.page-title`／`.page-sub`（全域樣式），
+      四個頁面的標題才會長得一樣、切換時不會跳。
+    -->
+    <div class="page-head">
+      <div class="page-head__txt">
+        <h1 class="page-title">記帳</h1>
+        <p class="page-sub">記下每一筆收支</p>
+      </div>
+    </div>
+
     <div class="home__grid">
       <!-- 記帳表單 -->
       <section class="card pad">
         <div class="seg">
-          <button class="seg__btn" :class="{ 'is-on': type === 'expense' }" @click="type = 'expense'">
+          <button
+            class="seg__btn"
+            :class="{ 'is-on': type === 'expense', 'is-expense': type === 'expense' }"
+            @click="type = 'expense'"
+          >
             支出
           </button>
-          <button class="seg__btn" :class="{ 'is-on': type === 'income' }" @click="type = 'income'">
+          <button
+            class="seg__btn"
+            :class="{ 'is-on': type === 'income', 'is-income': type === 'income' }"
+            @click="type = 'income'"
+          >
             收入
           </button>
           <div class="seg__cur">
@@ -387,11 +407,31 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   font-size: 14px;
   font-weight: 600;
   color: var(--text-2);
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 .seg__btn.is-on {
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--shadow-1);
+}
+/**
+ * 0.1.27 的保守美化：選中的那一邊帶一點自己的顏色。
+ *
+ * 這個 App 的慣例本來就是「支出＝暖紅、收入＝墨綠」（記錄列、統計頁都在用），
+ * 所以讓「現在記的是哪一種」在第一眼就讀得出來 —— 這是**功能性**的顏色，
+ * 不是裝飾：記帳最常犯的錯就是把支出記成收入，這裡給一個不易看錯的線索。
+ * ⚠ 刻意只用 soft 底＋文字上色，保留原本的白底膠囊與陰影 ——
+ *   使用者要求「不要太大膽」，所以不做整段變色、也不加漸層。
+ */
+.seg__btn.is-on.is-expense {
+  color: var(--expense);
+  background: var(--expense-soft);
+}
+.seg__btn.is-on.is-income {
+  color: var(--income);
+  background: var(--accent-soft);
 }
 .seg__cur {
   padding-right: 2px;
@@ -415,10 +455,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 14px;
+  padding: 14px 15px;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: var(--surface-2);
+  /* 0.1.27 的保守美化：金額是這一頁的主角，給一點陰影讓它從表單裡浮出來
+     （跟其他 `.card` 同一個陰影，沒有加漸層或強調色） */
+  box-shadow: var(--shadow-1);
   transition:
     background 0.15s,
     border-color 0.15s;

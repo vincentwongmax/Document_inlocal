@@ -370,6 +370,104 @@ const sumDetail = computed(() => {
     rankTitle: '',
   }
 })
+
+/* ── 區間記錄：依範圍類型「精選」─────────────────────────────
+ *
+ * 使用者 0.1.27 指定（原話）：
+ *   (日)[每日]（當天最大 10 筆）
+ *   (月)[每日]（當月最大 5 筆(不是同一天)、每天兩筆、合共 10 筆；
+ *              即先找當月最大的那一日，取那天第一大與第二大記錄，
+ *              再取當月第二大的那一日，再取那天第一大與第二大，如此類推直到 10 筆）
+ *   (年)[每月]（同上，只是把「日」換成「月」）
+ *   都要有「顯示更多」按鈕
+ *
+ * 實作對應：
+ *   - 日 → 整個範圍就是一天，取金額最大的 10 筆
+ *   - 月 → 以「日」分組，組內按金額排；組與組之間按**該組總額**排
+ *   - 年 → 同上，只是以「月」分組（清單的分組標題也跟著變成月）
+ *   - 自訂 → 沒有日／月／年的語意，維持原本行為＝只顯示最近 10 筆
+ *
+ * ⚠ 三個刻意的決定（使用者沒有明說，我選了最不意外的那個）：
+ *   1. **選誰**由金額決定，但**顯示順序**仍然是時間（新→舊）——
+ *      整個 App 的清單一律是時間序，突然變成金額序會很怪。
+ *      （排序由 RecordList 負責，所以它會把精選出來的那幾筆按時間重排。）
+ *   2. 「某一天只有 1 筆」時不會硬湊：那天就只貢獻 1 筆，
+ *      接著往下一個大日取，**一路取到滿 10 筆或沒有更多日為止**（＝「如此類推直到 10 筆」）。
+ *   3. 組別的**排序**用「該組總額」，不是「該組最大那一筆」——
+ *      使用者說「最大的那一日」，指的是一天裡花掉多少，不是單筆多大。
+ *   4. 「金額大小」用 `Math.abs(baseAmount)`，收入與支出都算「大」。
+ */
+const PICKED = 10
+/** 每一組（日或月）最多取幾筆 */
+const PER_GROUP = 2
+
+/** 這一筆的「大小」（收入支出都算，取絕對值） */
+const sizeOf = (r: TxRecord) => Math.abs(r.baseAmount)
+
+/** 依 `by` 分組 → 組內按金額排、組間按總額排 → 逐組取前 PER_GROUP 筆，直到滿 PICKED 筆 */
+function pickTop(rows: TxRecord[], by: 'day' | 'month'): TxRecord[] {
+  const keyOf = (r: TxRecord) => (by === 'month' ? monthKey(r.occurredAt) : dayKey(r.occurredAt))
+  const buckets = new Map<string, TxRecord[]>()
+  for (const r of rows) {
+    const k = keyOf(r)
+    if (!buckets.has(k)) buckets.set(k, [])
+    buckets.get(k)!.push(r)
+  }
+  const ordered = [...buckets.values()]
+    .map((list) => {
+      const bySize = [...list].sort((a, b) => sizeOf(b) - sizeOf(a))
+      return { total: bySize.reduce((s, r) => s + sizeOf(r), 0), bySize }
+    })
+    .sort((a, b) => b.total - a.total)
+
+  // ⚠ 一定要「一組一組」取（組 1 的第一、第二大 → 組 2 的第一、第二大…），
+  //   不能「一輪一輪」取（所有組的第一大 → 所有組的第二大）——
+  //   後者會變成「10 天各 1 筆」，跟使用者要的「5 天各 2 筆」不一樣。
+  const out: TxRecord[] = []
+  for (const g of ordered) {
+    if (out.length >= PICKED) break
+    for (let i = 0; i < PER_GROUP && out.length < PICKED; i++) {
+      const r = g.bySize[i]
+      if (r) out.push(r)
+    }
+  }
+  return out
+}
+
+/** 展開後就不再精選；換範圍時要收回來 */
+const moreRecords = ref(false)
+
+/** 清單的分組方式：只有「年」用月分組 */
+const listGroupBy = computed<'day' | 'month'>(() => (mode.value === 'year' ? 'month' : 'day'))
+
+const pickedRows = computed(() => {
+  const all = st.rows.value
+  if (mode.value === 'custom') {
+    // 自訂區間沒有日／月／年的語意 → 維持原本的「只顯示最近 10 筆」
+    return [...all].sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1)).slice(0, PICKED)
+  }
+  if (mode.value === 'day') {
+    return [...all].sort((a, b) => sizeOf(b) - sizeOf(a)).slice(0, PICKED)
+  }
+  return pickTop(all, mode.value === 'year' ? 'month' : 'day')
+})
+
+/** 現在真正要顯示的清單 */
+const listRows = computed(() => (moreRecords.value ? st.rows.value : pickedRows.value))
+
+/** 標題右邊的筆數：精選時要老實說「顯示 10 / 共 40 筆」 */
+const listCountLabel = computed(() =>
+  moreRecords.value ? `${st.rows.value.length} 筆` : `顯示 ${pickedRows.value.length} / 共 ${st.rows.value.length} 筆`,
+)
+
+/** 還有被精選掉的部分可以展開嗎 */
+const canShowMore = computed(() => !moreRecords.value && pickedRows.value.length < st.rows.value.length)
+
+// 換範圍（日↔月↔年、換月、換年、改自訂日期）就把「顯示更多」收回來，
+// 不然會出現「在這個範圍按了顯示更多，換到別的範圍還開著」的錯亂
+watch([mode, range], () => {
+  moreRecords.value = false
+})
 </script>
 
 <template>
@@ -471,9 +569,11 @@ const sumDetail = computed(() => {
 
     <!--
       摘要（三張都可以點開看明細，0.1.22）。
-      ⚠ 0.1.26 起**移除「明細 ›」文字**（使用者：移除明細的文字，但功能保持）。
-        點卡片開明細的行為完全不變；右下角留一顆純裝飾的 `›` 折箭頭，
-        讓「這張卡可以點」的提示還在（`.sum__more` 只剩箭頭，不再有文字）。
+      ⚠ 0.1.26 移除「明細 ›」文字；**0.1.27 連右下角那顆 `›` 與它佔的那一行也一起移除**
+        （使用者：「移除 > 的文字和那一行（但功能保持）」）。
+        所以現在卡片裡只有三行：標籤／金額／比較說明，三張卡自然等高。
+        點卡片開明細的行為完全不變（整張卡就是一顆 <button>）。
+        ⚠ 不要再把任何箭頭／提示加回來。
     -->
     <div class="sums">
       <button class="card sum" type="button" @click="sumOpen = 'expense'">
@@ -488,13 +588,11 @@ const sumDetail = computed(() => {
           較前期 {{ mom > 0 ? '+' : '' }}{{ (mom * 100).toFixed(0) }}%
         </span>
         <span v-else class="tiny muted">尚無前期可比較</span>
-        <span class="sum__arrow" aria-hidden="true">›</span>
       </button>
       <button class="card sum" type="button" @click="sumOpen = 'income'">
         <span class="tiny muted">收入</span>
         <strong class="num sum__inc">{{ fmtNum(st.income.value) }}</strong>
         <span class="tiny muted">{{ st.incomeByCat.value.length }} 個來源</span>
-        <span class="sum__arrow" aria-hidden="true">›</span>
       </button>
       <button class="card sum" type="button" @click="sumOpen = 'balance'">
         <span class="tiny muted">結餘</span>
@@ -502,7 +600,6 @@ const sumDetail = computed(() => {
           {{ fmtNum(st.balance.value) }}
         </strong>
         <span class="tiny muted">{{ st.rows.value.length }} 筆</span>
-        <span class="sum__arrow" aria-hidden="true">›</span>
       </button>
     </div>
 
@@ -622,19 +719,32 @@ const sumDetail = computed(() => {
         <p v-if="!st.topRecords.value.length" class="muted tiny">沒有支出記錄</p>
       </section>
 
-      <!-- 區間記錄：每一筆都可點開看明細 -->
+      <!--
+        區間記錄：依範圍類型精選（0.1.27）。
+        日＝當天最大 10 筆；月＝當月最大的 5 天各 2 筆；年＝當年最大的 5 個月各 2 筆。
+        ⚠ `totals-from` 一定要傳**完整**的 `st.rows`：精選過的子集合會讓分組標題的
+          「+收入／−支出」只加那兩筆，看起來像「這個月只花了這樣」。
+      -->
       <section class="card block">
         <header class="block__hd">
           <h2>區間記錄</h2>
-          <span class="tiny muted">{{ st.rows.value.length }} 筆</span>
+          <span class="tiny muted">{{ listCountLabel }}</span>
         </header>
         <RecordList
-          :records="st.rows.value"
-          :collapse-after="10"
+          :records="listRows"
+          :totals-from="st.rows.value"
+          :group-by="listGroupBy"
+          :collapse-after="0"
           empty-text="這個範圍沒有記錄"
           @edit="openRecord"
           @remove="removeRecord"
         />
+        <button v-if="canShowMore" class="btn btn--ghost block__more" @click="moreRecords = true">
+          顯示更多（共 {{ st.rows.value.length }} 筆）
+        </button>
+        <button v-else-if="moreRecords" class="btn btn--ghost block__more" @click="moreRecords = false">
+          收起，只看重點 {{ pickedRows.length }} 筆
+        </button>
       </section>
     </template>
 
@@ -809,18 +919,11 @@ const sumDetail = computed(() => {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-/* 右下角的折箭頭：0.1.26 起把「明細 ›」的文字拿掉，只留箭頭噹「可以點開」的提示。
-   ⚠ 不要做成獨立鈕（整張卡片就是那顆鈕），也**不要**把文字加回來 ——
-     使用者明確要求移除「明細」文字。 */
-.sum__arrow {
-  margin-top: 3px;
-  align-self: flex-end;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--accent);
-  opacity: 0.6;
-}
+/*
+ * ⚠ 0.1.26 移除「明細 ›」文字，0.1.27 連右下角那顆 `›` 也移除（連它佔的那一行一起）。
+ *   整張卡就是那顆按鈕，不要再加任何箭頭／提示回來；
+ *   卡片的 `.sum:active` 縮放與 hover 已經足以提示「可以點」。
+ */
 .sum strong {
   font-size: 15px;
   white-space: nowrap;
@@ -858,6 +961,12 @@ const sumDetail = computed(() => {
 }
 .block__hd h2 {
   font-size: 15.5px;
+}
+/* 「顯示更多／收起」：撐滿寬、跟清單底部留一點距離（跟記錄頁的「顯示全部」同一個樣子） */
+.block__more {
+  display: flex;
+  width: 100%;
+  margin: 12px auto 0;
 }
 .seg2 {
   display: flex;

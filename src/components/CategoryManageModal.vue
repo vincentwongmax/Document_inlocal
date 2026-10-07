@@ -424,8 +424,22 @@ async function askRemove() {
           />
         </div>
 
-        <!-- 選完之後才把其餘欄位露出來 -->
-        <template v-if="decided">
+        <!--
+          選完之後才把其餘欄位露出來（0.1.27 加上轉場）。
+
+          使用者原話：「新增或修改分類的頁面 到修改分類頁面之間要有動畫，
+          用戶選擇分類後，不要一下子就跳到下一個頁面，有不順滑的使用體驗」。
+
+          ⚠ 用 `<Transition>` 包一層 `.reveal` 的原因：
+            ① `<Transition>` 只吃單一根元素 → 一定要包一層 div
+            ② 包了之後 `gap` 的層級會變（`.box > *` 只剩這一個 wrapper），
+               所以 `.reveal` 自己要寫跟 `.box` 一樣的 `flex column + gap 14px`，
+               否則欄位間距會整排縮掉
+          動畫是「從下面滑上來 + 淡入」——欄位看起來像長出來的，
+          而不是硬跳出來；面板是貼底的，內容變高時上緣會自己往上撐，兩邊一起動就順了。
+        -->
+        <Transition name="reveal">
+          <div v-if="decided" class="reveal">
           <div v-if="isEdit" class="lb">
             <span>
               子分類
@@ -576,7 +590,8 @@ async function askRemove() {
           <p v-else-if="isEdit && usedCount" class="used">
             已被 {{ usedCount }} 筆記錄使用，修改後這些記錄會一起更新。
           </p>
-        </template>
+          </div>
+        </Transition>
 
         <div class="foot">
           <button
@@ -629,6 +644,33 @@ async function askRemove() {
 }
 .box h3 {
   font-size: 16px;
+}
+/**
+ * 「選完分類之後長出來的其餘欄位」的容器（0.1.27）。
+ *
+ * ⚠ 一定要寫 `flex column + gap 14px`：包了這一層 wrapper 之後，
+ *   `.box > *` 就只剩它一個，原本 `.box` 的 `gap` 幫不到裡面的欄位
+ *   —— 不寫的話所有欄位會整排縮在一起。
+ */
+.reveal {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/**
+ * 轉場：從下面 10px 滑上來 ＋ 淡入（200ms）。
+ * 慢一點會覺得拖、快一點會看不到，200ms 是這個尺寸面板的甜點值
+ * （跟 `.bsheet` 的下拉回彈 220ms 同一個量級，兩者同時動才不會打架）。
+ * 離場不做動畫：收回清單時直接消失，比「先縮回去再看到清單」順。
+ */
+.reveal-enter-active {
+  transition:
+    opacity 0.2s ease-out,
+    transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.reveal-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
 }
 .prev {
   display: flex;

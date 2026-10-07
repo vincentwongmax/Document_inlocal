@@ -9,7 +9,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 
 ## 版本號
 
-- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.26`
+- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.27`
 - 單一來源＝`package.json` 的 `version` → `vite.config.ts` `define` 注入 `__APP_VERSION__`
   （型別在 `env.d.ts`）→ `src/lib/version.ts` → 設定頁「離線與版本」膠囊
 - 每次更新要改 `package.json` ＋ 補一筆 `CHANGELOG.md`
@@ -22,7 +22,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 - 流程：`npx vue-tsc --noEmit` → `npm run build` → `.smoke/vNN.mjs` → 截圖 → CHANGELOG → memory → commit
 - 跑測試：`bash .smoke/run-regress.sh`（全部）或 `bash .smoke/run-regress.sh v104`（指定幾支）。
   ⚠ **判準以 exit code 為主**，摘要行格式各支不一（`pass=N fail=N` vs `N 通過 / N 失敗`）
-- **維護中的回歸集＝v70～v105**；`v45/v46/v56/v57` 早已失效，別當基準
+- **維護中的回歸集＝v70～v106**；`v45/v46/v56/v57` 早已失效，別當基準
 - Chrome `C:/Program Files/Google/Chrome/Application/chrome.exe`；puppeteer-core 在
   `C:\Users\user\.workbuddy\binaries\node\workspace\`；`node` 已在 PATH
   （⚠ 版本目錄會變，用過 `22.22.2-3`／`22.22.2-6`，找不到先 `ls ~/.workbuddy/binaries/node/versions/`）
@@ -42,6 +42,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 | 連點空白處／body 幾何／連點防護 | **v102** |
 | 輸入框字級／點空白處的捲動／下拉清單能不能滑 | **v104** |
 | **雙擊**空白處／統計摘要卡／子頁面彈層／收據 BETA／金額點擊 | **v105** |
+| 摘要卡箭頭／記帳頁標題／彈層避開 home indicator／區間記錄精選／分類轉場 | **v106** |
 
 - v100（42 項）＝日期輸入框約定 ＋ iOS 貼上 ＋ 向左滑空白 ＋ Toast「知道了」
 - v101（51 項）＝0.1.22 六需求（徽章「圖」／計算公式位置／圖片去重／摘要卡詳情／預設分類／彈窗鎖背景）
@@ -50,16 +51,17 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 - v103（84 項）＝0.1.24（資料統計分本錢包／總資料 ＋ 匯出可選錢包範圍）
 - v104（46 項）＝0.1.25（輸入框 16px ＋ iosScrollGuard ＋ 下拉清單滑得動）
 - v105（44 項）＝0.1.26（雙擊防護 ＋ 摘要卡 ＋ 六個子頁面彈層 ＋ 收據 BETA ＋ 金額點擊）
+- v106（39 項）＝0.1.27（摘要卡連箭頭一起移除 ＋ 記帳頁標題 ＋ 彈層避開 home indicator
+  ＋ 區間記錄依日／月／年精選 ＋ 分類轉場動畫）
 
-### ⚠⚠ 測試常見殺手（**完整清單在 `CONVENTIONS.md`**，這裡只列最會掛掉的）
+### ⚠⚠ 測試常見殺手（**完整清單在 `CONVENTIONS.md`**）
 
-- **`indexedDB.deleteDatabase` 只能在「App 重新載入後」呼叫** → 否則掛死（零輸出、SIGTERM）。
+- **`indexedDB.deleteDatabase` 只能在「App 重新載入後」呼叫** → 否則掛死。
   順序：`goto` → `localStorage.clear()` → `reload` → `deleteDatabase` → `reload` → 種資料
-- **`mop-ledger.wallets.v1` 是 `{ wallets, activeWalletId }`，不是裸陣列**
-- **照抄 `isRealErr()` + `ENV_NOISE`**（Google Fonts 外鏈會讓「沒有 JS 錯誤」偶發紅燈）
-- **要等狀態、不要等時間**；**空集合假通過要防**；**「不會動」要先讓它「能動」**
-- **沙箱不允許 Node 開子行程**（`spawnSync` → `EBUSY`）→ 拆成 shell 腳本
-- ⚠ **`npm install <pkg>` 會拔掉 `@esbuild/win32-x64`** → 把 package.json 那行刪掉再裝回
+- **`mop-ledger.wallets.v1` 是 `{ wallets, activeWalletId }`，不是裸陣列**；
+  **照抄 `isRealErr()` + `ENV_NOISE`**；**要等狀態、不要等時間**；
+  **空集合假通過要防**；**「不會動」要先讓它「能動」**；沙箱不能開子行程；
+  `npm install <pkg>` 會拔掉 `@esbuild/win32-x64` → 刪掉那行再裝回
 
 ## Git / 部署
 
@@ -82,47 +84,37 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 - ⚠ 部署版雜湊與本機 dist **不同**（`VITE_BASE` 會 inlined）→ 比對要看**內容特徵**，不能對雜湊。
   base 由 `resolveBase()` 自動判斷（`.github.io`→`/`，否則 `/<repo>/`；本機 `/`）
 - PWA 看到舊版先 Ctrl+Shift+R／無痕；測試用全新 profile
-- ⚠⚠ **線上驗證的兩個坑**（`CONVENTIONS.md` 有完整版）：
-  1. **`github.io` CDN 有傳播延遲**：剛 deploy 完抓 `index.html`，它可能還指著上一版的
-     hash 檔，而那個檔在 force push 後已被換掉 → 404。**看起來像「部署把站弄壞了」，
-     其實只是還沒傳播完**（`pages/builds/latest` 的 status 已是 `built`）。
-     等 1～2 分鐘重抓就對了，**不要急著重新部署**
-  2. **絕對不要手打 bundle 的雜湊檔名**（`index-BHF_IIia.js` 打成 `...IIIA.js` → 白繞一圈）。
-     要檔名就用 `git/trees/{branch}?recursive=1` 撈、用 shell 變數帶進 URL。
-     - ⚠ `contents` API 對大檔回 404（1MB 限制）→ 改用
-       `raw.githubusercontent.com/<owner>/<repo>/<branch>/<path>`
-  3. 驗線上要看**內容特徵**（`overlay`／`MacIntel` 等程式碼標記、版本號），
-     不要對雜湊——部署版的雜湊和本機 dist 一定不同
+- ⚠⚠ **線上驗證的坑（完整版在 `CONVENTIONS.md`）**：
+  ① `github.io` CDN 有傳播延遲 → 剛 deploy 完抓 index.html 可能 404，
+  等 1～2 分鐘重抓，**不要急著重新部署**
+  ② **絕對不要手打 bundle 的雜湊檔名** → 用 `git/trees/{branch}?recursive=1` 撈、
+  shell 變數帶進 URL；`contents` API 對大檔回 404 → 改用 `raw.githubusercontent.com`
+  ③ 驗線上要看**內容特徵**（程式碼標記、版本號），不要對雜湊
 
 ## 資料
 
-- **錢包（0.1.20 起）**：設定頁最上方可切換，**每個錢包有自己的一整套記錄＋設定**
-  （分類／匯率／幣別／常用備註都跟著錢包走）。切換＝換一本帳。
-  - 存法：`mop-ledger.wallets.v1`；**每錢包設定各自一鍵** `mop-ledger.setting.<id>.v1`；
-    記錄仍是單一鍵 `mop-ledger.records.v1`，每筆蓋 `walletId`
-  - 預設錢包 id 固定 `w_default`（`lib/wallets.ts`）——舊記錄遷移時補的就是它，
-    **不能改成每次 `uid()`**，否則對不到
+- **錢包（0.1.20 起）**：設定頁最上方可切換，**每個錢包有自己的一整套記錄＋設定**。
+  存法：`mop-ledger.wallets.v1`（形狀 `{ wallets, activeWalletId }`）；
+  **每錢包設定各自一鍵** `mop-ledger.setting.<id>.v1`；
+  記錄單一鍵 `mop-ledger.records.v1`，每筆蓋 `walletId`
+  - 預設錢包 id 固定 `w_default`（`lib/wallets.ts`）——舊記錄遷移補的就是它，**不能改成 `uid()`**
   - ⚠ store 對外的 `records` 是 computed（只含當前錢包）；內部 `all` 才是全部。
-    **圖片去重與「還有誰在用這張圖」一律看 `all`**（圖檔 blob 跨錢包共用）
-  - ⚠ settings store 的 `state` ＝「當前錢包」的設定，形狀與單錢包時代相同
-  - ⚠ **「初始化時改資料要自己寫回去」**：store 初始化階段的修改（遷移）發生在
-    watcher 掛上之前，且非 immediate 的 watcher 不會因「初始值」而跑 →
-    兩個真 bug 都是這樣來的（WALLETS_KEY 沒落地、records 沒補 walletId）
-  - ⚠ **「有記錄不給刪錢包」擋在 WalletSection 元件**，不是 store（互相 import 會循環）
-- **匯出**：設定頁 → 彈窗選格式（JSON／Excel）與範圍（本錢包／全部錢包，兩者都能選）。
-  **JSON＝format 2，完整備份可還原**；**Excel＝.zip（xlsx + `images/`），不含任何設定、不能匯回**。
-  ZIP 與 XLSX 都是**自己寫的**（`lib/zip.ts`／`lib/xlsx.ts`，零依賴）→
-  ⚠ 動到那裡之前先讀 `CONVENTIONS.md` 的「匯出」那節（一堆一錯就檔案損毀的雷）
+    **圖片去重與「還有誰在用這張圖」一律看 `all`**
+  - ⚠ settings store 的 `state` ＝「當前錢包」的設定
+  - ⚠ **「初始化時改資料要自己寫回去」**：遷移發生在 watcher 掛上之前，
+    非 immediate 的 watcher 不會因「初始值」而跑 → 兩個真 bug 都是這樣來的
+  - ⚠ **「有記錄不給刪錢包」擋在 WalletSection 元件**，不是 store
+- **匯出**：設定頁 → 彈窗選格式（JSON／Excel）與範圍（本錢包／全部錢包）。
+  **JSON＝format 2，完整備份可還原**；**Excel＝.zip（xlsx + `images/`），不含設定、不能匯回**。
+  ZIP／XLSX 都是**自己寫的**（`lib/zip.ts`／`lib/xlsx.ts`）→
+  ⚠ 動到那裡之前先讀 `CONVENTIONS.md` 的「匯出」那節（一錯就檔案損毀的雷）
 - localStorage `mop-ledger.{wallets,setting.<id>,records,draft}`；
-  `mop-ledger.settings.v1` 是**單錢包時代的舊鍵，刻意不刪**（遷移保險）；
+  `mop-ledger.settings.v1` 是**單錢包時代的舊鍵，刻意不刪**；
   收據原圖在 IndexedDB（`idb-keyval`，跨錢包共用）
-- 分類 `{ id, name, type, color, icon?, builtin, archived, parentId? }`；
-  舊資料載入時 `withIcons()` 補 icon 並回寫
-- `settings.defaultCategoryId`（0.1.22，記帳頁預設分類）**與主頁
-  `favoriteCategories`（常用分類）完全獨立**，互不影響。⚠ 入口 `CategoryManageModal`
-  的「記帳預設」編輯／新增兩態要用 `v-if/v-else` 互斥；已封存分類不能當預設
-- 設定頁「資料」統計分兩組（0.1.24）：**本錢包**／**總資料（含所有錢包）**，
-  圖片數＝「本錢包用到的張數」與「跨錢包的**聯集**張數」→
+- 分類 `{ id, name, type, color, icon?, builtin, archived, parentId? }`；舊資料 `withIcons()` 補 icon
+- `settings.defaultCategoryId` 與主頁 `favoriteCategories` **完全獨立**。
+  ⚠ `CategoryManageModal` 的「記帳預設」編輯／新增兩態用 `v-if/v-else` 互斥
+- 設定頁「資料」統計分**本錢包**／**總資料**兩組；
   ⚠ 圖檔 blob 跨錢包共用，**總張數 ≠ 各錢包相加**
 
 ## 全站約定（含未來所有新畫面）
@@ -168,6 +160,23 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 8. 連點防護別拆：`html { touch-action: manipulation }`、
    `button/a/[role=button] { -webkit-touch-callout: none; user-select: none }`、
    `body { overscroll-behavior-y: none }`、`html { overflow-x: hidden }`
+9. **彈層內容要避開 iPhone 底部工作條**（0.1.27）
+   `.bsheet` 有 `padding-bottom: calc(var(--safe-b) + 8px)`
+   （`--safe-b`＝`env(safe-area-inset-bottom)`，有 Home Indicator 的機型 34px）。
+   ⚠ **背景仍延伸到螢幕最底**（只有內容往上收，否則底部會露出一條遮罩）；
+   ⚠ 各元件的 footer **不要再加一次** `var(--safe-b)`（會變兩份）
+10. **`<Transition>` 包出來的 wrapper 要自己補 `flex + gap`**（0.1.27 的 `.reveal`）
+    包一層 div 之後 `.box > *` 只剩它一個，原本的 `gap` 幫不到裡面的欄位
+
+## 統計頁「區間記錄」的精選規則（0.1.27）
+
+- **日**＝當天金額最大 10 筆；**月**＝以日分組、組間按「該日總額」、每天取前 2 筆、滿 10 筆；
+  **年**＝以月分組（標題變「9月／2026」）、每月 2 筆；**自訂**＝最近 10 筆
+- 有「顯示更多（共 N 筆）／收起」；**換範圍會自動收回**
+- ⚠ 選誰由金額決定、**顯示順序仍是時間序**；組間排序用「該組**總額**」；
+  大小＝`Math.abs(baseAmount)`
+- ⚠ 分組標題的金額要用**完整清單**加總（`RecordList` 的 `totals-from`），
+  不能用精選後的子集合，否則標題看起來像「這個月只花了這樣」
 
 ## 收據辨識記帳（BETA，0.1.26 起在設定頁）
 

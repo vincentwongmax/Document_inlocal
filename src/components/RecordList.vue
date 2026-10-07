@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import type { TxRecord } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { fmtMoney } from '@/lib/currency'
-import { dayKey, dayParts } from '@/lib/date'
+import { dayKey, dayParts, monthKey } from '@/lib/date'
 import RecordRow from './RecordRow.vue'
 
 const props = withDefaults(
@@ -22,8 +22,30 @@ const props = withDefaults(
      * - `created`＝記錄被新增的時間（記錄頁的「最近」檢視用）
      */
     dateBasis?: 'occurred' | 'created'
+    /**
+     * 分組方式（0.1.27）：
+     * - `day`（預設）＝日曆小卡 ＋ 今天／昨天／週X
+     * - `month`＝月標題（`2026年9月`）＋ 該月筆數。統計頁的**年**檢視用。
+     */
+    groupBy?: 'day' | 'month'
+    /**
+     * 分組標題上的「+收入／−支出」要用哪一份資料算（0.1.27）。
+     *
+     * ⚠ 預設跟 `records` 一樣（原本的行為）。但統計頁的「區間記錄」會傳**精選過的**
+     *   子集合（例如每個月只留前 2 筆）——那時一定要把**完整清單**從這裡傳進來，
+     *   否則標題上的金額只會加那 2 筆，看起來像「這個月只花了這樣」。
+     */
+    totalsFrom?: TxRecord[]
   }>(),
-  { showTime: true, collapseAfter: 0, emptyText: '這個範圍沒有記錄', highlight: '', dateBasis: 'occurred' },
+  {
+    showTime: true,
+    collapseAfter: 0,
+    emptyText: '這個範圍沒有記錄',
+    highlight: '',
+    dateBasis: 'occurred',
+    groupBy: 'day',
+    totalsFrom: undefined,
+  },
 )
 const emit = defineEmits<{ edit: [id: string]; remove: [id: string] }>()
 
@@ -35,28 +57,63 @@ function timeOf(r: TxRecord): string {
   return props.dateBasis === 'created' ? r.createdAt : r.occurredAt
 }
 
+/** 這一筆屬於哪一組（依 groupBy 決定用「日」還是「月」當鍵） */
+function keyOf(r: TxRecord): string {
+  return props.groupBy === 'month' ? monthKey(timeOf(r)) : dayKey(timeOf(r))
+}
+
+/**
+ * 每一組的「真實」加總與筆數。
+ * ⚠ 用 `totalsFrom`（完整清單）算，不是用 `records`（可能被精選過）——
+ *   這樣「每個月只顯示 2 筆」時，標題上的金額仍然是那個月的全額。
+ */
+const totalsOf = computed(() => {
+  const src = props.totalsFrom ?? props.records
+  const m = new Map<string, { exp: number; inc: number; count: number }>()
+  for (const r of src) {
+    const k = keyOf(r)
+    const cur = m.get(k) ?? { exp: 0, inc: 0, count: 0 }
+    if (r.type === 'expense') cur.exp += r.baseAmount
+    else cur.inc += r.baseAmount
+    cur.count += 1
+    m.set(k, cur)
+  }
+  return m
+})
+
 const groups = computed(() => {
   const m = new Map<string, TxRecord[]>()
   for (const r of props.records) {
-    const k = dayKey(timeOf(r))
+    const k = keyOf(r)
     if (!m.has(k)) m.set(k, [])
     m.get(k)!.push(r)
   }
+  const thisMonth = monthKey(new Date().toISOString())
   return [...m.entries()]
     .sort((a, b) => (a[0] < b[0] ? 1 : -1))
     .map(([key, list]) => {
       const sorted = [...list].sort((a, b) => (timeOf(a) < timeOf(b) ? 1 : -1))
-      const exp = sorted.reduce((s, r) => s + (r.type === 'expense' ? r.baseAmount : 0), 0)
-      const inc = sorted.reduce((s, r) => s + (r.type === 'income' ? r.baseAmount : 0), 0)
+      const tot = totalsOf.value.get(key) ?? { exp: 0, inc: 0, count: list.length }
       return {
         key,
         parts: dayParts(timeOf(list[0])),
-        exp,
-        inc,
+        /** 月檢視的標題：「2026年9月」拆成 { y: '2026', m: 9 } */
+        month: props.groupBy === 'month' ? monthHeading(key) : null,
+        /** 月檢視的「本月」標記 */
+        isThisMonth: key === thisMonth,
+        exp: tot.exp,
+        inc: tot.inc,
+        count: tot.count,
         list: sorted,
       }
     })
 })
+
+/** `2026-09` → `{ y: '2026', m: 9 }` */
+function monthHeading(key: string): { y: string; m: number } {
+  const [y, m] = key.split('-')
+  return { y, m: Number(m) }
+}
 
 const total = computed(() => props.records.length)
 const collapsed = computed(
@@ -94,11 +151,19 @@ watch(
     <template v-else>
       <div v-for="g in visibleGroups" :key="g.key" class="day">
         <div class="day__head">
-          <span class="day__cal">
+          <!-- 日檢視：日曆小卡（日數大、月份小） -->
+          <span v-if="groupBy === 'day'" class="day__cal">
             <b class="day__num num">{{ g.parts.num }}</b>
             <span class="day__mon">{{ g.parts.mon }}</span>
           </span>
-          <span class="day__tag" :class="{ 'is-today': g.parts.tag === '今天' }">{{ g.parts.tag }}</span>
+          <!-- 月檢視（統計頁的「年」）：月標題（月大、年小），跟日曆小卡同一個位置與尺寸 -->
+          <span v-else class="day__cal day__cal--mon">
+            <b class="day__num num">{{ g.month?.m }}月</b>
+            <span class="day__mon">{{ g.month?.y }}</span>
+          </span>
+          <span class="day__tag" :class="{ 'is-today': g.isThisMonth }">
+            {{ groupBy === 'month' ? (g.isThisMonth ? '本月' : `${g.count} 筆`) : g.parts.tag }}
+          </span>
           <span class="day__rule"></span>
           <span class="day__amt">
             <span v-if="g.inc > 0" class="day__chip is-inc num">
@@ -177,6 +242,15 @@ watch(
   font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--text-3);
+}
+/* 月標題（統計頁「年」檢視）：跟日曆小卡同一個位置與高度，
+   但裝的是「9月 / 2026」——「月」字比純數字寬，所以字級略小一階才不會擠 */
+.day__cal--mon .day__num {
+  font-size: 14.5px;
+}
+.day__cal--mon .day__mon {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
 }
 .day__tag {
   flex: none;

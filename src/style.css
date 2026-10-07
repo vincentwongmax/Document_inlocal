@@ -290,6 +290,22 @@ h4 {
   box-shadow: var(--shadow-3);
   /* 內容自己捲（.bsheet__body），外框只負責圓角與高度 */
   overflow: hidden;
+  /**
+   * ⚠ 0.1.27：**不要讓內容貼死在螢幕最底**。
+   *
+   * 使用者原話：「所有的子頁面都往上移高一點點，不要弄到 IPHONE 的底部工作條」。
+   *
+   * iPhone 的 Home Indicator（底部工作條）疊在畫面最下方約 34px，
+   * 貼底的彈層會讓最後一排按鈕／文字壓在工作條底下，又難按又難看。
+   * `--safe-b` 就是 `env(safe-area-inset-bottom)`（有工作條的機型是 34px，
+   * 其他機型／桌機是 0px），再加 8px 當呼吸空間 ——
+   * 這樣連沒有工作條的機型也會「往上移高一點點」。
+   *
+   * ⚠ 背景（`--surface`）仍然一路延伸到螢幕最底，只有**內容**往上收；
+   *   這是刻意的：彈層的底色不該在底部露出一條遮罩，那會看起來像做壞了。
+   * ⚠ 各元件自己的 footer **不要再寫一次** `var(--safe-b)`，否則會加到兩份。
+   */
+  padding-bottom: calc(var(--safe-b) + 8px);
   /* 下拉回彈／送出畫面用；拖曳中由 .is-dragging 關掉 */
   transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
