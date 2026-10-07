@@ -597,7 +597,7 @@ function save() {
             <!-- 記帳當下用計算機算出來的算式（唯讀；改了金額就會消失） -->
             <span v-if="exprValid" class="expr tiny muted">
               輸入金額時的算式
-              <b class="expr__f num">{{ expr }} =</b>
+              <b class="expr__f num">{{ expr }}=</b>
             </span>
           </label>
 

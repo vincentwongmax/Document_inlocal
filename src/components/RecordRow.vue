@@ -138,11 +138,13 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 算式：比備註再輕一階，等號單獨一格才不會被省略號吃掉 */
+/* 算式：比備註再輕一階，等號單獨一格才不會被省略號吃掉。
+   ⚠ gap 一定要是 0：式子與等號之間不留空隙（`1+1=` 而不是 `1+1 =`）。
+   要「單獨一格」是 flex 的功勞，跟 gap 無關。 */
 .row__expr {
   display: flex;
   align-items: baseline;
-  gap: 4px;
+  gap: 0;
   max-width: 100%;
   min-width: 0;
   color: var(--text-3);

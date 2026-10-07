@@ -227,12 +227,14 @@ export function calcValue(s: CalcState): number {
   return parseExpr()
 }
 
-/** 顯示用公式，例如 1+2×(3−1) */
+/**
+ * 顯示用公式，例如 `1+2×(3−1)`。
+ *
+ * ⚠ 運算子與括號**不加空格**（`1+1` 而不是 `1 + 1`）——使用者要的是一眼看完整條式子，
+ *   空格會讓式子變長、更容易撞到縮字級。
+ */
 export function calcText(s: CalcState): string {
-  return s.tokens
-    .map((t) => (t.t === 'op' ? ` ${t.v} ` : t.v))
-    .join('')
-    .trim()
+  return s.tokens.map((t) => t.v).join('')
 }
 
 /** 大字顯示：輸入中顯示公式，按 = 後顯示答案 */
@@ -242,10 +244,10 @@ export function displayMain(s: CalcState): string {
   return text === '' ? '0' : text
 }
 
-/** 小字顯示：按 = 後顯示「原公式 =」；輸入中為空 */
+/** 小字顯示：按 = 後顯示「原公式=」；輸入中為空 */
 export function displaySub(s: CalcState): string {
   if (!s.done) return ''
-  return s.formula ? `${s.formula} =` : ''
+  return s.formula ? `${s.formula}=` : ''
 }
 
 /**
@@ -253,7 +255,7 @@ export function displaySub(s: CalcState): string {
  *
  * 單一數字上限是 11 位（見 `input()`），加上小數點或負號最多 12 個字元，
  * 所以**正常輸入永遠不會觸發**——多打的那一位根本不會進狀態，字級不會被縮小。
- * 只有長公式（`1 + 2 + 3 …`）或很大的計算結果才會走到這裡。
+ * 只有長公式（`1+2+3+…`）或很大的計算結果才會走到這裡。
  */
 export function isLongDisplay(text: string): boolean {
   return text.length > 12

@@ -74,14 +74,19 @@
   - 縮字級判斷抽成 **`isLongDisplay(text)`（門檻 > 12 字元）**，`CalcSheet` 與 `HomeView`
     共用；正常輸入永遠不會觸發，只有長公式／很大的結果才會
   - 基準字級：`.calcdisp__num` 38px（long 24px）、`.amount__num` 32px（long 22px）
-- **算式會存進記錄**：`TxRecord.expr?: string`（可讀文字，如 `12 + 5 × 3`）
+- **算式會存進記錄**：`TxRecord.expr?: string`（可讀文字，如 `12+5×3`）
   - 來源一律走 **`lib/calc.ts` 的 `calcExpr(state)`**：**只有真的按過運算才回字串**，
     單純一個數字（含 `-500`）回空字串 → `records.add()` 存 `undefined`
     - 判斷 `hasCalculation()`：tokens 有 op／paren 就算；按過 `=` 之後 tokens 只剩答案，
       所以要改看 `state.formula`（`formula.replace(/^-/,'')` 再測運算子）
     - **沒按 `=` 也要記**（`calcValue` 本來就會漸進求值）→ 非 done 時用 `calcText(state)`
+  - ⚠ **`calcText()` 拼接時不加空格**（`1+1` 不是 `1 + 1`），`displaySub()` 給的是
+    `公式=`（等號也貼著）。使用者明確要求過「不需要空格，即 1+1=2」
+    - 改動會連帶影響：CalcSheet／HomeView 的大小字、**存進記錄的 `expr`**、
+      記錄列表與明細 → 相關測試的期望字串要一起改（v70／v83／v86）
   - 顯示：記錄列表 `RecordRow.vue` 的 `.row__expr`（備註下方、灰字、`num` 字型、
-    等號單獨一格才不會被省略號吃掉）；明細 `RecordSheet.vue` 金額欄下方的 `.expr`（唯讀）
+    等號單獨一格才不會被省略號吃掉，**`gap` 必須是 0** 才不會多出空隙）；
+    明細 `RecordSheet.vue` 金額欄下方的 `.expr`（唯讀，`{{ expr }}=`）
   - ⚠ **在明細改過金額就要清掉算式**：`exprValid` 即時隱藏提示，`save()` 送
     `{ expr: undefined }`（`Object.assign` 設 undefined，JSON 會自然省略），
     否則列表上寫的算式會跟金額對不上。只改備註則保留
