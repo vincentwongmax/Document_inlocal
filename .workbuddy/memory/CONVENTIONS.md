@@ -304,3 +304,21 @@
 - `.rangebar__mode` 在 `StatsView.vue` 是**另一份**（文字是「自訂」，且 `#sec` 結構不同）——
   改記錄頁不會影響統計頁，別把兩邊的 CSS 混在一起看
 
+## 記錄頁：標題列的搜尋框（`.search`）
+
+- 比一般 `.field` **小一號**：高 34（`.field` 是 42）、字級 13、`max-width: 200px`、
+  圓角 10、放大鏡 14、清空鈕 22。改動要看 `.smoke/v95.mjs`
+- 覆寫寫在 `RecordsView.vue` 的 scoped `:deep()`，**不動 `ClearableInput.vue`**
+  （它是共用件，動了所有用到的地方都要回歸）
+- ⚠⚠ **`:deep()` 的特異度陷阱**：`.search :deep(.cf__in)` 與 ClearableInput 自己的
+  `.cf__in` **同為 (0,2,0)**，誰贏取決於**打包順序**（實測 ClearableInput 在後 → 它贏）。
+  所以覆寫時刻意多帶一個 class／一層提高特異度：
+  - 輸入框用 `.search :deep(.field.cf__in)` → (0,4,0)
+  - 清空鈕用 `.search :deep(.cf .cf__x)` → (0,4,0)
+  改這裡若「改了沒生效」，先懷疑是特異度，不是沒 rebuild
+- ⚠⚠ **放大鏡圖示曾被輸入框整個蓋掉（0.1.16 修）**：`.search__ic` 是 `position: absolute`
+  且排在 `ClearableInput` **前面**，而 `.cf` 是 `position: relative`；兩者 `z-index: auto` 時
+  「DOM 在後的勝」→ 白底輸入框蓋住放大鏡。**必須給 `.search__ic` 一個 `z-index`**。
+- ⚠ 測「圖示有沒有真的畫出來」**不能用 `elementFromPoint`**（放大鏡有 `pointer-events: none`，
+  永遠不會被命中）→ 要**截圖讀像素**（v95 的做法：clip 放大鏡那塊，數非白像素）
+

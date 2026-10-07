@@ -799,25 +799,49 @@ function removeEditing(id: string) {
 .search {
   position: relative;
   flex: 1;
-  max-width: 280px;
+  max-width: 200px;
   min-width: 0;
 }
 .search__ic {
   position: absolute;
-  left: 12px;
+  left: 10px;
   top: 50%;
   transform: translateY(-50%);
-  width: 17px;
-  height: 17px;
+  width: 14px;
+  height: 14px;
   fill: none;
   stroke: var(--text-3);
   stroke-width: 1.7;
   stroke-linecap: round;
   pointer-events: none;
+  /* ⚠ 一定要有 z-index：ClearableInput 的 `.cf` 是 position:relative 且排在這個 svg 後面，
+     兩者 z-index 都是 auto 時「後面的勝」→ 白色輸入框會把放大鏡整個蓋掉（一直以來都看不到，
+     左邊卻仍留著 30px 內距，看起來就是文字莫名縮排）。 */
+  z-index: 1;
 }
-/* 左側讓開放大鏡；右側 ClearableInput 已自留 40px 給清空鈕 */
-.search :deep(.cf__in) {
-  padding-left: 36px;
+/* 搜尋框比一般 .field 小一號（42 → 34px），擺在標題旁邊才不會太笨重。
+   ⚠ ClearableInput 自己也有 `.cf__in`／`.cf__x` 的同名樣式，特異度跟
+   `.search :deep(.cf__in)` 一樣是 (0,2,0)，**誰贏取決於打包順序**——
+   所以這裡刻意多帶一個 class（`.field.cf__in`）或一層（`.cf .cf__x`）把特異度拉高，
+   不然 padding-right 與清空鈕的尺寸會被它蓋回去。
+   左側讓開放大鏡、右側讓開清空鈕（22px 鈕 + 6px 邊距 + 4px 間隙）。 */
+.search :deep(.field.cf__in) {
+  height: 34px;
+  min-height: 34px;
+  padding-left: 30px;
+  padding-right: 32px;
+  font-size: 13px;
+  border-radius: 10px;
+}
+.search :deep(.cf .cf__x) {
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+}
+.search :deep(.cf__x svg) {
+  width: 13px;
+  height: 13px;
 }
 .ctl {
   display: flex;
