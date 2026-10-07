@@ -89,6 +89,33 @@ html.is-locked body {
   min-height: 100%;
 }
 
+/**
+ * iOS（PWA）連點問題：
+ * 快速連點同一顆鈕時，WebKit 會把手勢判成 double-tap → 放大／把畫面往下帶，
+ * 使用者就會覺得「一直往下捲」。`touch-action: manipulation` 只關掉 double-tap 放大，
+ * 平移（手指滑動）與兩指縮放都照常，所以頁面該捲的還是能捲。
+ * 放在 html 上會連同所有子孫一起限制（touch-action 是由目標往上交集）。
+ */
+html {
+  touch-action: manipulation;
+}
+
+/**
+ * 互動元素額外關掉「長按選單」與「連點選取文字」——
+ * 這兩個也是 iOS 上連點會讓畫面跑掉的來源。
+ * ⚠ 只套在按鈕類：套到 label 會連裡面的 input 一起不能選文字（iOS Safari 會繼承進去）
+ */
+button,
+[role='button'],
+a {
+  /* html 那層已經限制了，這裡明確寫一次：touch-action 不是繼承屬性，
+     寫在元素本身才能保證連點手勢一定被關掉（也比較好驗） */
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 button {
   font: inherit;
   color: inherit;
