@@ -7,6 +7,7 @@ import CalcSheet from '@/components/CalcSheet.vue'
 import CategorySheet from '@/components/CategorySheet.vue'
 import CategoryPicker from '@/components/CategoryPicker.vue'
 import ClearableInput from '@/components/ClearableInput.vue'
+import QuickNotePicker from '@/components/QuickNotePicker.vue'
 import DateTimeField from '@/components/DateTimeField.vue'
 import ReviewSheet from '@/components/ReviewSheet.vue'
 import { useUpload } from '@/composables/useUpload'
@@ -277,7 +278,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               @more="catSheetOpen = true"
             />
           </div>
-          <ClearableInput v-model="note" placeholder="備註（可留空）" :maxlength="80" />
+          <ClearableInput v-model="note" placeholder="備註（可留空）" :maxlength="80">
+            <template #trailing>
+              <QuickNotePicker v-model="note" />
+            </template>
+          </ClearableInput>
           <!-- 日期跟備註同層（同一個 flex 直欄），寬度永遠一致，
                不會被下面「清空／記錄」那列的 min-width 撐寬而跑掉 -->
           <DateTimeField v-model="occurredAt" />

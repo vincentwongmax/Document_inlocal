@@ -150,5 +150,30 @@
   `grid-template-columns: max-content minmax(0, 1fr)`
 - 輸入框內嵌小按鈕：26×26、radius 8px、`right: 5px`、`--accent-soft` 底 ＋ `--accent` 圖示、
   hover 反白；輸入框 `padding-right: 40px`
+  - **要放第二顆時走 `ClearableInput` 的 `trailing` slot**（元件本身不認識業務概念），
+    第二顆放 `right: 34px`（＝5 + 26 + 3），輸入框 `padding-right` 改 72px；
+    由 `:hasTrailing` 自動加 `.cf--extra` 控制
+  - ⚠ 已存在的清空鈕固定在**最右緣**，新按鈕插在它**左邊**——不要為了「最右邊」把 ✕ 擠開
 - 共用件（改動要一併回歸）：`DateTimeField`、`ClearableInput`、`CategoryIcon`、
   `CategoryPicker`、`RecordList`、`RecordRow`、`HighlightText`
+
+## 快速備註（quick notes）
+
+- 資料在 `Settings.quickNotes: string[]`；`merge()` 用 `Array.isArray` 判斷**不要用 `?.length`**，
+  否則使用者把備註全部刪光（存成 `[]`）時預設值會把他們叫回來
+- 設定頁 › 快速備註（`#sec-quicknotes`）：新增／直接改字（**`@change` 才寫回**，失焦或 Enter）／刪除；
+  空白、超過 `QUICK_NOTE_MAX`(20)、重複都不收，呼叫端要把輸入框**還原**成原值
+- 記帳頁與記錄明細的備註欄用 `<template #trailing><QuickNotePicker v-model="note" /></template>`
+- `QuickNotePicker`：填入是**取代**不是疊加；目前用的那一則用 `is-on`（粉紅底＋打勾）標出來；
+  空清單時顯示提示 ＋「管理快速備註」→ `#/settings?sec=quicknotes`（設定頁會自動捲過去）
+  - 彈層沿用 `CategorySelect` 的模式：`Teleport to body` + fixed 定位 + `pointerdown` 點外面關閉
+  - ⚠ **鍵盤要掛在 document 的 capture 階段**：程式 `click()` 與 iOS 手指點擊都不會讓按鈕拿到焦點，
+    靠 `@keydown` 收不到 Esc；而且處理到時要 `stopPropagation()`——
+    **記帳頁在全域（window）監聽 Escape 會清掉金額**，不擋掉會「關清單順手清金額」
+  - ⚠ 焦點在 `INPUT`/`TEXTAREA` 時只認 Esc：不然在備註欄打空白鍵會被當成「選取該項」
+
+⚠ 測這個功能時踩到的兩個坑（測試腳本層面）：
+1. 要開記錄明細只能點 **`.list .row__main`**（內層按鈕）；寫成 `.list .row` 會點到外層 div，
+   它沒有 handler，**失敗是靜默的**
+2. 記錄頁自己的**搜尋框也是 `ClearableInput`**，查備註欄的值／幾何一定要 **scope 到 `.sheet`**，
+   不然會抓到搜尋框

@@ -16,6 +16,7 @@ import { withAlpha } from '@/lib/color'
 import CategoryIcon from './CategoryIcon.vue'
 import CategoryPicker from './CategoryPicker.vue'
 import ClearableInput from './ClearableInput.vue'
+import QuickNotePicker from './QuickNotePicker.vue'
 import DateTimeField from './DateTimeField.vue'
 
 const props = defineProps<{ open: boolean; record: TxRecord | null }>()
@@ -338,7 +339,11 @@ function save() {
           <!-- 備註 -->
           <label class="flat">
             <span class="flat__label">備註</span>
-            <ClearableInput v-model="note" placeholder="可留空" :maxlength="80" />
+            <ClearableInput v-model="note" placeholder="可留空" :maxlength="80">
+              <template #trailing>
+                <QuickNotePicker v-model="note" />
+              </template>
+            </ClearableInput>
           </label>
 
           <!-- 收據圖片 -->

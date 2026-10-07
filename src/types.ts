@@ -108,6 +108,11 @@ export interface Settings {
   visibleCurrencies: string[]
   /** 匯率表顯示的幣別（空陣列 = 全部顯示；可自行新增） */
   rateCurrencies: string[]
+  /**
+   * 快速備註：記帳頁／記錄明細的備註欄右側按鈕會列出的常用文字。
+   * 點一下就填入備註欄（取代原有內容），使用者可在設定頁新增／修改／刪除。
+   */
+  quickNotes: string[]
 }
 
 export interface ExportPayload {

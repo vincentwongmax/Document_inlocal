@@ -8,7 +8,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 
 ## 版本號
 
-- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.7`
+- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.8`
 - 單一來源＝`package.json` 的 `version` → `vite.config.ts` `define` 注入 `__APP_VERSION__`
   （型別在 `env.d.ts`）→ `src/lib/version.ts` → 設定頁「離線與版本」膠囊
 - 每次更新要改 `package.json` ＋ 補一筆 `CHANGELOG.md`
@@ -26,8 +26,8 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
   - ⚠ **node 是 Windows binary**：curl 輸出要存到**專案內**（`.smoke/tmp/`），
     Git Bash 的 `/tmp` 讀不到
   - **維護中的回歸集＝v70～v80**；`v45/v46/v56/v57` 早已失效，別當基準
-  - 改到計算機／彈窗／通知／記錄頁時另外跑 **v82~v86**（計算機 11 位／算式／SweetAlert2／
-    最近檢視／按鍵快按）
+  - 改到計算機／彈窗／通知／記錄頁時另外跑 **v82~v87**（計算機 11 位／算式／SweetAlert2／
+    最近檢視／按鍵快按／快速備註）
 - ⚠ **`npm install <pkg>` 會拔掉 `@esbuild/win32-x64`** → build 爆「needed by esbuild」。
   那是 esbuild 的 optionalDependencies（**不該**進 package.json）：把那行從 package.json
   刪掉再 `npm install` 就會裝回

@@ -31,5 +31,7 @@ export function defaultSettings(base = 'MOP'): Settings {
     favoriteCategories: [],
     visibleCurrencies: [],
     rateCurrencies: ['MOP', 'CNY', 'HKD'],
+    // 只是給個起手式（打開就有東西可按），使用者可以在設定頁改掉或刪光
+    quickNotes: ['M記', '麵'],
   }
 }

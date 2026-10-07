@@ -12,6 +12,9 @@ function withIcons(list: Category[]): Category[] {
   return list.map((c) => (c.icon ? c : { ...c, icon: iconForCategory(c) }))
 }
 
+/** 單一則快速備註的字數上限（記帳頁備註欄本身是 80 字，這裡留得比較短才好按） */
+export const QUICK_NOTE_MAX = 20
+
 function merge(base: Settings, saved: Partial<Settings>): Settings {
   return {
     ...base,
@@ -29,6 +32,9 @@ function merge(base: Settings, saved: Partial<Settings>): Settings {
     rateCurrencies: Array.isArray(saved.rateCurrencies)
       ? saved.rateCurrencies
       : base.rateCurrencies,
+    // ⚠ 一定要用 Array.isArray 判斷：使用者可能刻意把快速備註全部刪光（存成 []），
+    // 那時要尊重「空的」，不能拿預設值把它們叫回來
+    quickNotes: Array.isArray(saved.quickNotes) ? saved.quickNotes : base.quickNotes,
   }
 }
 
@@ -258,6 +264,38 @@ export const useSettingsStore = defineStore('settings', () => {
     else state.value.rateCurrencies.push(code)
   }
 
+  /* ── 快速備註 ─────────────────────────────────────────── */
+  const quickNotes = computed(() => state.value.quickNotes)
+
+  /**
+   * 新增一個快速備註。空白／太長／已經有同樣的都不收，回傳 false。
+   * 重複判斷用 trim 後的字串，避免「M記」與「M記 」變成兩個。
+   */
+  function addQuickNote(text: string): boolean {
+    const t = text.trim()
+    if (!t || t.length > QUICK_NOTE_MAX) return false
+    if (state.value.quickNotes.includes(t)) return false
+    state.value.quickNotes.push(t)
+    return true
+  }
+
+  /** 改第 i 個（改不動時回傳 false，呼叫端負責把輸入框還原） */
+  function updateQuickNote(i: number, text: string): boolean {
+    const list = state.value.quickNotes
+    if (!Number.isInteger(i) || i < 0 || i >= list.length) return false
+    const t = text.trim()
+    if (!t || t.length > QUICK_NOTE_MAX) return false
+    if (list.some((x, j) => j !== i && x === t)) return false
+    list[i] = t
+    return true
+  }
+
+  function removeQuickNote(i: number) {
+    if (Number.isInteger(i) && i >= 0 && i < state.value.quickNotes.length) {
+      state.value.quickNotes.splice(i, 1)
+    }
+  }
+
   function restoreDefaults() {
     state.value.categories = JSON.parse(JSON.stringify(defaultSettings().categories))
   }
@@ -292,6 +330,10 @@ export const useSettingsStore = defineStore('settings', () => {
     visibleCurrencies,
     toggleVisibleCurrency,
     toggleRateCurrency,
+    quickNotes,
+    addQuickNote,
+    updateQuickNote,
+    removeQuickNote,
     restoreDefaults,
   }
 })

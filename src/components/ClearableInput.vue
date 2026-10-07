@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useSlots } from 'vue'
 
 const props = withDefaults(
   defineProps<{
@@ -10,6 +10,13 @@ const props = withDefaults(
   { placeholder: '', maxlength: undefined },
 )
 const emit = defineEmits<{ 'update:modelValue': [v: string] }>()
+
+/**
+ * 右側除了清空鈕還可以有別的內嵌小按鈕（例如備註欄的「快速備註」）。
+ * 放的是 slot 而不是寫死的功能——這個元件本身不該認識任何業務概念。
+ */
+const slots = useSlots()
+const hasTrailing = computed(() => !!slots.trailing)
 
 /** 沒有內容時「清空」鈕變灰不可按，避免看起來像壞掉 */
 const hasText = computed(() => props.modelValue.length > 0)
@@ -24,7 +31,7 @@ function clear() {
 </script>
 
 <template>
-  <div class="cf">
+  <div class="cf" :class="{ 'cf--extra': hasTrailing }">
     <input
       class="field cf__in"
       type="text"
@@ -33,6 +40,9 @@ function clear() {
       :maxlength="maxlength"
       @input="onInput"
     />
+    <span v-if="hasTrailing" class="cf__extra">
+      <slot name="trailing" />
+    </span>
     <button
       class="cf__x"
       type="button"
@@ -57,6 +67,18 @@ function clear() {
 .cf__in {
   min-width: 0;
   padding-right: 40px;
+}
+/* 多一顆小按鈕時右側留白要跟著變寬（26px 按鈕 + 3px 間隙） */
+.cf--extra .cf__in {
+  padding-right: 72px;
+}
+.cf__extra {
+  position: absolute;
+  top: 50%;
+  right: 34px;
+  display: flex;
+  align-items: center;
+  transform: translateY(-50%);
 }
 .cf__x {
   position: absolute;

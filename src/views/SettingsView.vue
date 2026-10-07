@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useSettingsStore } from '@/stores/settings'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
+import { QUICK_NOTE_MAX, useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
 import { notify, confirmDialog } from '@/lib/alerts'
 import CategoryManageModal from '@/components/CategoryManageModal.vue'
@@ -17,6 +18,47 @@ import type { Category, TxType } from '@/types'
 
 const settings = useSettingsStore()
 const records = useRecordsStore()
+const route = useRoute()
+
+/* ── 快速備註 ───────────────────────────────────────────── */
+const newQuick = ref('')
+
+function addQuick() {
+  const t = newQuick.value.trim()
+  if (!t) return
+  if (!settings.addQuickNote(t)) {
+    notify('已經有同樣的快速備註', 'info')
+    return
+  }
+  newQuick.value = ''
+}
+
+/** 改完（失焦或按 Enter）才寫回去；被拒（空白／重複）就把輸入框還原成原值 */
+function renameQuick(i: number, e: Event) {
+  const el = e.target as HTMLInputElement
+  const before = settings.quickNotes[i] ?? ''
+  if (!el.value.trim()) {
+    el.value = before // 不給改成空白，要刪請按旁邊的 ✕
+    return
+  }
+  if (!settings.updateQuickNote(i, el.value)) {
+    notify('已經有同樣的快速備註', 'info')
+    el.value = before
+  }
+}
+
+/**
+ * 從備註欄的「管理快速備註」跳過來時（?sec=quicknotes）直接捲到那一段。
+ * ⚠ 要延後一點再捲：refreshUsage() 是非同步的，資料區的數字補上之前高度還會變。
+ */
+onMounted(() => {
+  if (route.query.sec !== 'quicknotes') return
+  void nextTick(() => {
+    window.setTimeout(() => {
+      document.getElementById('sec-quicknotes')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    }, 140)
+  })
+})
 
 /* ── 幣別與匯率 ─────────────────────────────────────────── */
 const refreshing = ref(false)
@@ -486,6 +528,74 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
       </div>
     </section>
 
+    <!-- 快速備註 -->
+    <section id="sec-quicknotes" class="card sec">
+      <header class="sec__hd">
+        <span class="sec__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M13 2.8 5.6 12.4h5.2l-.6 8.8 8.2-9.6h-5.2z" />
+          </svg>
+        </span>
+        <div class="sec__meta">
+          <h2 class="sec__title">快速備註</h2>
+          <p class="sec__desc">記帳頁與記錄明細的備註欄右邊有一顆閃電鈕，點一下就填入這裡的文字</p>
+        </div>
+      </header>
+
+      <div class="panel">
+        <div class="panel__hd">
+          <span class="panel__label">常用文字</span>
+          <span class="tiny muted panel__meta">已設定 {{ settings.quickNotes.length }} 個</span>
+        </div>
+        <p class="tiny muted favs__hint">
+          點備註欄右邊的閃電鈕就會列出下面這些字，點一下就填進去（會蓋掉原本打的字）。
+          每則最多 {{ QUICK_NOTE_MAX }} 個字。
+        </p>
+
+        <p v-if="!settings.quickNotes.length" class="tiny muted qn__none">
+          還沒有任何快速備註，用下面那一行新增第一則。
+        </p>
+        <div v-else class="qn__list">
+          <div v-for="(t, i) in settings.quickNotes" :key="i" class="qn__row">
+            <input
+              class="field qn__in"
+              type="text"
+              :value="t"
+              :maxlength="QUICK_NOTE_MAX"
+              :aria-label="`快速備註 ${i + 1}`"
+              @change="renameQuick(i, $event)"
+            />
+            <button
+              class="qn__del"
+              type="button"
+              title="刪除"
+              :aria-label="`刪除快速備註 ${t}`"
+              @click="settings.removeQuickNote(i)"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7.8 7.8 16.2 16.2M16.2 7.8 7.8 16.2" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="qn__add">
+          <input
+            v-model="newQuick"
+            class="field qn__addin"
+            type="text"
+            :maxlength="QUICK_NOTE_MAX"
+            placeholder="新增一則（例如：M記）"
+            aria-label="新增快速備註"
+            @keydown.enter.prevent="addQuick"
+          />
+          <button class="btn btn--primary btn--sm" type="button" :disabled="!newQuick.trim()" @click="addQuick">
+            新增
+          </button>
+        </div>
+      </div>
+    </section>
+
     <!-- 資料 -->
     <section class="card sec">
       <header class="sec__hd">
@@ -941,6 +1051,65 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
 }
 .favs__hint {
   margin: 0 0 11px;
+}
+
+/* ── 快速備註 ─────────────────────────────────────────── */
+.qn__none {
+  margin: 0 0 10px;
+}
+.qn__list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+.qn__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+/* 這裡的輸入框刻意比 .field 矮（34px），跟旁邊的「新增」鈕同高，列才不會鬆掉 */
+.qn__in,
+.qn__addin {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  font-size: 14px;
+  background: var(--surface);
+}
+.qn__del {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--text-3);
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+.qn__del:hover {
+  border-color: var(--expense);
+  background: var(--expense-soft);
+  color: var(--expense);
+}
+.qn__del svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.qn__add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* ── 資料 ─────────────────────────────────────────────── */
