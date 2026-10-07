@@ -40,12 +40,20 @@ const categoryId = ref('')
 const occurredAt = ref('')
 const note = ref('')
 const rate = ref(1)
+/** 記帳當下用計算機算出來的算式（唯讀顯示；沒有就是單純輸入一個數字） */
+const expr = ref('')
+/** 載入時的金額：用來判斷使用者有沒有在明細裡改過金額 */
+const loadedAmount = ref(0)
 
 const numeric = computed(() => {
   const n = Number(amount.value)
   return isFinite(n) ? n : 0
 })
 const showRate = computed(() => currencyCode.value !== settings.baseCurrency)
+/** 算式只在金額沒被改過時才成立；改了就自動隱藏，儲存時也一併清掉 */
+const exprValid = computed(
+  () => !!expr.value && Number(numeric.value.toFixed(2)) === Number(loadedAmount.value.toFixed(2)),
+)
 const preview = computed(() => fmtMoney(numeric.value * rate.value, settings.baseCurrency))
 const cat = computed(() => settings.category(categoryId.value))
 const catName = computed(() => cat.value?.name ?? '未分類')
@@ -206,6 +214,8 @@ watch(
     occurredAt.value = toLocalInput(r.occurredAt)
     note.value = r.note ?? ''
     rate.value = r.rate
+    expr.value = r.expr ?? ''
+    loadedAmount.value = r.amount
     images.value = [...(r.images ?? [])]
     originalImages = [...(r.images ?? [])]
     busyImg.value = false
@@ -227,6 +237,8 @@ function save() {
   for (const im of originalImages) if (!keep.has(im.id)) void deleteImage(im.id)
   // 本批新圖將隨記錄一起儲存，清掉 pending 標記
   addedIds.clear()
+  // 金額被改過，原本的算式就不再成立了 → 一併清掉，免得列表上寫的算式對不上金額
+  const amountChanged = Number(numeric.value.toFixed(2)) !== Number(loadedAmount.value.toFixed(2))
   emit('save', {
     type: type.value,
     amount: numeric.value,
@@ -236,6 +248,7 @@ function save() {
     occurredAt: fromLocalInput(occurredAt.value),
     note: note.value.trim(),
     images: images.value,
+    ...(amountChanged ? { expr: undefined } : {}),
   })
 }
 </script>
@@ -294,6 +307,11 @@ function save() {
                 <option v-for="c in CURRENCIES" :key="c.code" :value="c.code">{{ c.code }}</option>
               </select>
             </div>
+            <!-- 記帳當下用計算機算出來的算式（唯讀；改了金額就會消失） -->
+            <span v-if="exprValid" class="expr tiny muted">
+              輸入金額時的算式
+              <b class="expr__f num">{{ expr }} =</b>
+            </span>
           </label>
 
           <!-- 匯率 -->
@@ -651,6 +669,15 @@ function save() {
   font-weight: 700;
   letter-spacing: 0.1em;
   color: var(--text-3);
+}
+/* 唯讀的算式提示：貼在金額欄下面，比標籤再輕一階 */
+.expr {
+  margin-top: -3px;
+  color: var(--text-3);
+}
+.expr__f {
+  color: var(--text-2);
+  font-weight: 600;
 }
 .hero {
   display: flex;

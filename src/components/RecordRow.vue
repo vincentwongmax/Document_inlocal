@@ -67,6 +67,11 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
       <span v-if="record.note" class="row__note tiny muted">
         <HighlightText :text="record.note" :query="highlight" />
       </span>
+      <!-- 記帳時是用計算機算出來的，就把算式留下來（單純輸入一個數字不會有） -->
+      <span v-if="record.expr" class="row__expr tiny">
+        <span class="row__expr-t num">{{ record.expr }}</span>
+        <span class="row__expr-eq">=</span>
+      </span>
     </button>
     <div class="row__amt">
       <strong class="num" :class="isExpense ? 'is-exp' : 'is-inc'">
@@ -126,6 +131,24 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* 算式：比備註再輕一階，等號單獨一格才不會被省略號吃掉 */
+.row__expr {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 0;
+  color: var(--text-3);
+}
+.row__expr-t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row__expr-eq {
+  flex: none;
+  font-weight: 650;
 }
 .imtag,
 .ttag {

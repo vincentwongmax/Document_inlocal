@@ -13,6 +13,8 @@ export interface NewRecordInput {
   currency: string
   occurredAt: string
   note?: string
+  /** 計算機的算式（只有真的算過才傳；見 lib/calc.ts 的 calcExpr） */
+  expr?: string
   images?: ImageRef[]
   source?: TxRecord['source']
   ocr?: OcrInfo
@@ -64,6 +66,7 @@ export const useRecordsStore = defineStore('records', () => {
       baseCurrency: settings.baseCurrency,
       baseAmount: Number((amount * rate).toFixed(2)),
       note: input.note ?? '',
+      expr: input.expr?.trim() ? input.expr.trim() : undefined,
       source: input.source ?? 'manual',
       images: input.images ?? [],
       ocr: input.ocr,

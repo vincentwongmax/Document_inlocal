@@ -14,6 +14,7 @@ import {
   displayMain,
   displaySub,
   calcValue,
+  calcExpr,
   initCalc,
   input,
   equals,
@@ -168,6 +169,8 @@ function submit() {
     currency: curCode.value,
     occurredAt: fromLocalInput(occurredAt.value),
     note: note.value.trim(),
+    // 算出來的才記算式（單純輸入一個數字不記）
+    expr: calcExpr(calc.value),
     source: 'manual',
   })
   const label = `${fmtMoney(rec.baseAmount, rec.baseCurrency)} · ${settings.category(rec.categoryId)?.name ?? ''}`

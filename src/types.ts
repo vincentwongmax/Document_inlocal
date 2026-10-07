@@ -77,6 +77,13 @@ export interface TxRecord {
   /** amount × rate，統計一律以此為準 */
   baseAmount: number
   note: string
+  /**
+   * 記帳當下的計算機算式（可讀文字，例如「12 + 5 × 3」）。
+   * 只有「真的按過運算」才會有——單純輸入一個數字（例如 500）不記，
+   * 免得每筆記錄都多一行跟金額一樣的廢話。
+   * 舊資料沒有這個欄位。
+   */
+  expr?: string
   source: RecordSource
   images: ImageRef[]
   ocr?: OcrInfo

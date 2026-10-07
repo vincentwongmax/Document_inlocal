@@ -258,3 +258,23 @@ export function displaySub(s: CalcState): string {
 export function isLongDisplay(text: string): boolean {
   return text.length > 12
 }
+
+/** 沒有運算子，只有一個數字（前面可能有負號）——例如單純輸入「500」 */
+function hasCalculation(s: CalcState): boolean {
+  if (s.tokens.some((t) => t.t === 'op' || t.t === 'paren')) return true
+  // 按過 = 之後 tokens 只剩結果，要看當初的公式才知道有沒有算過
+  const formula = s.formula ?? ''
+  return /[+\-×÷()]/.test(formula.replace(/^-/, ''))
+}
+
+/**
+ * 記帳時要存進記錄的算式；**不是算出來的**就回空字串。
+ *
+ * 只有「真的按過運算」才算，單純輸入 `500`（或 `-500`）不算——
+ * 那筆記錄再存一次「500 = 500」沒有意義。
+ */
+export function calcExpr(s: CalcState): string {
+  if (!hasCalculation(s)) return ''
+  // 按過 = 之後 tokens 只剩答案，原公式保留在 formula
+  return s.done && s.formula ? s.formula : calcText(s)
+}
