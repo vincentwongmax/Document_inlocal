@@ -8,7 +8,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 
 ## 版本號
 
-- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.14`
+- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.15`
 - 單一來源＝`package.json` 的 `version` → `vite.config.ts` `define` 注入 `__APP_VERSION__`
   （型別在 `env.d.ts`）→ `src/lib/version.ts` → 設定頁「離線與版本」膠囊
 - 每次更新要改 `package.json` ＋ 補一筆 `CHANGELOG.md`
@@ -28,9 +28,11 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
   - ⚠ **node 是 Windows binary**：curl 輸出要存到**專案內**（`.smoke/tmp/`），
     Git Bash 的 `/tmp` 讀不到
   - **維護中的回歸集＝v70～v80**；`v45/v46/v56/v57` 早已失效，別當基準
-  - 改到計算機／彈窗／通知／記錄頁時另外跑 **v82~v93**（計算機 11 位／算式／SweetAlert2／
+  - 改到計算機／彈窗／通知／記錄頁時另外跑 **v82~v94**（計算機 11 位／算式／SweetAlert2／
     最近檢視／按鍵快按／快速備註／收據圖片貼上／收據圖片放大拖曳／統計頁自訂日期框／
-    分類第一列不塞子分類／日期欄＝普通文字框＋下拉關閉明細／算式不留空格）
+    分類第一列不塞子分類／日期欄＝普通文字框＋下拉關閉明細／算式不留空格／
+    記錄頁檢視＋篩選兩列排版）
+    （別跑 `v73`：沒有 `v73.mjs`，只有 `v73-edge/-locale/...` 等變體）
   - ⚠⚠ **測試裡「等固定秒數」比想像中不可靠**：v84 用 `sleep(900)` 等 SweetAlert2 彈窗，
     慢的時候會量到「還沒渲染完的空彈窗」，變成偶發紅燈（約 1/10）。**要等狀態、不要等時間**
     → `waitForFunction(() => !!document.querySelector(目標))` 再 `sleep(400)` 緩衝

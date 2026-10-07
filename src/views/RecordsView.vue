@@ -337,67 +337,71 @@ function removeEditing(id: string) {
     </div>
 
     <div class="card rangebar">
+      <!-- 兩列：上面「檢視」（分類／最近），下面「篩選」（收支切換在左、範圍切換推到最右） -->
       <div class="rangebar__top">
         <div class="grp">
           <span class="grp__label">檢視</span>
-          <!-- .grp 是直向排列，所以按鈕與段控要自己包一列才排得成橫的 -->
+          <!-- .grp 是直向排列，所以按鈕要自己包一列才排得成橫的 -->
           <div class="grp__row">
-          <!-- 依分類檢視的切換鈕：擺在「依單位／自訂範圍」左邊，跟範圍設定分開（兩者互不影響） -->
-          <button
-            type="button"
-            class="bycat"
-            :class="{ 'is-on': byCat }"
-            :aria-pressed="byCat"
-            :title="byCat ? '改為逐筆列出' : '改為依分類分組'"
-            @click="byCat = !byCat"
-          >
-            <svg class="bycat__ic" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 3 3 7.5l9 4.5 9-4.5L12 3Z" />
-              <path d="m3 12.4 9 4.5 9-4.5" />
-              <path d="m3 16.9 9 4.5 9-4.5" />
-            </svg>
-            分類
-          </button>
-          <!-- 時間基準：切到「最近」＝用新增時間查詢（補登舊帳時用交易時間找不到） -->
-          <button
-            type="button"
-            class="bycat"
-            :class="{ 'is-on': recent }"
-            :aria-pressed="recent"
-            :title="recent ? '改回依交易時間查詢' : '改為依新增時間查詢（不是交易時間）'"
-            @click="recent = !recent"
-          >
-            <svg class="bycat__ic" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="12" r="8.4" />
-              <path d="M12 7.4V12l3.1 1.9" />
-            </svg>
-            最近
-          </button>
-          <div class="seg2 rangebar__mode">
-            <button :class="{ 'is-on': mode === 'unit' }" @click="mode = 'unit'">依單位</button>
-            <button :class="{ 'is-on': mode === 'custom' }" @click="mode = 'custom'">自訂範圍</button>
-          </div>
+            <!-- 依分類檢視的切換鈕 -->
+            <button
+              type="button"
+              class="bycat"
+              :class="{ 'is-on': byCat }"
+              :aria-pressed="byCat"
+              :title="byCat ? '改為逐筆列出' : '改為依分類分組'"
+              @click="byCat = !byCat"
+            >
+              <svg class="bycat__ic" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3 3 7.5l9 4.5 9-4.5L12 3Z" />
+                <path d="m3 12.4 9 4.5 9-4.5" />
+                <path d="m3 16.9 9 4.5 9-4.5" />
+              </svg>
+              分類
+            </button>
+            <!-- 時間基準：切到「最近」＝用新增時間查詢（補登舊帳時用交易時間找不到） -->
+            <button
+              type="button"
+              class="bycat"
+              :class="{ 'is-on': recent }"
+              :aria-pressed="recent"
+              :title="recent ? '改回依交易時間查詢' : '改為依新增時間查詢（不是交易時間）'"
+              @click="recent = !recent"
+            >
+              <svg class="bycat__ic" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="8.4" />
+                <path d="M12 7.4V12l3.1 1.9" />
+              </svg>
+              最近
+            </button>
           </div>
         </div>
 
         <div class="grp">
           <span class="grp__label">篩選</span>
-          <div class="seg2">
-            <button :class="{ 'is-on': typeFilter === 'all' }" @click="typeFilter = 'all'">全部</button>
-            <button
-              :class="{ 'is-on': typeFilter === 'expense' }"
-              class="seg2--exp"
-              @click="typeFilter = 'expense'"
-            >
-              支出
-            </button>
-            <button
-              :class="{ 'is-on': typeFilter === 'income' }"
-              class="seg2--inc"
-              @click="typeFilter = 'income'"
-            >
-              收入
-            </button>
+          <div class="grp__row grp__row--split">
+            <div class="seg2">
+              <button :class="{ 'is-on': typeFilter === 'all' }" @click="typeFilter = 'all'">全部</button>
+              <button
+                :class="{ 'is-on': typeFilter === 'expense' }"
+                class="seg2--exp"
+                @click="typeFilter = 'expense'"
+              >
+                支出
+              </button>
+              <button
+                :class="{ 'is-on': typeFilter === 'income' }"
+                class="seg2--inc"
+                @click="typeFilter = 'income'"
+              >
+                收入
+              </button>
+            </div>
+            <!-- 範圍切換：跟收支篩選同一列，但推到最右邊 -->
+            <div class="seg2 rangebar__mode">
+              <button :class="{ 'is-on': mode === 'unit' }" @click="mode = 'unit'">依單位</button>
+              <button :class="{ 'is-on': mode === 'custom' }" @click="mode = 'custom'">自訂範圍</button>
+            </div>
           </div>
         </div>
       </div>
@@ -618,15 +622,16 @@ function removeEditing(id: string) {
   padding: 12px 14px 13px;
   margin-bottom: 14px;
 }
-/* 檢視那一組：切換鈕與「依單位／自訂範圍」橫向並排 */
+/* 檢視／篩選各自一列（直向堆疊），手機上不會兩組擠在同一列 */
 .grp__row {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
-.grp__row .rangebar__mode {
-  align-self: auto;
+/* 篩選那一列：收支段控靠左，「依單位／自訂範圍」推到最右邊 */
+.grp__row--split .rangebar__mode {
+  margin-left: auto;
 }
 .rangebar__mode {
   align-self: flex-start;
@@ -776,10 +781,8 @@ function removeEditing(id: string) {
 }
 .rangebar__top {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 10px;
 }
 /* 搜尋框移到標題列：靠右、與左邊的標題塊垂直居中 */
 .page-head {
@@ -927,7 +930,7 @@ function removeEditing(id: string) {
 }
 .seg2 button {
   height: 28px;
-  padding: 0 14px;
+  padding: 0 10px;
   border-radius: 7px;
   font-size: 13px;
   font-weight: 600;
