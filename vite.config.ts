@@ -2,6 +2,16 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
 import { fileURLToPath, URL } from 'node:url'
+import { readFileSync } from 'node:fs'
+
+/**
+ * 前端要顯示的版本號：唯一來源就是 package.json 的 `version`，
+ * 由下面的 `define` 注入成編譯期常數 `__APP_VERSION__`（型別宣告在 env.d.ts）。
+ * 這樣設定頁不必自己再維護一份版本字串，也就永遠不會跟 package.json 走鐘。
+ */
+const pkg = JSON.parse(
+  readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf-8'),
+) as { version: string }
 
 /**
  * 部署到 GitHub Pages 時的 base（資源路徑前綴）：
@@ -21,6 +31,7 @@ function resolveBase(): string {
 
 export default defineConfig({
   base: resolveBase(),
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   plugins: [
     vue(),
     VitePWA({

@@ -13,6 +13,7 @@ import { buildExport, downloadJson, parseImport, restoreImages } from '@/lib/exp
 import { usageBytes } from '@/lib/storage'
 import { clearImages, listImageIds } from '@/lib/imageDb'
 import { offlineReady, updateSW } from '@/lib/pwa'
+import { APP_VERSION } from '@/lib/version'
 import type { Category, Settings, TxType } from '@/types'
 
 const settings = useSettingsStore()
@@ -540,7 +541,7 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
           </svg>
         </span>
         <div class="sec__meta">
-          <h2 class="sec__title">離線使用</h2>
+          <h2 class="sec__title">離線與版本</h2>
           <p class="sec__desc">沒有網路也能完整開啟與記帳</p>
         </div>
       </header>
@@ -567,7 +568,10 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
               版本
               <small class="tiny muted">收到更新提示時可立即套用</small>
             </span>
-            <button class="btn btn--sm" @click="updateSW(true)">檢查更新</button>
+            <div class="ver">
+              <span class="ver__no num">v{{ APP_VERSION }}</span>
+              <button class="btn btn--sm" @click="updateSW(true)">檢查更新</button>
+            </div>
           </div>
         </div>
         <p class="tiny muted pwa__hint">
@@ -1020,6 +1024,25 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
 .act--danger:hover:not(:disabled) {
   border-color: var(--expense);
   background: var(--expense-soft);
+}
+
+/* ── 版本 ─────────────────────────────────────────────── */
+/* 容器用 div 而非 span：`.row > span` 會把內容排成直欄，膠囊會被擠到按鈕上面 */
+.ver {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.ver__no {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 /* ── 其他 ─────────────────────────────────────────────── */
