@@ -36,8 +36,18 @@
 - 金額欄 → `CalcSheet.vue`；分類「更多」→ `CategorySheet.vue`
 - **計算機只有一個模式**：`Keypad.vue` 固定 5 列 × 4 欄、沒有展開鈕
   （⌫ ( ) ÷ ／ 7 8 9 × ／ 4 5 6 − ／ 1 2 3 ＋ ／ C 0 . ＝）
-  - 運算鍵與 ⌫ 用 SVG 描邊圖示；每顆鍵有 `data-key`（測試用 `[data-key="×"]`，別用 textContent）
+  - 運算鍵與 ⌫ 用 SVG 描邊圖示；每顆鍵有 `data-key`，值是：
+    `⌫` `(` `)` `÷` ／ `7` `8` `9` `×` ／ `4` `5` `6` **`-`** ／ `1` `2` `3` **`+`** ／
+    `C` `0` `.` `=`
+    ⚠ **加減是 ASCII 的 `+` `-`，乘除才是 `×` `÷`** —— 測試寫 `press('＋')` 會靜靜地按不到
+    （圖示是 SVG，`textContent` 也讀不到字，只能靠 `data-key`）
   - ⚠ ÷ 圓點要**用 class** 設 `fill: currentColor`（`.kic{fill:none}` 會蓋掉屬性）
+- **單一數字上限 11 位**：`lib/calc.ts` 的 `input()` 用
+  `last.v.replace(/[.\-]/g, '').length < 11` 擋住第 12 位——**是「不進狀態」不是「遮住」**，
+  否則畫面 11 位、記下的 12 位會對不上。`.` 與 `-` 不佔額度（最多 12 字元）
+  - 縮字級判斷抽成 **`isLongDisplay(text)`（門檻 > 12 字元）**，`CalcSheet` 與 `HomeView`
+    共用；正常輸入永遠不會觸發，只有長公式／很大的結果才會
+  - 基準字級：`.calcdisp__num` 38px（long 24px）、`.amount__num` 32px（long 22px）
 - **鎖背景捲動用 `composables/useScrollLock.ts`**，三段缺一都會漏：
   ① `<html>` 掛 `is-locked`（`overflow:hidden`＋`overscroll-behavior:none`）
   ② **body 變 `position:fixed; top:-savedY`**（只加 overflow 會讓 scrollTop 歸零；
@@ -68,6 +78,16 @@
 
 ## 樣式細節
 
+- ⚠ **原生日期／時間輸入框要與 `.field` 同高**（Safari 會把它撐高，跟備註欄對不齊）：
+  Safari 把 `date`/`datetime-local` 拆成 shadow DOM 的多個小欄位（年、月、日、時、分…），
+  **每個欄位都自帶 padding** → 整個框比文字框高。
+  解法寫在 `style.css` 的 `.field` 上（**不是** `DateTimeField.vue`）：
+  ① `::-webkit-datetime-edit*` 那批內部欄位 `padding: 0`
+  ② `height: 42px` **＋ `min-height: 42px`**（⚠ 少了 `min-height` 會被 Safari 的 UA 最小高度壓過去）
+  - 做在 `.field` 才會連**記錄頁的日期範圍**與**統計頁的 monthbar／自訂範圍**（原生 `type="date"`）
+    一起修到；只改 `DateTimeField` 會漏掉那兩頁
+  - ⚠ **不要用 `-webkit-appearance: none`**（會把 Chrome 的原生日曆鈕一起關掉）
+  - `::-webkit-datetime-edit*` 在 Chrome 也支援且預設內距為 0 → 設 0 無副作用，**不必偵測 iOS**
 - ⚠ 「標籤＋說明」列**別用 flex**（中文 min-content 只 1 字會壓縮標籤）→
   `grid-template-columns: max-content minmax(0, 1fr)`
 - 輸入框內嵌小按鈕：26×26、radius 8px、`right: 5px`、`--accent-soft` 底 ＋ `--accent` 圖示、
