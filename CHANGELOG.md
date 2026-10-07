@@ -20,6 +20,29 @@
 
 ---
 
+## [0.1.2] — 2026-10-07
+
+### 變更
+
+- **通知全面改用 SweetAlert2**（<https://sweetalert2.github.io/>）：原本自製的 Toast、確認
+  彈窗，以及頁面上方的「已有新版本／已可離線使用」橫幅，全部改走 SweetAlert2，外觀採
+  **官方原生樣式**。
+  - **Toast**：畫面底部置中（跟原本位置一致），語氣對應 icon（成功／警告／資訊／錯誤），
+    可夾帶一顆動作按鈕（例如「已記錄 …〔復原〕」）
+  - **確認彈窗**：危險操作（重置、刪除分類）用紅色確認鈕＋警告圖示；匯入時的
+    「連設定一起還原／只匯入記錄／取消」對應 SweetAlert2 的 confirm／deny／cancel
+  - **版本與離線提示**：「已有新版本」改成 SweetAlert 詢問「立即更新／稍後」，
+    「已可離線使用」改成 Toast，頁面上方的橫幅移除
+  - 置底 Toast 會被底部導航列蓋住，因此用 CSS 往上讓開；除此以外沒有加任何自訂樣式
+
+### 內部
+
+- 移除自製的 `ToastHost.vue`、`ConfirmDialog.vue`、`composables/useToast.ts`；
+  通知統一由 `src/lib/alerts.ts` 的 `notify()` / `confirmDialog()` / `askUpdate()` 發出
+- 新增相依套件 `sweetalert2@^11.26.25`
+
+---
+
 ## [0.1.1] — 2026-10-07
 
 ### 新增

@@ -2,8 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
-import { useToast } from '@/composables/useToast'
-import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import { notify, confirmDialog } from '@/lib/alerts'
 import CategoryManageModal from '@/components/CategoryManageModal.vue'
 import CategoryIcon from '@/components/CategoryIcon.vue'
 import { iconForCategory } from '@/lib/icons'
@@ -14,11 +13,10 @@ import { usageBytes } from '@/lib/storage'
 import { clearImages, listImageIds } from '@/lib/imageDb'
 import { offlineReady, updateSW } from '@/lib/pwa'
 import { APP_VERSION } from '@/lib/version'
-import type { Category, Settings, TxType } from '@/types'
+import type { Category, TxType } from '@/types'
 
 const settings = useSettingsStore()
 const records = useRecordsStore()
-const toast = useToast()
 
 /* ── 幣別與匯率 ─────────────────────────────────────────── */
 const refreshing = ref(false)
@@ -78,12 +76,12 @@ async function refresh() {
   refreshing.value = true
   const ok = await settings.refreshRates()
   refreshing.value = false
-  toast.push(ok ? '匯率已更新' : '無法連上匯率服務，沿用既有匯率', ok ? 'ok' : 'warn')
+  notify(ok ? '匯率已更新' : '無法連上匯率服務，沿用既有匯率', ok ? 'ok' : 'warn')
 }
 
 async function changeBase(code: string) {
   await settings.setBaseCurrency(code)
-  toast.push(`主幣別已改為 ${code}`, 'ok')
+  notify(`主幣別已改為 ${code}`, 'ok')
 }
 
 /* ── 分類管理 ───────────────────────────────────────────── */
@@ -132,7 +130,7 @@ function onCreateCat(p: CatForm) {
   const c = settings.addCategory(p.name, p.type, p.color, p.icon, p.parentId)
   showCatMgr.value = false
   const under = p.parentId ? settings.category(p.parentId)?.name : ''
-  toast.push(under ? `已在「${under}」底下新增子分類` : '已新增分類', 'ok')
+  notify(under ? `已在「${under}」底下新增子分類` : '已新增分類', 'ok')
   return c
 }
 function onSaveCat(p: CatForm & { id: string }) {
@@ -144,16 +142,16 @@ function onSaveCat(p: CatForm & { id: string }) {
     parentId: p.parentId,
   })
   showCatMgr.value = false
-  toast.push('已儲存分類', 'ok')
+  notify('已儲存分類', 'ok')
 }
 function onRemoveCat(id: string) {
   const check = settings.canRemove(id)
   if (!check.ok) {
-    toast.push(check.reason, 'warn')
+    notify(check.reason, 'warn')
     return
   }
   const ok = settings.removeCategory(id)
-  toast.push(ok ? '已刪除分類' : '刪除失敗', ok ? 'ok' : 'warn')
+  notify(ok ? '已刪除分類' : '刪除失敗', ok ? 'ok' : 'warn')
 }
 
 /* ── 資料管理 ───────────────────────────────────────────── */
@@ -171,35 +169,47 @@ async function doExport() {
   try {
     const payload = await buildExport(records.records, settings.state)
     const name = downloadJson(payload)
-    toast.push(`已匯出 ${payload.records.length} 筆 → ${name}`, 'ok')
+    notify(`已匯出 ${payload.records.length} 筆 → ${name}`, 'ok')
   } catch (e) {
-    toast.push(e instanceof Error ? e.message : '匯出失敗', 'warn')
+    notify(e instanceof Error ? e.message : '匯出失敗', 'warn')
   }
   exporting.value = false
 }
 
 const importInput = ref<HTMLInputElement | null>(null)
-const pendingImport = ref<{ records: ReturnType<typeof parseImport>['records']; settings?: Settings; images: Record<string, string> } | null>(null)
+type ParsedImport = ReturnType<typeof parseImport>
 
 function pickImport() {
   importInput.value?.click()
 }
 
 async function onImportFile(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
+  const el = e.target as HTMLInputElement
+  const file = el.files?.[0]
+  el.value = ''
   if (!file) return
+
+  let parsed: ParsedImport
   try {
-    const parsed = parseImport(await file.text())
-    pendingImport.value = parsed
+    parsed = parseImport(await file.text())
   } catch (err) {
-    toast.push(err instanceof Error ? err.message : '匯入失敗', 'warn')
+    notify(err instanceof Error ? err.message : '匯入失敗', 'warn')
+    return
   }
-  ;(e.target as HTMLInputElement).value = ''
+
+  // 「連設定一起還原」＝confirm、「只匯入記錄」＝deny
+  const answer = await confirmDialog({
+    title: '匯入資料',
+    message: `檔案含 ${parsed.records.length} 筆記錄。是否同時還原匯出時的設定（分類、匯率、幣別）？`,
+    confirmText: '連設定一起還原',
+    denyText: '只匯入記錄',
+    cancelText: '取消',
+  })
+  if (answer === 'cancel') return
+  await runImport(parsed, answer === 'confirm')
 }
 
-async function runImport(withSettings: boolean) {
-  const p = pendingImport.value
-  if (!p) return
+async function runImport(p: ParsedImport, withSettings: boolean) {
   if (withSettings && p.settings) {
     settings.state.categories = p.settings.categories
     settings.state.preferredCurrency = p.settings.preferredCurrency
@@ -211,20 +221,24 @@ async function runImport(withSettings: boolean) {
   }
   await restoreImages(p.records, p.images)
   const { added, skipped } = records.mergeImport(p.records)
-  pendingImport.value = null
   await refreshUsage()
-  toast.push(`匯入完成：新增 ${added} 筆${skipped ? `、略過 ${skipped} 筆重複` : ''}`, 'ok')
+  notify(`匯入完成：新增 ${added} 筆${skipped ? `、略過 ${skipped} 筆重複` : ''}`, 'ok')
 }
 
 /* ── 重置 ───────────────────────────────────────────────── */
-const askReset = ref(false)
 async function doReset() {
+  const answer = await confirmDialog({
+    title: '確定要重置嗎？',
+    message: '所有記錄與圖片都會被清除，且無法復原（幣別、匯率、分類等設定會保留）。',
+    confirmText: '重置',
+    danger: true,
+  })
+  if (answer !== 'confirm') return
   await records.reset()
   await clearImages()
   localStorage.removeItem('mop-ledger.draft.v1')
-  askReset.value = false
   await refreshUsage()
-  toast.push('已重置，所有記錄與圖片都已清除', 'info')
+  notify('已重置，所有記錄與圖片都已清除', 'info')
 }
 
 const ocrLangOptions = [
@@ -520,7 +534,7 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
           <span class="act__t">匯入</span>
           <span class="act__d tiny muted">合併去重（id／圖片 MD5）</span>
         </button>
-        <button class="act act--danger" @click="askReset = true">
+        <button class="act act--danger" @click="doReset">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
             <path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13" />
@@ -585,28 +599,6 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
       · 1 {{ settings.inputCurrency }} ≈
       {{ fmtMoney(settings.rate(settings.inputCurrency), settings.baseCurrency) }}
     </p>
-
-    <ConfirmDialog
-      :open="!!pendingImport"
-      title="匯入資料"
-      :message="`檔案含 ${pendingImport?.records.length ?? 0} 筆記錄。是否同時還原匯出時的設定（分類、匯率、幣別）？`"
-      confirm-text="連設定一起還原"
-      alt-text="只匯入記錄"
-      cancel-text="取消"
-      @confirm="runImport(true)"
-      @alt="runImport(false)"
-      @cancel="pendingImport = null"
-    />
-
-    <ConfirmDialog
-      :open="askReset"
-      title="確定要重置嗎？"
-      message="所有記錄與圖片都會被清除，且無法復原（幣別、匯率、分類等設定會保留）。"
-      confirm-text="重置"
-      danger
-      @confirm="doReset"
-      @cancel="askReset = false"
-    />
 
     <CategoryManageModal
       :open="showCatMgr"

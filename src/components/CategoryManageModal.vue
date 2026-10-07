@@ -6,7 +6,7 @@ import { withAlpha } from '@/lib/color'
 import { flattenCategories } from '@/lib/tree'
 import CategoryIcon from './CategoryIcon.vue'
 import CategorySelect from './CategorySelect.vue'
-import ConfirmDialog from './ConfirmDialog.vue'
+import { confirmDialog } from '@/lib/alerts'
 
 const props = withDefaults(
   defineProps<{
@@ -51,7 +51,6 @@ const parentSel = ref(TOP)
 /** 使用者手動挑過圖示後，就不再依名稱自動推薦 */
 const iconPicked = ref(false)
 const custom = ref(false)
-const askRemove = ref(false)
 
 const parentId = computed(() => {
   const v = parentSel.value
@@ -244,7 +243,6 @@ watch(
       // 每次打開都回到「還沒選」的狀態，類型回到預設讓使用者自己選
       catType.value = props.defaultType
       choose(PICK)
-      askRemove.value = false
     }
   },
 )
@@ -267,10 +265,20 @@ function submit() {
   else emit('create', payload)
 }
 
-function confirmRemove() {
-  if (!editing.value) return
-  emit('remove', editing.value.id)
-  askRemove.value = false
+/** 刪除前先問一次（SweetAlert2 彈窗） */
+async function askRemove() {
+  const target = editing.value
+  if (!target) return
+  const answer = await confirmDialog({
+    title: `刪除「${target.name}」？`,
+    message: usedCount.value
+      ? `有 ${usedCount.value} 筆記錄使用這個分類，刪除後這些記錄仍會保留原本的分類名稱，但分類不再出現在選單裡。`
+      : '刪除後這個分類不會再出現在選單裡。',
+    confirmText: '刪除',
+    danger: true,
+  })
+  if (answer !== 'confirm' || editing.value?.id !== target.id) return
+  emit('remove', target.id)
   // 刪完回到「還沒選」，讓使用者重新挑一個
   choose(PICK)
 }
@@ -455,7 +463,7 @@ function confirmRemove() {
             type="button"
             :disabled="kidCount > 0"
             :title="kidCount ? `還有 ${kidCount} 個子分類，請先刪除子分類` : '刪除這個分類'"
-            @click="askRemove = true"
+            @click="askRemove"
           >
             刪除
           </button>
@@ -471,20 +479,6 @@ function confirmRemove() {
           </button>
         </div>
       </div>
-
-      <ConfirmDialog
-        :open="askRemove"
-        :title="`刪除「${editing?.name ?? ''}」？`"
-        :message="
-          usedCount
-            ? `有 ${usedCount} 筆記錄使用這個分類，刪除後這些記錄仍會保留原本的分類名稱，但分類不再出現在選單裡。`
-            : '刪除後這個分類不會再出現在選單裡。'
-        "
-        confirm-text="刪除"
-        danger
-        @confirm="confirmRemove"
-        @cancel="askRemove = false"
-      />
     </div>
   </Transition>
 </template>

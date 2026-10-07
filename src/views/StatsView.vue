@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
-import { useToast } from '@/composables/useToast'
+import { notify } from '@/lib/alerts'
 import { useStats, type DateRange } from '@/composables/useStats'
 import { fmtMoney, fmtNum } from '@/lib/currency'
 import {
@@ -27,7 +27,6 @@ import { withAlpha } from '@/lib/color'
 
 const settings = useSettingsStore()
 const records = useRecordsStore()
-const toast = useToast()
 
 /* ── 區間選擇 ───────────────────────────────────────────── */
 const mode = ref<'day' | 'month' | 'year' | 'custom'>('month')
@@ -171,14 +170,14 @@ function openRecord(id: string) {
 function saveEdit(patch: Partial<TxRecord>) {
   if (editingId.value) records.update(editingId.value, patch)
   editingId.value = null
-  toast.push('已更新', 'ok')
+  notify('已更新', 'ok')
 }
 
 function removeRecord(id: string) {
   const r = records.records.find((x) => x.id === id)
   records.remove(id)
   editingId.value = null
-  toast.push('已刪除', 'info', {
+  notify('已刪除', 'info', {
     label: '復原',
     run: () => {
       if (r) records.restore(r)

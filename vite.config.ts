@@ -82,6 +82,7 @@ export default defineConfig({
         manualChunks(id) {
           if (id.includes('tesseract.js')) return 'ocr'
           if (id.includes('chart.js')) return 'chart'
+          if (id.includes('sweetalert2')) return 'sweetalert'
           if (id.includes('node_modules/vue')) return 'vue'
         },
       },

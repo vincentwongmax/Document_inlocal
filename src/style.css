@@ -325,3 +325,22 @@ textarea.field {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── SweetAlert2 ───────────────────────────────────────────
+   全站通知（底部置中 Toast 與確認彈窗）都走 SweetAlert2，外觀用官方原生樣式。
+
+   ⚠ 官方 CSS **不要自己 import**：套件入口（sweetalert2.all.js）會在執行時把整份
+     CSS 插成 <head> 裡的一個行內 <style>，而且插在我們所有 <link> 之後
+     —— 文件順序在後，同權重就會贏過 style.css 的規則。
+     所以下面這個唯一的覆寫必須加 !important 才蓋得過它（不是偷懶，是必要）。
+
+   這裡只做一件官方樣式沒涵蓋的事：置底的 Toast 會被底部導航列蓋住，往上讓開。 */
+body.swal2-toast-shown .swal2-container.swal2-bottom {
+  bottom: calc(var(--nav-h) + var(--safe-b) + 14px) !important;
+}
+@media (min-width: 1024px) {
+  /* 電腦版是側欄版面，沒有底部導航列 */
+  body.swal2-toast-shown .swal2-container.swal2-bottom {
+    bottom: 22px !important;
+  }
+}

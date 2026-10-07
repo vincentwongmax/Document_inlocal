@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
 import { fmtMoney } from '@/lib/currency'
-import ToastHost from '@/components/ToastHost.vue'
+import { askUpdate, notify } from '@/lib/alerts'
 import { needRefresh, offlineReady, updateSW } from '@/lib/pwa'
 
 const route = useRoute()
@@ -21,26 +21,19 @@ const nav = [
 const balance = computed(() => records.totalIncome - records.totalExpense)
 const base = computed(() => settings.baseCurrency)
 
+/* 有新版本：跳 SweetAlert 問要不要立刻套用 */
+watch(needRefresh, async (v) => {
+  if (v && (await askUpdate())) updateSW(true)
+})
+
 /* 首次離線就緒時提示一次 */
-const showOfflineHint = ref(false)
 watch(offlineReady, (v) => {
-  if (v) showOfflineHint.value = true
+  if (v) notify('已可離線使用', 'ok')
 })
 </script>
 
 <template>
     <div class="shell">
-      <!-- 離線就緒 / 版本更新提示 -->
-      <Transition name="banner">
-        <div v-if="needRefresh || showOfflineHint" class="banner">
-          <span class="tiny">
-            {{ needRefresh ? '已有新版本' : '已可離線使用' }}
-          </span>
-          <button v-if="needRefresh" class="banner__btn tiny" @click="updateSW(true)">更新</button>
-          <button v-else class="banner__btn tiny" @click="showOfflineHint = false">知道了</button>
-        </div>
-      </Transition>
-
       <!-- 側欄（電腦） -->
     <aside class="side">
       <div class="brand">
@@ -99,8 +92,6 @@ watch(offlineReady, (v) => {
         <span>{{ n.label }}</span>
       </RouterLink>
     </nav>
-
-    <ToastHost />
   </div>
 </template>
 
@@ -108,39 +99,6 @@ watch(offlineReady, (v) => {
 .shell {
   min-height: 100vh;
   min-height: 100dvh;
-}
-
-.banner {
-  position: fixed;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 95;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 12px;
-  border-radius: 999px;
-  background: #1b1a18;
-  color: #fff;
-  box-shadow: var(--shadow-2);
-}
-.banner__btn {
-  color: #fff;
-  font-weight: 650;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.banner-enter-active,
-.banner-leave-active {
-  transition:
-    opacity 0.2s,
-    transform 0.2s;
-}
-.banner-enter-from,
-.banner-leave-to {
-  opacity: 0;
-  transform: translate(-50%, -8px);
 }
 
 /* ── 側欄 ── */

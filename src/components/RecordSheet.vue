@@ -4,7 +4,7 @@ import { useScrollLock } from '@/composables/useScrollLock'
 import type { ImageRef, TxRecord, TxType } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
-import { useToast } from '@/composables/useToast'
+import { notify } from '@/lib/alerts'
 import { getImage, putImage, deleteImage } from '@/lib/imageDb'
 import { compressImage, makeThumb } from '@/lib/imaging'
 import { md5OfFile } from '@/lib/md5'
@@ -27,7 +27,6 @@ const emit = defineEmits<{
 
 const settings = useSettingsStore()
 const records = useRecordsStore()
-const toast = useToast()
 
 /** 明細內容是彈窗裡唯一可捲的地方，其餘（含背景）都要鎖住 */
 const bodyEl = ref<HTMLElement | null>(null)
@@ -115,7 +114,7 @@ async function openImage(im: ImageRef) {
   }
   const blob = await getImage(im.id)
   if (!blob) {
-    toast.push('圖片已不存在（可能已被清除）', 'warn')
+    notify('圖片已不存在（可能已被清除）', 'warn')
     return
   }
   const url = URL.createObjectURL(blob)
@@ -163,7 +162,7 @@ async function onFiles(e: Event) {
       })
       addedIds.add(id)
     }
-    if (skipped) toast.push(`已略過 ${skipped} 張重複圖片`, 'warn')
+    if (skipped) notify(`已略過 ${skipped} 張重複圖片`, 'warn')
   } finally {
     busyImg.value = false
   }
@@ -220,7 +219,7 @@ watch(currencyCode, (c) => {
 
 function save() {
   if (!(numeric.value > 0)) {
-    toast.push('金額必須大於 0', 'warn')
+    notify('金額必須大於 0', 'warn')
     return
   }
   // 清掉在明細中被移除的既有圖片

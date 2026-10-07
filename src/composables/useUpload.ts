@@ -8,7 +8,7 @@ import { putImage } from '@/lib/imageDb'
 import { compressImage, makeOcrImage, makeThumb } from '@/lib/imaging'
 import { recognize } from '@/lib/ocr'
 import { uid } from '@/lib/id'
-import { useToast } from './useToast'
+import { notify } from '@/lib/alerts'
 
 const drafts = ref<DraftRecord[]>([])
 const stage = ref<'idle' | 'prep' | 'ocr'>('idle')
@@ -35,7 +35,6 @@ function pickDefault(cands: AmountCandidate[], preferred: string): AmountCandida
 export function useUpload() {
   const records = useRecordsStore()
   const settings = useSettingsStore()
-  const toast = useToast()
 
   const readyCount = computed(() => drafts.value.filter((d) => d.status === 'ready').length)
   const pendingCount = computed(
@@ -183,7 +182,7 @@ export function useUpload() {
       (d) => (only ? only.includes(d.key) : true) && d.status !== 'duplicate' && d.amount !== null && d.amount > 0,
     )
     if (!list.length) {
-      toast.push('沒有可新增的記錄（金額為空或已略過）', 'warn')
+      notify('沒有可新增的記錄（金額為空或已略過）', 'warn')
       return 0
     }
     const added: string[] = []
@@ -205,7 +204,7 @@ export function useUpload() {
     drafts.value = []
     ocrSources.clear()
     reviewOpen.value = false
-    toast.push(`已新增 ${added.length} 筆記錄`, 'ok', {
+    notify(`已新增 ${added.length} 筆記錄`, 'ok', {
       label: '復原',
       run: () => added.forEach((id) => records.remove(id)),
     })

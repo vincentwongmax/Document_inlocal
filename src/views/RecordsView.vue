@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
-import { useToast } from '@/composables/useToast'
+import { notify } from '@/lib/alerts'
 import type { DateRange } from '@/composables/useStats'
 import type { TxRecord } from '@/types'
 import RecordList from '@/components/RecordList.vue'
@@ -29,7 +29,6 @@ import {
 
 const records = useRecordsStore()
 const settings = useSettingsStore()
-const toast = useToast()
 
 const mode = ref<'unit' | 'custom'>('unit')
 const unit = ref<RangeUnit>('day')
@@ -264,14 +263,14 @@ const editing = computed(() => records.records.find((r) => r.id === editingId.va
 function saveEdit(patch: Partial<TxRecord>) {
   if (editingId.value) records.update(editingId.value, patch)
   editingId.value = null
-  toast.push('已更新', 'ok')
+  notify('已更新', 'ok')
 }
 
 function removeEditing(id: string) {
   const r = records.records.find((x) => x.id === id)
   records.remove(id)
   editingId.value = null
-  toast.push('已刪除', 'info', {
+  notify('已刪除', 'info', {
     label: '復原',
     run: () => {
       if (r) records.restore(r)

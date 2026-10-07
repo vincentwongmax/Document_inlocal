@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
-import { useToast } from '@/composables/useToast'
+import { notify } from '@/lib/alerts'
 import CalcSheet from '@/components/CalcSheet.vue'
 import CategorySheet from '@/components/CategorySheet.vue'
 import CategoryPicker from '@/components/CategoryPicker.vue'
@@ -18,7 +18,6 @@ import { readJSON, writeJSON } from '@/lib/storage'
 
 const records = useRecordsStore()
 const settings = useSettingsStore()
-const toast = useToast()
 const up = useUpload()
 
 /* ── 表單狀態 ───────────────────────────────────────────── */
@@ -141,16 +140,16 @@ function resetForm() {
 function clearForm() {
   const dirty = calc.value.tokens.length > 0 || note.value !== ''
   resetForm()
-  if (dirty) toast.push('已清空', 'info')
+  if (dirty) notify('已清空', 'info')
 }
 
 function submit() {
   if (!(amount.value > 0)) {
-    toast.push('請先輸入金額', 'warn')
+    notify('請先輸入金額', 'warn')
     return
   }
   if (!categoryId.value) {
-    toast.push('請選擇分類', 'warn')
+    notify('請選擇分類', 'warn')
     return
   }
   const rec = records.add({
@@ -163,7 +162,7 @@ function submit() {
     source: 'manual',
   })
   const label = `${fmtMoney(rec.baseAmount, rec.baseCurrency)} · ${settings.category(rec.categoryId)?.name ?? ''}`
-  toast.push(`已記錄 ${label}`, 'ok', { label: '復原', run: () => records.remove(rec.id) })
+  notify(`已記錄 ${label}`, 'ok', { label: '復原', run: () => records.remove(rec.id) })
 
   resetForm()
 }
