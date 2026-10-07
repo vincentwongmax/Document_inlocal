@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { TxRecord } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { fmtMoney } from '@/lib/currency'
+import { displayExpr } from '@/lib/calc'
 import { formatFull, relativeTime } from '@/lib/date'
 import { iconForCategory } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
@@ -75,7 +76,7 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
       </span>
       <!-- 記帳時是用計算機算出來的，就把算式留下來（單純輸入一個數字不會有） -->
       <span v-if="record.expr" class="row__expr tiny">
-        <span class="row__expr-t num">{{ record.expr }}</span>
+        <span class="row__expr-t num">{{ displayExpr(record.expr) }}</span>
         <span class="row__expr-eq">=</span>
       </span>
     </button>

@@ -11,6 +11,7 @@ import { compressImage, makeThumb } from '@/lib/imaging'
 import { md5OfFile } from '@/lib/md5'
 import { uid } from '@/lib/id'
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
+import { displayExpr } from '@/lib/calc'
 import { formatFull, fromLocalInput, toLocalInput } from '@/lib/date'
 import { iconForCategory } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
@@ -597,7 +598,7 @@ function save() {
             <!-- 記帳當下用計算機算出來的算式（唯讀；改了金額就會消失） -->
             <span v-if="exprValid" class="expr tiny muted">
               輸入金額時的算式
-              <b class="expr__f num">{{ expr }}=</b>
+              <b class="expr__f num">{{ displayExpr(expr) }}=</b>
             </span>
           </label>
 

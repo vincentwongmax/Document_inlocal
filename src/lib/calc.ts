@@ -280,3 +280,15 @@ export function calcExpr(s: CalcState): string {
   // 按過 = 之後 tokens 只剩答案，原公式保留在 formula
   return s.done && s.formula ? s.formula : calcText(s)
 }
+
+/**
+ * 記錄裡存的算式 → 顯示用字串（拿掉所有空白）。
+ *
+ * ⚠ 為什麼不能直接顯示 `record.expr`：**0.1.14 之前存的是有空格的字串**
+ *   （`12 + 5 × 3`）。那些記錄已經在裝置上了，不處理的話列表上會新舊混在一起
+ *   ——看起來就像這次的修改沒生效。算式裡本來就只會有 `+ - × ÷ ( )` 與數字，
+ *   拿掉空白不會誤傷任何東西。
+ */
+export function displayExpr(expr: string): string {
+  return (expr ?? '').replace(/\s+/g, '')
+}
