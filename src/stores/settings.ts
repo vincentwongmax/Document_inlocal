@@ -1,11 +1,21 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
-import type { Category, Settings, TxType } from '@/types'
-import { Keys, readJSON, writeJSON } from '@/lib/storage'
+import type { Category, Settings, TxType, Wallet, WalletState } from '@/types'
+import { Keys, readJSON, writeJSON, remove, walletSettingsKey } from '@/lib/storage'
 import { defaultSettings } from '@/lib/defaults'
 import { fetchRates, defaultRates } from '@/lib/currency'
 import { iconForCategory } from '@/lib/icons'
 import { uid } from '@/lib/id'
+import {
+  cleanWalletName,
+  defaultWallet,
+  newWallet,
+  normalizeWallets,
+  safeWalletColor,
+  safeWalletIcon,
+  uniqueWalletName,
+  walletNameOk,
+} from '@/lib/wallets'
 
 /** 舊資料沒有 icon 欄位 → 依內建 id／分類名稱補上，避免每個地方都要做 fallback */
 function withIcons(list: Category[]): Category[] {
@@ -38,22 +48,188 @@ function merge(base: Settings, saved: Partial<Settings>): Settings {
   }
 }
 
+/** 讀出「錢包清單 ＋ 當前錢包」，並在必要時做單錢包 → 多錢包的遷移 */
+function loadRoot(): { root: WalletState; migratedSettings: Settings | null } {
+  const saved = readJSON<Partial<WalletState>>(Keys.WALLETS_KEY)
+  if (saved && Array.isArray(saved.wallets) && saved.wallets.length) {
+    const wallets = normalizeWallets(saved.wallets)
+    const activeWalletId = wallets.some((w) => w.id === saved.activeWalletId)
+      ? (saved.activeWalletId as string)
+      : wallets[0].id
+    const root: WalletState = { wallets, activeWalletId }
+    // ⚠ 這裡一定要落地：下面的 watcher 不是 immediate，若遷移／正規化之後什麼都沒動，
+    // localStorage 就會一直沒有這個鍵，重載又走一次遷移
+    writeJSON(Keys.WALLETS_KEY, root)
+    return { root, migratedSettings: null }
+  }
+
+  // ── 遷移：多錢包之前，全 App 只有一份設定（Keys.SETTINGS_KEY）──
+  // 把它整份搬進一個預設錢包，記錄則在 records store 補上同一個 walletId。
+  // ⚠ 舊鍵刻意「不刪」：萬一遷移過程有意外，使用者的原始設定還在。
+  const legacy = readJSON<Partial<Settings>>(Keys.SETTINGS_KEY)
+  const w = defaultWallet('我的錢包')
+  const s = merge(defaultSettings(legacy?.baseCurrency ?? 'MOP'), legacy ?? {})
+  writeJSON(walletSettingsKey(w.id), s)
+  const root: WalletState = { wallets: [w], activeWalletId: w.id }
+  writeJSON(Keys.WALLETS_KEY, root)
+  return { root, migratedSettings: s }
+}
+
+/** 讀出某個錢包的設定（缺的欄位用預設值補） */
+function loadWalletSettings(id: string): Settings {
+  const saved = readJSON<Partial<Settings>>(walletSettingsKey(id))
+  return merge(defaultSettings(saved?.baseCurrency ?? 'MOP'), saved ?? {})
+}
+
 export const useSettingsStore = defineStore('settings', () => {
-  const loaded = readJSON<Settings>(Keys.SETTINGS_KEY)
-  const state = ref<Settings>(merge(defaultSettings(loaded?.baseCurrency ?? 'MOP'), loaded ?? {}))
+  const { root: bootRoot, migratedSettings } = loadRoot()
+  /** App 層級：錢包清單 + 當前錢包 */
+  const root = ref<WalletState>(bootRoot)
+
+  /**
+   * ⚠ 這個 `state` 是「**當前錢包**的設定」，不是全 App 的設定。
+   * 形狀與單錢包時代完全相同，所以既有程式碼讀 `settings.state.xxx` 不必改；
+   * 差別只在切換錢包時它會整份換掉。
+   */
+  const state = ref<Settings>(migratedSettings ?? loadWalletSettings(root.value.activeWalletId))
 
   // 舊資料第一次載入若有補上圖示，立刻回寫一次，讓匯出檔也帶得到 icon
-  if (loaded?.categories?.length && loaded.categories.some((c) => !c.icon)) {
-    writeJSON(Keys.SETTINGS_KEY, state.value)
+  const loadedShapes = migratedSettings ?? readJSON<Partial<Settings>>(walletSettingsKey(root.value.activeWalletId))
+  if (loadedShapes?.categories?.length && loadedShapes.categories.some((c) => !c.icon)) {
+    writeJSON(walletSettingsKey(root.value.activeWalletId), state.value)
   }
 
   watch(
     state,
     (v) => {
-      writeJSON(Keys.SETTINGS_KEY, v)
+      // 寫進「當前錢包」的鍵；切換錢包時 setActiveWallet 會先把舊的那份落地
+      writeJSON(walletSettingsKey(root.value.activeWalletId), v)
     },
     { deep: true },
   )
+
+  watch(
+    root,
+    (v) => {
+      writeJSON(Keys.WALLETS_KEY, v)
+    },
+    { deep: true },
+  )
+
+  /* ── 錢包 ─────────────────────────────────────────────── */
+  const wallets = computed(() => root.value.wallets)
+  const activeWalletId = computed(() => root.value.activeWalletId)
+  const activeWallet = computed<Wallet>(
+    () => root.value.wallets.find((w) => w.id === root.value.activeWalletId) ?? root.value.wallets[0],
+  )
+
+  /**
+   * 切換錢包。回傳 false 代表找不到那個錢包。
+   * ⚠ 一定要**先**把當前這份設定寫回去再換（不能只靠上面的 watcher：
+   * 它是 microtask 才跑，那時 activeWalletId 已經變了，會把舊內容寫進新鍵）。
+   */
+  function setActiveWallet(id: string): boolean {
+    if (id === root.value.activeWalletId) return true
+    if (!root.value.wallets.some((w) => w.id === id)) return false
+    writeJSON(walletSettingsKey(root.value.activeWalletId), state.value)
+    root.value.activeWalletId = id
+    state.value = loadWalletSettings(id)
+    return true
+  }
+
+  /**
+   * 新增錢包。新錢包會有自己一份預設設定，主幣別沿用當前錢包的
+   * （比一開就跳回 MOP 合理），分類則是內建那一套。
+   */
+  function addWallet(name: string, color?: string, icon?: string): Wallet | null {
+    const n = cleanWalletName(name)
+    if (!walletNameOk(n, root.value.wallets)) return null
+    const w = newWallet(uniqueWalletName(n, root.value.wallets.map((x) => x.name)), color, icon)
+    root.value.wallets.push(w)
+    writeJSON(walletSettingsKey(w.id), defaultSettings(state.value.baseCurrency))
+    return w
+  }
+
+  /** 改名。空白、太長、與別人重複都不收，回傳 false（呼叫端負責還原輸入框） */
+  function renameWallet(id: string, name: string): boolean {
+    const w = root.value.wallets.find((x) => x.id === id)
+    if (!w) return false
+    const n = cleanWalletName(name)
+    if (!n || n === w.name) return n === w.name
+    if (!walletNameOk(n, root.value.wallets.filter((x) => x.id !== id))) return false
+    w.name = n
+    return true
+  }
+
+  function updateWallet(id: string, patch: { color?: string; icon?: string }): boolean {
+    const w = root.value.wallets.find((x) => x.id === id)
+    if (!w) return false
+    if (patch.color !== undefined) w.color = safeWalletColor(patch.color)
+    if (patch.icon !== undefined) w.icon = safeWalletIcon(patch.icon)
+    return true
+  }
+
+  /**
+   * 刪除錢包。
+   * ⚠ 只擋「最後一個」——「裡面還有記錄」的判斷需要 records store，
+   * 兩邊互相 import 會形成循環，所以那條由呼叫端（WalletSection）負責擋。
+   * 刪除時會把該錢包的設定鍵一起清掉，免得留下孤兒資料。
+   */
+  function removeWallet(id: string): { ok: boolean; reason: string } {
+    if (root.value.wallets.length <= 1) return { ok: false, reason: '至少要保留一個錢包' }
+    const idx = root.value.wallets.findIndex((w) => w.id === id)
+    if (idx < 0) return { ok: false, reason: '找不到這個錢包' }
+    root.value.wallets.splice(idx, 1)
+    if (root.value.activeWalletId === id) {
+      // 刪掉的是當前錢包 → 換到第一個（先落地？不用：內容要跟著消失）
+      root.value.activeWalletId = root.value.wallets[0].id
+      state.value = loadWalletSettings(root.value.activeWalletId)
+    }
+    remove(walletSettingsKey(id))
+    return { ok: true, reason: '' }
+  }
+
+  /** 排序：把 from 位置搬到 to 位置（拖曳用） */
+  function moveWallet(from: number, to: number): boolean {
+    const list = root.value.wallets
+    if (from < 0 || from >= list.length) return false
+    const t = Math.max(0, Math.min(list.length - 1, to))
+    if (t === from) return false
+    const [w] = list.splice(from, 1)
+    list.splice(t, 0, w)
+    return true
+  }
+
+  /** 匯入用：把一組錢包併進來（id 已存在就沿用本地的） */
+  function upsertWallets(list: Wallet[], settingsByWallet?: Record<string, Settings>) {
+    for (const w of normalizeWallets(list)) {
+      const exists = root.value.wallets.find((x) => x.id === w.id)
+      if (exists) continue
+      root.value.wallets.push({
+        ...w,
+        name: uniqueWalletName(w.name, root.value.wallets.map((x) => x.name)),
+      })
+      const s = settingsByWallet?.[w.id]
+      writeJSON(walletSettingsKey(w.id), s ? merge(defaultSettings(s.baseCurrency ?? 'MOP'), s) : defaultSettings())
+    }
+  }
+
+  /**
+   * 某個錢包的設定。
+   * ⚠ 當前錢包一律回記憶體裡的那份：磁碟上可能是幾毫秒前的舊值
+   * （watcher 是 microtask 才寫），匯出時拿到舊的會很莫名其妙。
+   */
+  function settingsOf(walletId: string): Settings {
+    if (walletId === root.value.activeWalletId) return state.value
+    return loadWalletSettings(walletId)
+  }
+
+  /** 全部錢包的設定（匯出備份用） */
+  function allWalletSettings(): Record<string, Settings> {
+    const out: Record<string, Settings> = {}
+    for (const w of root.value.wallets) out[w.id] = settingsOf(w.id)
+    return out
+  }
 
   const baseCurrency = computed(() => state.value.baseCurrency)
   const inputCurrency = computed(() => state.value.inputCurrency)
@@ -302,6 +478,19 @@ export const useSettingsStore = defineStore('settings', () => {
 
   return {
     state,
+    /* ── 錢包 ── */
+    wallets,
+    activeWalletId,
+    activeWallet,
+    setActiveWallet,
+    addWallet,
+    renameWallet,
+    updateWallet,
+    removeWallet,
+    moveWallet,
+    upsertWallets,
+    settingsOf,
+    allWalletSettings,
     baseCurrency,
     inputCurrency,
     categories,

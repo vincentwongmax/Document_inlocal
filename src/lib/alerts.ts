@@ -28,11 +28,21 @@ const ICON: Record<NoticeKind, 'success' | 'warning' | 'info' | 'error'> = {
   error: 'error',
 }
 
+/**
+ * 底部 Toast。
+ *
+ * ⚠ 一律帶一顆「知道了」：使用者看到通知就想立刻關掉，不必等倒數結束
+ *   （需求：彈出來的 SweetAlert 都要有「知道了」）。
+ * ⚠ 有額外動作時（例如「復原」）改用 **deny** 鈕，讓「知道了」永遠是那顆
+ *   單純把通知關掉的鈕，兩顆不會互相頂掉；`reverseButtons` 讓動作在左、知道了在右。
+ */
 const Toast = Swal.mixin({
   toast: true,
   position: 'bottom',
-  showConfirmButton: false,
+  showConfirmButton: true,
+  confirmButtonText: '知道了',
   showCloseButton: false,
+  reverseButtons: true,
   didOpen: (el) => {
     // 滑鼠停在 Toast 上時暫停倒數，讓「復原」來得及按（SweetAlert2 原生行為）
     el.addEventListener('mouseenter', Swal.stopTimer)
@@ -45,7 +55,7 @@ const Toast = Swal.mixin({
  *
  * @param text   訊息文字
  * @param kind   語氣（決定 icon）
- * @param action 選填；有給就會顯示一顆按鈕，按下後執行 `run`
+ * @param action 選填；有給就會多一顆按鈕（例如「復原」），按下後執行 `run`
  * @param ms     自動關閉的毫秒數
  */
 export function notify(
@@ -59,11 +69,11 @@ export function notify(
     title: text,
     timer: ms,
     timerProgressBar: true,
-    showConfirmButton: !!action,
-    confirmButtonText: action?.label,
+    // 動作鈕（deny）：按下才算；按「知道了」或時間到都只是關掉，不會觸發
+    showDenyButton: !!action,
+    denyButtonText: action?.label || undefined,
   }).then((res) => {
-    // 只有「按下按鈕」才算確認；時間到／被關掉不算
-    if (res.isConfirmed) action?.run()
+    if (res.isDenied) action?.run()
   })
 }
 

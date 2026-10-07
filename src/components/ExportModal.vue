@@ -3,16 +3,17 @@
  * 匯出彈窗：先選「格式」（JSON／Excel），再選「範圍」（全部／日期區間），最後按下匯出。
  *
  * 兩種格式的差別（文案刻意寫清楚，免得使用者以為 Excel 也能拿來還原）：
- *   JSON  —— 一個 .json 檔，含記錄＋**設定**＋圖片（base64）。可以再匯入還原，是備份用的。
- *   Excel —— 一個 .zip 檔，內含 .xlsx 與 images/ 圖檔。**只有記錄、不含任何設定**，
+ *   JSON  —— 一個 .json 檔，含**全部錢包**＋各自的設定＋圖片（base64），是完整備份，可以再匯入還原。
+ *   Excel —— 一個 .zip 檔，內含 .xlsx 與 images/ 圖檔。**只有當前錢包的記錄、不含任何設定**，
  *            給人看的／拿去算的，不能匯回 App。
  *
- * 範圍只影響「這次要打包哪些記錄」；JSON 裡的設定一律是當下的完整設定。
+ * 範圍只影響「這次要打包哪些記錄」；JSON 裡的錢包與設定一律整份帶走。
  */
 import { computed, onBeforeUnmount, ref, toRef, watch } from 'vue'
 import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
 import { useScrollLock } from '@/composables/useScrollLock'
+import DateField from '@/components/DateField.vue'
 import { notify } from '@/lib/alerts'
 import { buildExport, downloadJson } from '@/lib/exportImport'
 import { buildExcelExport, downloadBlob, type ExportProgress } from '@/lib/exportExcel'
@@ -99,11 +100,18 @@ const rangeInvalid = computed(
     (!from.value || !to.value || (!!from.value && !!to.value && from.value > to.value)),
 )
 
+/**
+ * 這次要考慮的記錄來源：
+ *   Excel → 只涵蓋**當前錢包**（報表是針對一本帳）
+ *   JSON  → 涵蓋**全部錢包**（備份）
+ */
+const pool = computed(() => (format.value === 'json' ? records.all : records.records))
+
 /** 這次要匯出的記錄：全部，或落在 [from, to] 內（含首尾，用本地日曆日判斷） */
 const selected = computed(() => {
-  if (rangeMode.value === 'all') return records.records
+  if (rangeMode.value === 'all') return pool.value
   if (rangeInvalid.value) return []
-  return records.records.filter((r) => {
+  return pool.value.filter((r) => {
     const k = dayKey(r.occurredAt)
     return !!k && k >= from.value && k <= to.value
   })
@@ -113,6 +121,13 @@ const selected = computed(() => {
 const imageCount = computed(() => {
   const s = new Set<string>()
   for (const r of selected.value) for (const im of r.images ?? []) s.add(im.id)
+  return s.size
+})
+
+/** 選到的記錄橫跨幾個錢包（JSON 用，讓使用者知道備份範圍） */
+const walletCount = computed(() => {
+  const s = new Set<string>()
+  for (const r of selected.value) s.add(r.walletId)
   return s.size
 })
 
@@ -138,9 +153,15 @@ async function run() {
   progress.value = { phase: 'read', done: 0, total: 0 }
   try {
     if (format.value === 'json') {
-      const payload = await buildExport(list, settings.state)
+      const payload = await buildExport({
+        wallets: settings.wallets,
+        activeWalletId: settings.activeWalletId,
+        settingsByWallet: settings.allWalletSettings(),
+        records: list,
+        onProgress: (p) => (progress.value = p),
+      })
       const name = downloadJson(payload)
-      notify(`已匯出 ${list.length} 筆 → ${name}`, 'ok')
+      notify(`已匯出 ${list.length} 筆（${payload.wallets?.length ?? 1} 個錢包）→ ${name}`, 'ok')
     } else {
       const res = await buildExcelExport({
         records: list,
@@ -203,7 +224,9 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
               <path d="M14.6 12.5c.9 0 1.4.5 1.4 1.3v.5c0 .6.2.9.9 1-.7.1-.9.4-.9 1v.5c0 .8-.5 1.3-1.4 1.3" />
             </svg>
             <span class="pick__t">JSON</span>
-            <span class="pick__d tiny">單一 .json 檔，含記錄、設定與圖片。可以再匯入還原（備份用）</span>
+            <span class="pick__d tiny">
+              單一 .json 檔，含<b>全部錢包</b>、各自的設定與圖片。可以再匯入還原（完整備份）
+            </span>
           </button>
 
           <button
@@ -220,7 +243,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
             </svg>
             <span class="pick__t">Excel</span>
             <span class="pick__d tiny">
-              一個 .zip，內含 .xlsx 與 images/ 圖檔。<b>只有記錄、不含設定</b>，不能匯回 App
+              一個 .zip，內含 .xlsx 與 images/ 圖檔。只含<b>當前錢包</b>的記錄、不含設定，不能匯回 App
             </span>
           </button>
         </div>
@@ -242,11 +265,11 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
           <div class="range__dates">
             <label class="range__f">
               <span class="tiny muted">從</span>
-              <input v-model="from" class="field" type="date" />
+              <DateField v-model="from" />
             </label>
             <label class="range__f">
               <span class="tiny muted">到</span>
-              <input v-model="to" class="field" type="date" />
+              <DateField v-model="to" />
             </label>
           </div>
           <div class="range__chips">
@@ -269,12 +292,20 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
             <strong class="num">{{ imageCount }}</strong>
             <span class="tiny muted">張圖片</span>
           </template>
+          <template v-else-if="format === 'json'">
+            <span class="sum__dot">·</span>
+            <strong class="num">{{ walletCount }}</strong>
+            <span class="tiny muted">個錢包</span>
+          </template>
         </div>
         <p v-if="!selected.length && !rangeInvalid" class="tiny muted sum__hint">
           這個範圍裡沒有記錄，換個區間或選「全部記錄」
         </p>
         <p v-else-if="format === 'excel'" class="tiny muted sum__hint">
-          Excel 匯出只含記錄，不含分類樹、匯率、常用備註等設定
+          來自當前錢包「{{ settings.activeWallet.name }}」；只含記錄，不含分類樹、匯率、常用備註等設定
+        </p>
+        <p v-else class="tiny muted sum__hint">
+          所有的錢包與設定都會完整備份；範圍只篩選要打包的記錄
         </p>
       </div>
 
@@ -423,7 +454,12 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
   gap: 4px;
   min-width: 0;
 }
-.range__f .field {
+/* ⚠ 用 :deep()：DateField 是子元件，裡面的 input 不會帶到這個元件的 scope id */
+.range__f :deep(.df) {
+  width: 100%;
+  min-width: 0;
+}
+.range__f :deep(.field) {
   width: 100%;
   min-width: 0;
 }

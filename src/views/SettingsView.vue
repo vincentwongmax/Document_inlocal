@@ -11,11 +11,12 @@ import { withAlpha } from '@/lib/color'
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { parseImport, restoreImages } from '@/lib/exportImport'
 import ExportModal from '@/components/ExportModal.vue'
+import WalletSection from '@/components/WalletSection.vue'
 import { usageBytes } from '@/lib/storage'
-import { clearImages, listImageIds } from '@/lib/imageDb'
+import { listImageIds } from '@/lib/imageDb'
 import { offlineReady, updateSW } from '@/lib/pwa'
 import { APP_VERSION } from '@/lib/version'
-import type { Category, TxType } from '@/types'
+import type { Category, Settings, TxType } from '@/types'
 
 const settings = useSettingsStore()
 const records = useRecordsStore()
@@ -230,10 +231,11 @@ async function onImportFile(e: Event) {
   }
 
   // 「連設定一起還原」＝confirm、「只匯入記錄」＝deny
+  const walletWord = parsed.wallets?.length ? `${parsed.wallets.length} 個錢包、` : ''
   const answer = await confirmDialog({
     title: '匯入資料',
-    message: `檔案含 ${parsed.records.length} 筆記錄。是否同時還原匯出時的設定（分類、匯率、幣別）？`,
-    confirmText: '連設定一起還原',
+    message: `檔案含 ${walletWord}${parsed.records.length} 筆記錄。是否同時還原匯出時的錢包與設定（分類、匯率、幣別）？`,
+    confirmText: '連錢包與設定一起還原',
     denyText: '只匯入記錄',
     cancelText: '取消',
   })
@@ -241,15 +243,28 @@ async function onImportFile(e: Event) {
   await runImport(parsed, answer === 'confirm')
 }
 
+/** 把一份設定套到**當前錢包**上（幣別、匯率、分類、常用備註等都跟著換） */
+function applyWalletSettings(s: Settings) {
+  settings.state.categories = s.categories
+  settings.state.preferredCurrency = s.preferredCurrency
+  settings.state.ocrLangs = s.ocrLangs
+  settings.state.baseCurrency = s.baseCurrency
+  settings.state.inputCurrency = s.inputCurrency
+  settings.state.rates = { ...settings.state.rates, ...s.rates }
+  settings.state.ratesUpdatedAt = s.ratesUpdatedAt
+}
+
 async function runImport(p: ParsedImport, withSettings: boolean) {
-  if (withSettings && p.settings) {
-    settings.state.categories = p.settings.categories
-    settings.state.preferredCurrency = p.settings.preferredCurrency
-    settings.state.ocrLangs = p.settings.ocrLangs
-    settings.state.baseCurrency = p.settings.baseCurrency
-    settings.state.inputCurrency = p.settings.inputCurrency
-    settings.state.rates = { ...settings.state.rates, ...p.settings.rates }
-    settings.state.ratesUpdatedAt = p.settings.ratesUpdatedAt
+  if (withSettings) {
+    if (p.wallets?.length) {
+      // v2：先把檔案裡沒有的錢包（含各自設定）加進來，再套用當前錢包那份
+      settings.upsertWallets(p.wallets, p.settingsByWallet)
+      const mine = p.settingsByWallet?.[settings.activeWalletId] ?? p.settings
+      if (mine) applyWalletSettings(mine)
+    } else if (p.settings) {
+      // v1（單錢包時代的舊檔）：設定就套在當前錢包上
+      applyWalletSettings(p.settings)
+    }
   }
   await restoreImages(p.records, p.images)
   const { added, skipped } = records.mergeImport(p.records)
@@ -259,18 +274,20 @@ async function runImport(p: ParsedImport, withSettings: boolean) {
 
 /* ── 重置 ───────────────────────────────────────────────── */
 async function doReset() {
+  const name = settings.activeWallet.name
   const answer = await confirmDialog({
     title: '確定要重置嗎？',
-    message: '所有記錄與圖片都會被清除，且無法復原（幣別、匯率、分類等設定會保留）。',
-    confirmText: '重置',
+    message: `「${name}」的所有記錄與收據圖片都會被清除，且無法復原（幣別、匯率、分類等設定會保留）。其他錢包不受影響。`,
+    confirmText: '重置這個錢包',
     danger: true,
   })
   if (answer !== 'confirm') return
+  // ⚠ 不能用 clearImages()：那會把別的錢包還在用的圖片一起刪掉。
+  // records.reset() 是一筆一筆 remove，會自己檢查「還有誰在用這張圖」
   await records.reset()
-  await clearImages()
   localStorage.removeItem('mop-ledger.draft.v1')
   await refreshUsage()
-  notify('已重置，所有記錄與圖片都已清除', 'info')
+  notify(`已重置「${name}」`, 'info')
 }
 
 const ocrLangOptions = [
@@ -299,6 +316,9 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
         <p class="page-sub">幣別、分類、收據辨識與資料管理</p>
       </div>
     </div>
+
+    <!-- 錢包：切換＝換一本帳，各自有自己的記錄與設定 -->
+    <WalletSection />
 
     <!-- 幣別與匯率 -->
     <section class="card sec">
@@ -598,7 +618,9 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
         </span>
         <div class="sec__meta">
           <h2 class="sec__title">資料</h2>
-          <p class="sec__desc">備份與還原；資料只存在這台裝置</p>
+          <p class="sec__desc">
+            備份與還原；資料只存在這台裝置。筆數是「當前錢包」的，JSON 匯出則涵蓋全部錢包
+          </p>
         </div>
       </header>
 
@@ -618,13 +640,13 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
       </div>
 
       <div class="acts">
-        <button class="act" :disabled="!records.records.length" @click="exportOpen = true">
+        <button class="act" :disabled="!records.all.length" @click="exportOpen = true">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 4v10m0 0 4-4m-4 4-4-4" />
             <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
           </svg>
           <span class="act__t">匯出</span>
-          <span class="act__d tiny muted">JSON（含設定）或 Excel（ZIP）</span>
+          <span class="act__d tiny muted">JSON（全部錢包＋設定）或 Excel（當前錢包，ZIP）</span>
         </button>
         <button class="act" @click="pickImport">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -640,7 +662,7 @@ const usedBytes = computed(() => `${(usage.value / 1024).toFixed(0)} KB`)
             <path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13" />
           </svg>
           <span class="act__t">重置</span>
-          <span class="act__d tiny muted">清除所有記錄與圖片</span>
+          <span class="act__d tiny muted">只清除當前錢包的記錄與圖片</span>
         </button>
       </div>
       <input ref="importInput" class="hidden" type="file" accept="application/json,.json" @change="onImportFile" />

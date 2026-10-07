@@ -8,6 +8,7 @@ import type { TxRecord } from '@/types'
 import RecordList from '@/components/RecordList.vue'
 import RecordRow from '@/components/RecordRow.vue'
 import RecordSheet from '@/components/RecordSheet.vue'
+import DateField from '@/components/DateField.vue'
 import ClearableInput from '@/components/ClearableInput.vue'
 import CategoryIcon from '@/components/CategoryIcon.vue'
 import HighlightText from '@/components/HighlightText.vue'
@@ -436,11 +437,11 @@ function removeEditing(id: string) {
         <div class="custom__dates">
           <label class="custom__date">
             <span class="grp__label">從</span>
-            <input v-model="start" class="field" type="date" />
+            <DateField v-model="start" />
           </label>
           <label class="custom__date">
             <span class="grp__label">到</span>
-            <input v-model="end" class="field" type="date" />
+            <DateField v-model="end" />
           </label>
           <!-- 自訂範圍沒有「日／月／年」那一列，標籤改放在日期列下方靠右 -->
           <div class="rangeinfo rangeinfo--end">
@@ -932,7 +933,9 @@ function removeEditing(id: string) {
   gap: 4px;
   min-width: 0;
 }
-.custom__date .field {
+/* ⚠ 用 :deep()：DateField 是子元件，它裡面的 input 不會帶到這一頁的 scope id，
+   直接寫 `.custom__date .field` 會選不到 */
+.custom__date :deep(.field) {
   min-width: 0;
 }
 .presets {

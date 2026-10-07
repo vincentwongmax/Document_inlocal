@@ -153,6 +153,14 @@ function setNow() {
 /* 日曆鈕在左邊那一格、時鐘鈕在右邊那一格（與備註欄的「快速備註 / 清空」同一欄） */
 .dt__pick {
   right: 34px;
+  /**
+   * ⚠⚠ 一定要裁掉溢出：Safari 會把原生 datetime-local 拆成多個自帶內距的
+   *    shadow DOM 欄位（年／月／日／時／分），那些欄位有各自的最小寬度，
+   *    加起來遠超過這顆 26px 的鈕 → 內容往右溢出。它是 opacity:0，畫面上看不出來，
+   *    但**溢出照樣把整頁撐寬** → 使用者往左滑就看到一大片空白（iPhone PWA 實測）。
+   *    裁在鈕上就從根上不會發生。（DateField.vue 的 .df__pick 有一模一樣的一條。）
+   */
+  overflow: hidden;
 }
 .dt__now {
   right: 5px;

@@ -7,7 +7,8 @@ import { deleteImage, getImage, putImage } from '@/lib/imageDb'
 import { compressImage, makeThumb } from '@/lib/imaging'
 import { uid } from '@/lib/id'
 import { notify } from '@/lib/alerts'
-import { IMG_MIME, filesFromClipboard, pastedFile } from '@/lib/clipboard'
+import { IMG_MIME } from '@/lib/clipboard'
+import { usePasteImages } from '@/composables/usePasteImages'
 import ImageLightbox from '@/components/ImageLightbox.vue'
 
 /**
@@ -132,71 +133,23 @@ function remove(im: ImageRef) {
 }
 
 /* ── 貼上（剪貼簿）────────────────────────────────────────
- * 兩條路都要有，因為兩邊的支援度剛好互補，細節見 lib/clipboard.ts。
- * iOS 只在「可編輯元素」取得焦點時才發 paste，所以在磚上鋪一層看不見的
- * contenteditable 當接收面；監聽掛在 document 的 capture 階段，
- * 焦點在頁面任何地方（連備註欄都算）都收得到。
+ * 三條路（圖片檔／讓瀏覽器貼進 DOM 再讀／自己解析 text/html）都寫在
+ * `composables/usePasteImages.ts`，記帳頁與記錄明細共用同一份。
+ *
+ * 兩條基本路都要有，因為兩邊的支援度剛好互補：
+ *   - iOS 只在「可編輯元素」取得焦點時才發 paste，所以在磚上鋪一層看不見的
+ *     contenteditable 當接收面；監聽掛在 document 的 capture 階段，
+ *     焦點在頁面任何地方（連備註欄都算）都收得到。
+ *   - `navigator.clipboard.read()` 是加分項（Safari 支援反覆），失敗是常態。
  */
 const pasteEl = ref<HTMLElement | null>(null)
-const pasteMode = ref(false)
-
-function onPaste(e: ClipboardEvent) {
-  const dt = e.clipboardData
-  const onTile = e.target === pasteEl.value
-  const hasImageFile =
-    !!dt &&
-    (Array.from(dt.files ?? []).some((f) => IMG_MIME.test(f.type)) ||
-      Array.from(dt.items ?? []).some((it) => it.kind === 'file' && IMG_MIME.test(it.type)))
-
-  // ⚠ preventDefault 必須**同步**決定：事件派送完就執行預設行為，等 await 回來才擋已經太遲。
-  //   在接收面上的貼上一律擋掉；其他位置只有真的夾帶圖片檔時才擋（純文字要能正常貼進備註欄）
-  if (onTile || hasImageFile) e.preventDefault()
-  void (async () => {
-    const files = await filesFromClipboard(dt)
-    if (!files.length) return
-    pasteMode.value = false
-    await addFiles(files)
-  })()
-}
-
-/**
- * 點「貼上圖片」磚。
- * ⚠ 聚焦要**同步**做（不能等 await 之後才做）：iOS 只在使用者手勢的同步階段認焦點，
- * 而且不依賴剪貼簿 API 的成功與否——先站穩「長按可以貼」這條保證路徑，再試加分項。
- */
-function pasteFromClipboard() {
-  pasteMode.value = true
-  pasteEl.value?.focus()
-  void readClipboardApi()
-}
-
-/** 加分項：支援的瀏覽器點一下就貼好（Safari 對它的支援反覆，失敗是常態） */
-async function readClipboardApi() {
-  if (!navigator.clipboard?.read) return
-  try {
-    const items = await navigator.clipboard.read()
-    const files: File[] = []
-    for (const it of items) {
-      const type = it.types.find((t) => IMG_MIME.test(t))
-      if (!type) continue
-      files.push(pastedFile(await it.getType(type), files.length, items.length))
-    }
-    if (!files.length) {
-      notify('剪貼簿裡沒有圖片', 'info')
-      return
-    }
-    pasteMode.value = false
-    await addFiles(files)
-  } catch {
-    /* 未授權／不支援 → 就這樣，使用者已經可以長按貼上了 */
-  }
-}
-
-/** 有人真的在那層隱形面上打字就打掉：它只是接收貼上的靶，不該留任何內容 */
-function clearPasteBox(e: Event) {
-  const el = e.target as HTMLElement
-  if (el.textContent) el.textContent = ''
-}
+const tileEl = ref<HTMLElement | null>(null)
+const { armed: pasteMode, onPaste, onInput, pasteFromClipboard } = usePasteImages({
+  target: () => pasteEl.value,
+  tile: () => tileEl.value,
+  onFiles: (files) => void addFiles(files),
+  onNothing: () => notify('剪貼簿裡沒有圖片', 'info'),
+})
 
 /* ── 拖曳（頁面的掉落判斷交給 HomeView，這裡只負責亮起來）─── */
 function onDragEnter(e: DragEvent) {
@@ -272,7 +225,7 @@ const hintText = computed(() => {
       </button>
 
       <!-- 貼上：磚本身是「接收面」，點它＝把焦點放上去，接著長按選「貼上」 -->
-      <div class="rec__add rec__paste" :class="{ 'is-armed': pasteMode }">
+      <div ref="tileEl" class="rec__add rec__paste" :class="{ 'is-armed': pasteMode }">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <rect x="8" y="3.2" width="8" height="3.6" rx="1.2" />
           <path
@@ -295,7 +248,7 @@ const hintText = computed(() => {
           @click="pasteFromClipboard"
           @keydown.enter.prevent="pasteFromClipboard"
           @keydown.space.prevent="pasteFromClipboard"
-          @input="clearPasteBox"
+          @input="onInput"
         ></span>
       </div>
 
@@ -455,6 +408,9 @@ const hintText = computed(() => {
   white-space: nowrap;
   /* 不要讓游標閃現：它看起來該是一顆按鈕，不是輸入框 */
   caret-color: transparent;
+  /* ⚠ 字級一定要 ≥ 16px：iOS 聚焦到字太小的可編輯元素時會把**整頁放大**，
+     版面一放大就可以往左滑出一大片空白。 */
+  font-size: 16px;
 }
 .rec .rec__pasteArea {
   -webkit-touch-callout: default;

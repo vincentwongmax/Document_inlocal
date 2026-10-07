@@ -8,6 +8,16 @@
   - `notify(text, kind, action?, ms?)`：底部置中 Toast，kind `ok|warn|info|error`；可帶動作鈕
   - `confirmDialog()` → `'confirm' | 'deny' | 'cancel'`；`danger` 用紅鈕＋warning icon
   - `askUpdate()`：PWA 有新版時問「立即更新／稍後」
+- ⚠⚠ **Toast 一律要有「知道了」按鈕（使用者 0.1.21 指定，含未來所有新通知）**
+  - Toast mixin：`showConfirmButton: true`、 `confirmButtonText: '知道了'`、 `showCloseButton: false`、
+    `reverseButtons: true`；有 action 時再加 `showDenyButton` + `denyButtonText: action.label`
+  - → 排列恆為「（復原）知道了」；**動作鈕用 deny 不用 confirm**，因為
+    `res.isConfirmed` 會被「知道了」吃掉，動作只能用 `res.isDenied` 判斷
+  - 官方 CSS 是 runtime 插在 `<head>` 最後的行內 `<style>` → 上色要 `!important`：
+    ```css
+    .swal2-toast .swal2-confirm { background: var(--accent) !important; color:#fff !important; … }
+    .swal2-toast .swal2-deny    { background: var(--surface) !important; color: var(--text) !important; … }
+    ```
 - 用 **SweetAlert2 官方原生樣式**（使用者指定），不套專案的米白墨綠
 - ⚠ **官方 CSS 不要 import**：入口 `sweetalert2.all.js` 執行時把整份 CSS 插成 `<head>` 的
   **行內 `<style>`**，排在所有 `<link>` 之後 → 同權重贏過 style.css。唯一覆寫（置底 Toast
@@ -189,6 +199,26 @@
   ② iOS 常給的 `text/html` 內含 `<img src="blob:">` 或 `data:` ③ `text/plain` 裡的 data URL。
   外部 `http(s)` 網址刻意不處理（跨域只會拿到不透明回應）
 - 貼上與上傳共用 `addFiles()`，壓縮／縮圖／IndexedDB／孤兒清理才一致
+
+### ⚠ 0.1.21 重寫：貼上邏輯收進 `composables/usePasteImages.ts`
+
+兩個呼叫端（`ReceiptImages.vue`／`RecordSheet.vue`）**共用同一份**，不要再各自複製一份。
+建構參數 `{ target: () => HTMLElement|null, tile: () => HTMLElement|null, onFiles, onNothing }`。
+
+- **不要再靠 `fetch()` 去讀 `<img src>`**：iOS 貼上時給的是 `applewebdata://` 之類的
+  內部 scheme，`fetch` 一律失敗 → 這就是「PWA iPhone 貼上無效」的根因。
+  新做法是**路徑 ②：不要 preventDefault**，讓瀏覽器把 `<img>` 真的插進 DOM，
+  再用 `fileFromImageEl()`（canvas `toBlob`）把像素讀回來，`setTimeout(…,0)` 後 `harvest()`。
+- 三條路徑的順序：① `dt.files`／`items` 有圖檔（桌機／Android，同步 preventDefault）
+  → ② 讓瀏覽器插入後讀 DOM 的 `<img>` → ③ `filesFromMarkup(html, text)` 文字兜底。
+  另外 `navigator.clipboard.read()` 是加分項，失敗是常態。
+- ⚠⚠ **收完圖清現場只能「移除 `<img>` ＋ 清掉 target 底下的文字節點」**：
+  對整顆磚做 `textContent = ''` 會把接收面自己一起刪掉 → 這顆磚**從此再也收不到貼上**
+  （真的踩到過，第二次貼上直接失效）。
+- 圖要去重：磚本身**包含** target，兩個根會掃到同一張 `<img>` → 用 `Set<HTMLImageElement>`。
+- `onTile()` 的判斷要放寬到四種（target 本人 / target 內含 / activeElement / 磚內含）。
+- ⚠ **接收面 `font-size` 必須 ≥16px**：iOS 上任何可編輯元素小於 16px 被聚焦時會
+  把整頁放大（zoom）→ 頁面變寬 → 又變成「向左滑出現空白」。
 
 ## 收據圖片 / iOS 觸控
 
@@ -410,3 +440,148 @@
 - ⚠ 測「圖示有沒有真的畫出來」**不能用 `elementFromPoint`**（放大鏡有 `pointer-events: none`，
   永遠不會被命中）→ 要**截圖讀像素**（v95 的做法：clip 放大鏡那塊，數非白像素）
 
+
+---
+
+## 錢包（多帳本，0.1.20）
+
+使用者需求：設定頁最上方加一個區塊，可以切換不同錢包記不同內容。
+確認過的四個決定：**記錄＋設定全部分開**、**各頁只看當前錢包**、
+**完整管理（含排序／圖示）**、**有記錄不給刪**。
+
+### 資料怎麼放
+
+- `mop-ledger.wallets.v1` ＝ `{ wallets: Wallet[], activeWalletId }`（App 層級）
+- `mop-ledger.setting.<walletId>.v1` ＝ 該錢包的一整套 `Settings`
+  （形狀與單錢包時代的 `Settings` **完全一樣**，所以 `settings.state.xxx` 的既有程式碼都不用改）
+- `mop-ledger.records.v1` ＝ **全部錢包的記錄**（單一鍵），每筆蓋 `walletId`
+- `mop-ledger.settings.v1` ＝ 單錢包時代的舊鍵，**遷移後刻意不刪**（保險）
+- 預設錢包 id 固定 `w_default`（`lib/wallets.ts`），舊記錄遷移補的就是它
+
+### store 的形狀（為什麼這樣設）
+
+- `settings.state` ＝ **當前錢包**的設定；`wallets`／`activeWalletId`／`activeWallet` 是另外的 computed
+- `records` store：內部 `all`（全部、持久化），**對外的 `records` 是 computed（只含當前錢包）**
+  → 所有畫面自動被隔離，不用一支一支改
+- ⚠ **`knownMd5` 與 `remove()` 的「還有誰在用這張圖」一律看 `all`**：
+  圖檔 blob 存在 IndexedDB、跨錢包共用，只看當前錢包會把別的錢包還在用的圖刪掉
+- ⚠ **`setActiveWallet()` 一定要先把當前設定 `writeJSON` 落地再換**：
+  watcher 是 microtask 才跑，那時 `activeWalletId` 已經變了，會把舊內容寫進**新**鍵
+
+### ⚠⚠ 初始化時改資料，一定要自己寫回去
+
+兩個真 bug（v99 抓到的），同一個形狀：
+1. `loadRoot()` 遷移完只靠 `watch(root)` 持久化 → watcher 不是 immediate，
+   初始值不會觸發 → `WALLETS_KEY` 一直沒寫進 localStorage，**每次重載都重遷移一次**
+2. records store 在 setup 時幫舊記錄補 `walletId` → 那時 `watch(all)` 還沒掛上 →
+   永遠不落地，每次載入都重補
+
+→ **在 store 初始化階段動到的資料，改完立刻 `writeJSON`，不要指望 watcher。**
+
+### 刪除錢包
+
+- **「還有 N 筆記錄就不給刪」擋在 `WalletSection.vue`**，不是 store：
+  store 拿不到筆數，settings↔records 互相 import 會循環。store 只擋「至少保留一個」
+- 刪除時 `remove(walletSettingsKey(id))` 清掉設定鍵，不留孤兒
+
+### 排序
+
+- 拖曳把手：**pointer 事件 + `setPointerCapture`**，CSS 要 `touch-action: none`
+  （否則 iOS 先捲頁面）；拖的時候**邊拖邊 `moveWallet()`**，清單即時重排
+- 編輯面板裡另有「↑ 上移／↓ 下移」——拖曳之外一定可用的第二條路（桌機/鍵盤也好用）
+
+### 匯出／匯入
+
+- **JSON 升 format 2**：`wallets` + `settingsByWallet` + 全部記錄；
+  頂層的 `settings` 欄位放「當前錢包那份」（向後相容，舊版 App 讀得到）
+- 範圍篩選**只影響記錄**，錢包與設定一律整份帶走
+- 匯入：v2 → 沒有的錢包整個加回來（含設定），記錄回**自己原本的錢包**；
+  v1 → 設定套在當前錢包、記錄併入當前錢包
+- **Excel 只匯出當前錢包**（彈窗摘要會點名是哪個錢包）
+- 「重置」只清**當前錢包**的記錄；⚠ 不能再呼叫 `clearImages()`
+  （那會把別的錢包還在用的圖一起刪）→ 用 `records.reset()`（一筆筆 remove、自己檢查）
+
+### 測試（`.smoke/v99.mjs`，81 項）
+
+- §1 遷移（舊設定整包進預設錢包、舊鍵留著、記錄補 walletId 且有落地）
+- §2 隔離（各頁只看當前錢包、新增寫進當前錢包）
+- §3 設定獨立（主幣別／快速備註跟著錢包走、各鍵各存各的）
+- §4 管理 UI（新增即切換、同名擋下、改名換色、↑↓ 與拖曳、有記錄擋刪、孤兒鍵清掉）
+- §5 匯出（JSON 全部錢包／Excel 當前錢包，ZIP 內層只有當前錢包的筆數）＋匯入帶回錢包
+- §6 重置只清當前錢包
+- §7 320/390/768 版面、無 JS 錯誤
+
+⚠ 測試踩到的坑：
+- **`$text` 讀不到 `<input>` 的內容**（textContent 是空的）→ 要讀 `.value`
+- 用 v-model 的輸入框，`dispatchEvent(new Event('input'))` 之後**要等一個 tick**
+  再點按鈕，否則按鈕還是 disabled（同步 click 會被吃掉）
+- **記錄頁的週期預設是「日」＝今天**，種子記錄是幾天前就會「這個範圍沒有記錄」→
+  先切到「月」再斷言
+- `ziplib.mjs` 的 `verifyZip()` 回傳的 `bad` 是**陣列**（壞掉的項目名），要量 `.length`
+- 測試一開始還在 `about:blank` 就摸 localStorage 會被拒 → 先 `goto` 一次
+
+## ⚠⚠ 日期輸入框（全站約定，0.1.21 起永久適用）
+
+> 使用者原話：「**所有日期的輸入框都是純文字輸入，用戶要按右手邊的按鈕才會彈出日期
+> 時間的選擇器，請修正現在的所有日期選擇框和未來的也要這樣**」
+> → **這是長期約定，不是一次性修改。以後任何新畫面、新表單，只要要輸入日期，
+> 一律照下面做，不可以再用 `<input type="date">` / `type="datetime-local"` 當可見輸入框。**
+
+### 元件選擇
+
+| 需求 | 用哪個 | 行為 |
+| --- | --- | --- |
+| 只要日期（年/月/日） | **`components/DateField.vue`** | 純文字框 ＋ 右邊日曆鈕 → 點了開原生 date picker |
+| 日期＋時間 | **`components/DateTimeField.vue`** | 純文字框 ＋ 右邊兩顆鈕（日曆／時鐘）＋「設為現在」 |
+
+- 兩者都是 `v-model`（`DateField` 收 `YYYY-MM-DD`，`DateTimeField` 收 `YYYY-MM-DDTHH:mm`）
+- 文字框**容許手打**：`lib/date.ts` 的 `parseLooseDate()`／`parseLooseDateTime()` 接受
+  `2026/10/7`、`10-07` 等寬鬆寫法，失焦時正規化；顯示用 `toDisplayDate()`（斜線格式）
+- 目前已經換掉的：`RecordsView`（兩顆）、`StatsView`（月份選擇 ＋ 自訂區間兩顆）、
+  `ExportModal`（匯出範圍兩顆）。`HomeView`／`RecordSheet` 本來就用 `DateTimeField`
+
+### 三條硬性 CSS 規則（缺一就會重現 iOS 的 bug）
+
+1. **承接原生 picker 的容器要 `overflow: hidden`**
+   （`.df__pick`／`.dt__pick`，就是那顆 26px 的鈕）
+   - Safari 會把 `type=date`／`datetime-local` 拆成**多個各自帶 padding 與 min-width 的
+     shadow DOM 子欄位**，加起來遠超過 26px → 內容往右溢出 → **整份文件變寬**
+     → 使用者向左滑就看到一大片空白
+   - 實測模擬（390px 視窗，datetime-local 放在靠右）：30px 寬 →
+     `documentElement.scrollWidth` 390；60px → 400；**120px → 461**。
+     Chrome 桌機量不出來（shadow DOM 不撐寬），但 iOS 會
+2. **透明的原生 input 本體要 `font-size: 16px`** + `opacity: 0` + `position: absolute`
+   （它是「收手指的那一層」，字級太小會被 iOS 判定要 zoom）
+3. 可見的文字框就跟全站其他輸入框一樣吃 15px，**不要為它特別放大**
+   （0.1.3 才修過「日期欄要跟備註欄對齊」，兩欄字級不一樣反而難看）。
+   ⚠ 但**可編輯的貼上接收面必須 ≥16px**（`.rec__pasteArea`／`.imgs__pasteArea`）——
+   那塊是給手指長按用的，一旦被 zoom 整頁就跟著變寬
+
+### 最後一道保險
+
+`style.css` 的 `html { overflow-x: hidden }`。這不是「修 bug」，是**保險絲**：
+真的有東西溢出時至少不會出現空白區，但**不該拿它當解法**——上面的三條規則
+才是正解，加了新的輸入框還是要照做。
+
+## PWA 向左滑出現大片空白（0.1.21 修）
+
+- 症狀只在 **HomeView 與 RecordSheet**（唯二用 `DateTimeField` 的頁）→ 直接指向
+  `.dt__pick` 裡那顆透明原生 input（見上一節的原因 1）
+- 排查手法：在 390px 視窗量 `documentElement.scrollWidth` 與逐個元素的 `getBoundingClientRect()`，
+  找不到溢出就**用模擬**（往容器裡塞一個已知寬度的 div）反向證明「靠右的原生日期欄會撐寬文件」
+- ⚠ 另一個同症狀來源：**任何聚焦時會被 iOS zoom 的輸入框（font-size < 16px）**
+  → 現在的接收面（`.rec__pasteArea`／`.imgs__pasteArea`）都已補 16px
+
+## 測試（`.smoke/v100.mjs`，42 項）
+
+四段：① 首頁日期欄（是純文字、原生層透明且被裁、16px、貼上接收面 16px 且
+`-webkit-touch-callout` 有保留、焦點落在接收面）＋ 三條貼上路徑（含**第二次貼上**
+證明接收面沒被清掉）② 溢出（root `overflow-x: hidden`、無水平溢出、往 `.dt__pick`
+硬塞 900px 也不撐寬、明細開著也一樣）③ RecordsView／StatsView／ExportModal 的日期欄盤點
+④ Toast 四種情境（沒有動作時只有「知道了」；記帳後「復原」＋「知道了」且按知道了不會復原；
+刪除後按復原真的救得回來）
+
+⚠ 測試踩到的坑：
+- **`page.waitForFunction` 預設用 rAF 輪詢**，在跑完 canvas 壓圖那種重活之後會被餓死
+  → 明明元素存在卻等到 timeout。解法：`{ polling: 200 }` ＋ 包一層不拋錯的 `waitSel()`
+- 明細的 row 是 `div`，**要點 `.row__main`** 才會開；匯出彈窗的根是 `.mask` 不是 `.modal`

@@ -135,6 +135,27 @@ export function parseLooseDateTime(text: string, fallback: string): string | nul
   return `${Y}-${p(MO)}-${p(D)}T${p(HH)}:${p(MI)}`
 }
 
+/** 值（`YYYY-MM-DD`）→ 顯示文字（`YYYY/MM/DD`） */
+export function toDisplayDate(v: string): string {
+  return (v ?? '').replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')
+}
+
+/**
+ * 寬鬆解析「只要日期」的文字 → `YYYY-MM-DD`；看不懂回 `null`。
+ *
+ * 規則與 `parseLooseDateTime` 完全相同（`2026/10/07`、`10/7`、`20261007`、
+ * `2026年10月7日`、全形數字都收），只是把時間那段丟掉。
+ * 直接複用上面那一支，兩個欄位的「看得懂的寫法」才不會走岔。
+ *
+ * @param text     使用者打的字
+ * @param fallback 欄位原本的值（`YYYY-MM-DD`）；沒打到的部分（通常是年）用它補
+ */
+export function parseLooseDate(text: string, fallback: string): string | null {
+  const fb = /^\d{4}-\d{2}-\d{2}$/.test(fallback ?? '') ? fallback : todayKey()
+  const full = parseLooseDateTime(text, `${fb}T00:00`)
+  return full ? full.slice(0, 10) : null
+}
+
 /** 本機日期 → YYYY-MM-DD（不走 UTC，避免跨日誤差） */
 function keyOf(d: Date): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`

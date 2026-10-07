@@ -1,6 +1,27 @@
 export type TxType = 'expense' | 'income'
 export type RecordSource = 'manual' | 'image'
 
+/**
+ * 錢包：一本獨立的帳。
+ * 每個錢包有自己的一整套設定（分類、匯率、幣別、常用備註）與自己的記錄，
+ * 切換錢包等於換一本帳，彼此完全看不到對方。
+ */
+export interface Wallet {
+  id: string
+  name: string
+  /** 卡片與頭像的主色（見 lib/wallets.ts 的 WALLET_COLORS） */
+  color: string
+  /** 圖示鍵值（沿用分類那套，見 lib/icons.ts） */
+  icon: string
+  createdAt: string
+}
+
+/** App 層級、不屬於任何錢包的狀態 */
+export interface WalletState {
+  wallets: Wallet[]
+  activeWalletId: string
+}
+
 export interface Category {
   id: string
   name: string
@@ -58,6 +79,11 @@ export interface OcrInfo {
 
 export interface TxRecord {
   id: string
+  /**
+   * 這筆記錄屬於哪個錢包。舊資料（單錢包時代）沒有這個欄位，
+   * 載入時會補上預設錢包的 id（見 stores/records.ts 的 migrate）。
+   */
+  walletId: string
   /** 記錄被新增的時間（自動，不可改） */
   createdAt: string
   /** 最後修改時間 */
@@ -89,6 +115,10 @@ export interface TxRecord {
   ocr?: OcrInfo
 }
 
+/**
+ * 每個錢包各自的設定。切換錢包時這整份都會跟著換。
+ * （欄位與「單錢包時代」的 Settings 完全相同，所以既有程式碼讀 state.xxx 不必改。）
+ */
 export interface Settings {
   baseCurrency: string
   /** 目前輸入幣別（旅行模式：一律以某幣記錄，自動換算為主幣） */
@@ -117,12 +147,21 @@ export interface Settings {
 
 export interface ExportPayload {
   app: 'mop-ledger'
-  format: 1
+  /** 1 = 單錢包時代的舊檔；2 = 有錢包的版本 */
+  format: 1 | 2
   exportedAt: string
+  /** 匯出當下的錢包設定（v1 是唯一一份；v2 是當前錢包那份，向後相容用） */
   settings: Settings
+  /** v2：全部記錄（含各錢包的）。v1 檔就只有一份，缺少 walletId */
   records: TxRecord[]
   /** md5 -> base64 data URL（還原圖片用） */
   images: Record<string, string>
+  /* ── 以下只有 v2 有 ─────────────────────────────────── */
+  /** 全部錢包（照顯示順序） */
+  wallets?: Wallet[]
+  /** walletId -> 該錢包的設定 */
+  settingsByWallet?: Record<string, Settings>
+  activeWalletId?: string
 }
 
 /** 待確認草稿（上傳圖片後產生） */

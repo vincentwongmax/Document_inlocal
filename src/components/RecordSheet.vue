@@ -21,7 +21,7 @@ import ClearableInput from './ClearableInput.vue'
 import QuickNotePicker from './QuickNotePicker.vue'
 import DateTimeField from './DateTimeField.vue'
 import ImageLightbox from './ImageLightbox.vue'
-import { IMG_MIME, filesFromClipboard, pastedFile } from '@/lib/clipboard'
+import { usePasteImages } from '@/composables/usePasteImages'
 
 const props = defineProps<{ open: boolean; record: TxRecord | null }>()
 const emit = defineEmits<{
@@ -186,84 +186,22 @@ async function onFiles(e: Event) {
 /* ── 貼上圖片（剪貼簿）──────────────────────────────────────
  * 情境：從 WeChat／相簿／Messenger 複製一張圖，回到這裡貼上。
  *
- * 兩條路都要有，因為兩邊的支援度剛好互補：
- *
- * 1. `paste` 事件（**保證可用**）：iOS 的 WebKit 只在「可編輯元素」取得焦點時才發
- *    paste 事件，所以在「貼上圖片」磚上鋪一層看不見的 contenteditable 當接收面
- *    （點磚＝把焦點放上去，接著長按選「貼上」）。桌機／Android 直接 Ctrl+V 即可，
- *    所以監聽掛在 document 上——焦點在明細裡任何地方（連備註欄都算）都收得到。
- * 2. `navigator.clipboard.read()`（**加分項**）：支援的瀏覽器點一下就完成、不必長按。
- *    但 Safari 對它的支援反覆，失敗是常態 → 一律 try/catch，失敗就默默退回第 1 條。
- *    所以不能只做這一條。
+ * 三條路（圖片檔／讓瀏覽器貼進 DOM 再讀／自己解析 text/html）都寫在
+ * `composables/usePasteImages.ts`，跟記帳頁的收據圖片區塊共用同一份 ——
+ * 兩邊行為一致，修一次兩邊都好。
  */
 
 /** 「貼上圖片」磚上那層接收焦點的隱形可編輯面 */
 const pasteEl = ref<HTMLElement | null>(null)
+/** 整顆磚（iOS 有時會把貼上改派到磚身上，所以兩個都要找） */
+const tileEl = ref<HTMLElement | null>(null)
 /** 按過「貼上圖片」之後才顯示「長按 → 貼上」的提示（平常不用嚇使用者） */
-const pasteMode = ref(false)
-
-/**
- * paste 的統一入口（document 的 capture 階段）。
- * ⚠ preventDefault 必須**同步**決定：事件派送完就會執行預設行為，等 await 回來才擋已經太遲。
- * 所以在「接收面」上的貼上一律擋掉（不該有任何東西被塞進 DOM），
- * 其他位置的貼上只有在真的夾帶圖片檔案時才擋（純文字要正常貼進備註欄）。
- */
-function onPaste(e: ClipboardEvent) {
-  const dt = e.clipboardData
-  const onTile = e.target === pasteEl.value
-  const hasImageFile =
-    !!dt &&
-    (Array.from(dt.files ?? []).some((f) => IMG_MIME.test(f.type)) ||
-      Array.from(dt.items ?? []).some((it) => it.kind === 'file' && IMG_MIME.test(it.type)))
-
-  if (onTile || hasImageFile) e.preventDefault()
-  void (async () => {
-    const files = await filesFromClipboard(dt)
-    if (!files.length) return
-    pasteMode.value = false
-    await addFiles(files)
-  })()
-}
-
-/**
- * 點「貼上圖片」磚。
- * ⚠ 聚焦要**同步**做（不能等 await 之後才做）：iOS 只在使用者手勢的同步階段認焦點，
- * 而且不依賴剪貼簿 API 的成功與否——先站穩「長按可以貼」這條保證路徑，
- * 再去試加分項。
- */
-function pasteFromClipboard() {
-  pasteMode.value = true
-  pasteEl.value?.focus()
-  void readClipboardApi()
-}
-
-/** 加分項：支援的瀏覽器點一下就貼好，不必長按（Safari 對它的支援反覆，失敗是常態） */
-async function readClipboardApi() {
-  if (!navigator.clipboard?.read) return
-  try {
-    const items = await navigator.clipboard.read()
-    const files: File[] = []
-    for (const it of items) {
-      const type = it.types.find((t) => IMG_MIME.test(t))
-      if (!type) continue
-      files.push(pastedFile(await it.getType(type), files.length, items.length))
-    }
-    if (!files.length) {
-      notify('剪貼簿裡沒有圖片', 'info')
-      return
-    }
-    pasteMode.value = false
-    await addFiles(files)
-  } catch {
-    /* 未授權／不支援 → 就這樣，使用者已經可以長按貼上了 */
-  }
-}
-
-/** 有人真的在那層隱形面上打字就打掉：它只是接收貼上的靶，不該留任何內容 */
-function clearPasteBox(e: Event) {
-  const el = e.target as HTMLElement
-  if (el.textContent) el.textContent = ''
-}
+const { armed: pasteMode, onPaste, onInput, pasteFromClipboard } = usePasteImages({
+  target: () => pasteEl.value,
+  tile: () => tileEl.value,
+  onFiles: (files) => void addFiles(files),
+  onNothing: () => notify('剪貼簿裡沒有圖片', 'info'),
+})
 
 /** 明細開著時才攔文件層級的貼上，其他頁面不受影響 */
 watch(
@@ -477,7 +415,7 @@ function save() {
                 <span>{{ busyImg ? '處理中…' : '上傳圖片' }}</span>
               </button>
               <!-- 貼上：磚本身是「接收面」，點它＝把焦點放上去，接著長按選「貼上」 -->
-              <div class="imgs__add imgs__paste" :class="{ 'is-armed': pasteMode }">
+              <div ref="tileEl" class="imgs__add imgs__paste" :class="{ 'is-armed': pasteMode }">
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <rect x="8" y="3.2" width="8" height="3.6" rx="1.2" />
                   <path d="M9.4 5H6.8A1.8 1.8 0 0 0 5 6.8v11.4A1.8 1.8 0 0 0 6.8 20h10.4a1.8 1.8 0 0 0 1.8-1.8V6.8A1.8 1.8 0 0 0 17.2 5h-2.6" />
@@ -498,7 +436,7 @@ function save() {
                   @click="pasteFromClipboard"
                   @keydown.enter.prevent="pasteFromClipboard"
                   @keydown.space.prevent="pasteFromClipboard"
-                  @input="clearPasteBox"
+                  @input="onInput"
                 ></span>
               </div>
               <input ref="fileInput" class="hidden" type="file" accept="image/*" multiple @change="onFiles" />
@@ -782,6 +720,8 @@ function save() {
   white-space: nowrap;
   /* 不要讓游標閃現：它看起來該是一顆按鈕，不是輸入框 */
   caret-color: transparent;
+  /* ⚠ 字級一定要 ≥ 16px：iOS 聚焦到字太小的可編輯元素時會把**整頁放大**。 */
+  font-size: 16px;
 }
 .imgs .imgs__pasteArea {
   -webkit-touch-callout: default;

@@ -65,6 +65,23 @@ body {
   height: 100%;
 }
 
+/**
+ * 從根層面關掉「整頁橫向捲動」。
+ *
+ * 為什麼需要：有些看不見的東西會把版面撐寬，畫面上完全看不出來，
+ * 但手指往左滑就會滑出一大片空白（iPhone PWA 尤其明顯）。實測過的兩個來源：
+ *   1. Safari 會把原生 date／datetime-local 拆成多個自帶內距的 shadow DOM 欄位，
+ *      那些欄位有各自的最小寬度 → 透明的那層原生框（見 DateTimeField / DateField）
+ *      內容會往右溢出。
+ *   2. iOS 聚焦到字級 < 16px 的可編輯元素時會把整頁放大 → 版面暫時變寬。
+ * 兩者都已經在各自的元件裡處理掉了（裁掉溢出／字級 16px），
+ * 這裡是最後一道保險：就算哪天又有東西溢出，也不會再出現「滑出空白」。
+ * （overflow 寫在 html 上會傳給 viewport，所以不會動到垂直捲動與 sticky。）
+ */
+html {
+  overflow-x: hidden;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -367,6 +384,26 @@ body.swal2-toast-shown .swal2-container.swal2-bottom {
   body.swal2-toast-shown .swal2-container.swal2-bottom {
     bottom: 22px !important;
   }
+}
+
+/* ── Toast 的按鈕配色 ──────────────────────────────────────
+   0.1.21 起每則 Toast 都有「知道了」，有附帶動作時（例如「復原」）會多一顆。
+   SweetAlert2 預設把 confirm 塗成藍、deny 塗成紅，跟整個 App 的米白＋墨綠完全不搭，
+   而且「復原」被塗紅看起來像危險操作。這裡改成跟按鈕階層一致：
+   「知道了」＝墨綠實心（主要）、「復原」＝白底描邊（次級）。
+   ⚠ 官方 CSS 是執行時插在 <head> 最後的行內 <style>，同權重會贏 → 必須 !important。 */
+.swal2-toast .swal2-confirm {
+  background: var(--accent) !important;
+  color: #fff !important;
+  border-radius: 9px;
+  font-weight: 600;
+}
+.swal2-toast .swal2-deny {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  font-weight: 600;
 }
 
 /* ── 彈窗（非 Toast）：置中、四周留白、永遠不會變成全屏 ──────────

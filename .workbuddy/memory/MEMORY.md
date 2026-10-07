@@ -8,7 +8,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 
 ## 版本號
 
-- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.19`
+- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.21`
 - 單一來源＝`package.json` 的 `version` → `vite.config.ts` `define` 注入 `__APP_VERSION__`
   （型別在 `env.d.ts`）→ `src/lib/version.ts` → 設定頁「離線與版本」膠囊
 - 每次更新要改 `package.json` ＋ 補一筆 `CHANGELOG.md`
@@ -29,14 +29,16 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
     `dist/` 沒重建 → v79（拿 `package.json` 對畫面版本號）必紅。這是「假紅燈」，不是程式壞
   - ⚠ **node 是 Windows binary**：curl 輸出要存到**專案內**（`.smoke/tmp/`），
     Git Bash 的 `/tmp` 讀不到
-  - **維護中的回歸集＝v70～v80**；`v45/v46/v56/v57` 早已失效，別當基準
-  - 改到計算機／彈窗／通知／記錄頁／設定頁匯出時另外跑 **v82~v98**（計算機 11 位／算式／SweetAlert2／
-    最近檢視／按鍵快按／快速備註／收據圖片貼上／收據圖片放大拖曳／統計頁自訂日期框／
-    分類第一列不塞子分類／日期欄＝普通文字框＋下拉關閉明細／算式不留空格／
-    記錄頁檢視＋篩選兩列排版／記錄頁搜尋框縮小＋放大鏡可見／統計頁自訂從到日期列填滿不跑位／
-    記帳頁收據圖片區塊／設定頁匯出彈窗（JSON＋Excel））
-  - ⚠ **動到圖片／放大檢視／剪貼簿時，v77（收據壓縮）與 v89（明細放大後可拖曳）是守門員**，
-    一定要跑（0.1.18 把明細的 lightbox 抽成共用件時就是靠它們證明沒改壞）
+  - **維護中的回歸集＝v70～v100**；`v45/v46/v56/v57` 早已失效，別當基準
+  - 改到計算機／彈窗／通知／記錄頁／設定頁匯出／錢包時另外跑 **v82~v99**（計算機 11 位／算式／
+    SweetAlert2／最近檢視／按鍵快按／快速備註／收據圖片貼上／收據圖片放大拖曳／
+    統計頁自訂日期框／分類第一列不塞子分類／日期欄＝普通文字框＋下拉關閉明細／
+    算式不留空格／記錄頁檢視＋篩選兩列排版／記錄頁搜尋框縮小＋放大鏡可見／
+    統計頁自訂從到日期列填滿不跑位／記帳頁收據圖片區塊／設定頁匯出彈窗（JSON＋Excel）／
+    **錢包（多帳本）**）
+  - **v100（42 項）＝日期輸入框約定 ＋ iOS 貼上 ＋ 向左滑空白 ＋ Toast「知道了」的守門員**
+  - ⚠ **動到錢包／記錄／設定的存取時，v99 是守門員**（遷移、隔離、匯出匯入都在那）；
+    **動到圖片／放大檢視／剪貼簿時，v77（收據壓縮）與 v89（明細放大後可拖曳）是守門員**
   - ⚠ **測試圖別用兩張「內容相同」的**：MD5 去重會擋掉第二張，多張上傳就測不到
   - ⚠ **測試用 `os.tmpdir()` 生暫存檔**（`fs.mkdtempSync`），別寫死 `/tmp`（Windows 讀不到）
   - ⚠⚠ **沙箱不允許 Node 開子行程**（`execFileSync`／`spawnSync` → `EBUSY`，連 `python -c` 都擋）
@@ -86,13 +88,45 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 
 ## 資料
 
+- **錢包（0.1.20 起）**：設定頁最上方可切換，**每個錢包有自己的一整套記錄＋設定**
+  （分類／匯率／幣別／常用備註都跟著錢包走）。切換＝換一本帳。
+  - 存法：錢包清單 `mop-ledger.wallets.v1`；**每錢包設定各自一鍵** `mop-ledger.setting.<id>.v1`；
+    記錄仍是單一鍵 `mop-ledger.records.v1`，每筆蓋 `walletId`
+  - 預設錢包 id 固定 `w_default`（`lib/wallets.ts` 的 `DEFAULT_WALLET_ID`）——
+    舊記錄遷移時補的就是它，**不能改成每次 `uid()`**，否則對不到
+  - ⚠ store 對外的 `records` 是 computed（只含當前錢包）；內部 `all` 才是全部。
+    **圖片去重與「還有誰在用這張圖」一律看 `all`**（圖檔 blob 跨錢包共用）
+  - ⚠ settings store 的 `state` ＝「當前錢包」的設定，形狀與單錢包時代相同
+  - ⚠ **「初始化時改資料要自己寫回去」**：store 初始化階段的修改（遷移）發生在
+    watcher 掛上之前，且非 immediate 的 watcher 不會因「初始值」而跑 →
+    兩個真 bug 都是這樣來的（WALLETS_KEY 沒落地、records 沒補 walletId）
+  - ⚠ **「有記錄不給刪錢包」擋在 WalletSection 元件**，不是 store
+    （settings↔records 互相 import 會循環）
+
 - **匯出**：設定頁 → 彈窗選格式（JSON／Excel）與範圍。
-  JSON＝含設定的完整備份；**Excel＝只含記錄的 .zip（xlsx + `images/`，不含任何設定）**。
+  **JSON＝format 2，全部錢包＋各自設定的完整備份**（v1 舊檔仍可匯入）；
+  **Excel＝只含當前錢包記錄的 .zip（xlsx + `images/`，不含任何設定）**。
   兩種格式的 ZIP 與 XLSX 都是**自己寫的**（`lib/zip.ts`／`lib/xlsx.ts`，零依賴）→
   ⚠ 動到那裡之前先讀 `CONVENTIONS.md` 的「匯出（JSON ╱ Excel）」那節（有一堆一錯就檔案損毀的雷）
 
-- localStorage `mop-ledger.{records,settings,draft}.v1`；收據原圖在 IndexedDB（`idb-keyval`）
-- 分類 `{ id, name, type, color, icon?, builtin, archived }`；舊資料載入時 `withIcons()` 補 icon 並回寫
+- localStorage `mop-ledger.{wallets,setting.<id>,records,draft}`；
+  `mop-ledger.settings.v1` 是**單錢包時代的舊鍵，刻意不刪**（遷移保險）；
+  收據原圖在 IndexedDB（`idb-keyval`，跨錢包共用）
+- 分類 `{ id, name, type, color, icon?, builtin, archived, parentId? }`；
+  舊資料載入時 `withIcons()` 補 icon 並回寫
+
+## ⚠⚠ 全站約定：日期輸入框（0.1.21 起，含未來所有新畫面）
+
+> 使用者原話：「**所有日期的輸入框都是純文字輸入，用戶要按右手邊的按鈕才會彈出
+> 日期時間的選擇器，請修正現在的所有日期選擇框和未來的也要這樣**」
+
+- **永遠不要**把 `<input type="date">` / `type="datetime-local"` 當成畫面上可見的輸入框
+- 只要日期 → `components/DateField.vue`；日期＋時間 → `components/DateTimeField.vue`
+  （兩者都是「純文字框 ＋ 右邊按鈕」，按鈕底下才是透明的原生 picker）
+- 承接原生 picker 的鈕要 `overflow: hidden`（Safari 的 shadow DOM 子欄位會撐寬整頁
+  → 往左滑出現一大片空白）；原生 input 與可見文字框都要 `font-size: 16px`（<16px 被
+  iOS 聚焦放大，一樣會把整頁撐寬）
+- 細節與三條硬性 CSS 規則 → `CONVENTIONS.md` 的「日期輸入框（全站約定，0.1.21 起永久適用）」
 
 ## 視覺基調
 

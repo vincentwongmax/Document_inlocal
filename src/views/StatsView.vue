@@ -21,6 +21,7 @@ import TrendChart from '@/components/charts/TrendChart.vue'
 import DailyChart from '@/components/charts/DailyChart.vue'
 import RecordList from '@/components/RecordList.vue'
 import RecordSheet from '@/components/RecordSheet.vue'
+import DateField from '@/components/DateField.vue'
 import CategoryIcon from '@/components/CategoryIcon.vue'
 import { iconForCategory } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
@@ -288,7 +289,7 @@ const mom = computed(() => st.momChange.value)
 
       <div v-if="mode === 'day'" class="monthbar">
         <button class="btn btn--ghost btn--sm" @click="shiftDay(-1)">‹</button>
-        <input v-model="day" class="field monthbar__sel" type="date" />
+        <DateField v-model="day" class="monthbar__sel" />
         <button class="btn btn--ghost btn--sm" @click="shiftDay(1)">›</button>
         <button class="btn btn--ghost btn--sm monthbar__now" @click="goDay">今天</button>
       </div>
@@ -335,11 +336,11 @@ const mom = computed(() => st.momChange.value)
         <div class="custom__dates">
           <label class="custom__date">
             <span class="tiny muted">從</span>
-            <input v-model="start" class="field" type="date" />
+            <DateField v-model="start" />
           </label>
           <label class="custom__date">
             <span class="tiny muted">到</span>
-            <input v-model="end" class="field" type="date" />
+            <DateField v-model="end" />
           </label>
         </div>
         <div class="presets">
@@ -568,17 +569,23 @@ const mom = computed(() => st.momChange.value)
   gap: 4px;
   min-width: 0;
 }
-/* 日期框自己的內距與字級直接決定它「最少需要多寬」：
-   15px＋左右各 12px 內距要 166px，兩個並排塞不進任何手機（390px 也只有 157px／欄），
-   所以這一列收成 13px＋左右各 8px（實測只要 141px）。
-   高度維持 42px 與其他欄位一致。
-   ⚠ max-width 再保險一次：有些引擎的原生日期框會用自己的內建寬度壓過 width，
-   補一條 max-width 才不會反過來撐爆欄位。 */
-.custom__date .field {
+/* 兩欄的字級與內距收小一點，才塞得進手機的半寬。
+   `.df` 是 DateField 的根（純文字框＋日曆鈕），`min-width: 0` 讓它可以被壓窄；
+   ⚠ 用 :deep()：裡面的 input 是子元件的內容，不會帶到這一頁的 scope id。 */
+.custom__date :deep(.df) {
+  min-width: 0;
+}
+.custom__date :deep(.field) {
   min-width: 0;
   max-width: 100%;
   padding-left: 8px;
-  padding-right: 8px;
+  /* ⚠ 右側留白一定要留給日曆鈕：DateField 的 `.df__in` 自帶 38px，
+     這條是 `.custom__date .field[data-v]`（權重比子元件自己的 `.df__in` 高），
+     寫 8px 會把那段留白蓋掉 → 日期文字跑到日曆鈕底下。 */
+  padding-right: 38px;
+  /* 13px：沿用 0.1.11「縮少一點」的決定（那時是為了塞進半欄）。
+     改成純文字框之後沒有原生日期框的內建最小寬度了，13px 的 `2026/10/07`
+     約 71px ＋ 左右 46px ＝ 117px，375px 時每欄 150px 綽綽有餘。 */
   font-size: 13px;
 }
 /* 超窄螢幕改成上下堆疊。
@@ -618,9 +625,19 @@ const mom = computed(() => st.momChange.value)
 .rangebar__sum {
   margin: 9px 0 0;
 }
+/* 日期選擇器（DateField）在這一列裡是可伸縮的那一格：
+   它自己是 div，沒有 input 的內建寬度，要明說「可以長、也可以被壓」 */
+.monthbar__sel.df {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .monthbar__sel {
   height: 38px;
   max-width: 180px;
+}
+/* 字級／粗細在裡面的 input 上（DateField 的子元件內容，要 :deep 才選得到） */
+.monthbar__sel :deep(.field) {
+  height: 38px;
   font-weight: 600;
 }
 /* 捷徑鈕（今天／本月／今年）：維持自然寬度，不要被窄版的 select 擠到變形 */

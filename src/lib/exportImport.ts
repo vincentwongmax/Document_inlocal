@@ -1,30 +1,54 @@
-import type { ExportPayload, Settings, TxRecord } from '@/types'
+import type { ExportPayload, Settings, TxRecord, Wallet } from '@/types'
 import { blobToDataUrl, getImage, putImage } from './imageDb'
 import { makeThumb } from './imaging'
 
-/** 匯出：記錄＋設定＋圖片（base64），單一 JSON 檔 */
-export async function buildExport(
-  records: TxRecord[],
-  settings: Settings,
-): Promise<ExportPayload> {
+export interface ExportSource {
+  /** 全部錢包（照顯示順序） */
+  wallets: Wallet[]
+  /** 當前錢包（JSON 的 settings 欄位會放這一個，向後相容用） */
+  activeWalletId: string
+  /** walletId -> 該錢包的設定（全部） */
+  settingsByWallet: Record<string, Settings>
+  /** 這次要打包的記錄（已依範圍篩好；可能橫跨多個錢包） */
+  records: TxRecord[]
+  onProgress?: (p: { phase: 'read' | 'pack'; done: number; total: number }) => void
+}
+
+/**
+ * 匯出成單一 JSON 檔（format 2）：
+ * 錢包清單 ＋ 每個錢包各自的設定 ＋ 記錄 ＋ 圖片（base64）。
+ *
+ * ⚠ 這是**完整備份**：設定與錢包一律整份帶走，
+ * 只有「記錄」會受彈窗上的範圍篩選影響。
+ */
+export async function buildExport(src: ExportSource): Promise<ExportPayload> {
   const images: Record<string, string> = {}
   const needed = new Map<string, string>() // md5 -> imageId
-  for (const r of records) {
+  for (const r of src.records) {
     for (const im of r.images ?? []) {
       if (!needed.has(im.md5)) needed.set(im.md5, im.id)
     }
   }
+  const total = needed.size
+  let done = 0
+  src.onProgress?.({ phase: 'read', done: 0, total })
   for (const [md5, id] of needed) {
     const blob = await getImage(id)
     if (blob) images[md5] = await blobToDataUrl(blob)
+    src.onProgress?.({ phase: 'read', done: ++done, total })
   }
+  const primary =
+    src.settingsByWallet[src.activeWalletId] ?? Object.values(src.settingsByWallet)[0]
   return {
     app: 'mop-ledger',
-    format: 1,
+    format: 2,
     exportedAt: new Date().toISOString(),
-    settings,
-    records,
+    settings: primary,
+    records: src.records,
     images,
+    wallets: src.wallets,
+    settingsByWallet: src.settingsByWallet,
+    activeWalletId: src.activeWalletId,
   }
 }
 
@@ -55,20 +79,39 @@ function dataUrlToBlob(dataUrl: string): Blob {
 }
 
 export interface ParsedImport {
+  /** 1 = 單錢包時代的舊檔（記錄沒有 walletId）；2 = 有錢包的版本 */
+  format: 1 | 2
   records: TxRecord[]
   settings?: Settings
+  /** 只有 v2 有：全部錢包 */
+  wallets?: Wallet[]
+  /** 只有 v2 有：walletId -> 該錢包的設定 */
+  settingsByWallet?: Record<string, Settings>
   images: Record<string, string>
   exportedAt?: string
 }
 
 export function parseImport(text: string): ParsedImport {
-  const data = JSON.parse(text) as ExportPayload
+  let data: ExportPayload
+  try {
+    data = JSON.parse(text) as ExportPayload
+  } catch {
+    throw new Error('這個檔案不是 JSON，讀不出來')
+  }
   if (!data || data.app !== 'mop-ledger' || !Array.isArray(data.records)) {
     throw new Error('這不是記帳本的匯出檔')
   }
+  const hasWallets = Array.isArray(data.wallets) && data.wallets.length > 0
   return {
+    // 1 是舊檔：沒有 wallets 欄位。有些舊檔的 format 寫死 1，所以兩個條件都要看
+    format: data.format === 2 || hasWallets ? 2 : 1,
     records: data.records,
     settings: data.settings,
+    wallets: hasWallets ? data.wallets : undefined,
+    settingsByWallet:
+      hasWallets && data.settingsByWallet && typeof data.settingsByWallet === 'object'
+        ? data.settingsByWallet
+        : undefined,
     images: data.images ?? {},
     exportedAt: data.exportedAt,
   }
