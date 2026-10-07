@@ -80,6 +80,15 @@ function place() {
   popStyle.value = style
 }
 
+/**
+ * 點到別的地方就收起。
+ *
+ * ⚠ 只在**彈層已經開著**時掛上（openPop 才 addEventListener），
+ *   而且 pointerdown 是 capture 階段、會先於觸發鈕自己的 click 跑 ——
+ *   若是在「還沒開」時就掛著，點觸發鈕的 pointerdown 會先把 open 判成 true 又立刻 close，
+ *   在 iOS（點擊＝pointerdown→pointerup→click）就會出現「點一下開、再點一下才真的開」的鬼狀態。
+ *   這裡再加一道 contains 判斷，讓觸發鈕自己的 pointerdown 永遠不會把自己關掉。
+ */
 function onDocDown(e: Event) {
   const t = e.target as Node
   if (triggerEl.value?.contains(t) || popEl.value?.contains(t)) return

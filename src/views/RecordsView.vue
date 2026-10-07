@@ -825,13 +825,19 @@ function removeEditing(id: string) {
    `.search :deep(.cf__in)` 一樣是 (0,2,0)，**誰贏取決於打包順序**——
    所以這裡刻意多帶一個 class（`.field.cf__in`）或一層（`.cf .cf__x`）把特異度拉高，
    不然 padding-right 與清空鈕的尺寸會被它蓋回去。
-   左側讓開放大鏡、右側讓開清空鈕（22px 鈕 + 6px 邊距 + 4px 間隙）。 */
+   左側讓開放大鏡、右側讓開清空鈕（22px 鈕 + 6px 邊距 + 4px 間隙）。
+   ⚠⚠ 字級 16px 是 0.1.25 的全站約定（見 src/style.css）：iOS 對 < 16px 的可編輯元素
+   會 focus zoom，而那個縮放 blur 後不保證還原 → 使用者「點過輸入框之後，
+   連點空白處頁面就往上滑」。**這裡曾經是 13px，不能再改回去** ——
+   搜尋框是「會叫出鍵盤」的輸入框，跟 `<select>` 那種原生滾輪不一樣。
+   （`.field.cf__in` 的特異度 (0,2,0) 現在其實輸給 style.css 那條 (0,5,1)，
+   這裡明寫 16px 是為了讓「意圖」看得見，不是靠別處的規則默默生效。） */
 .search :deep(.field.cf__in) {
   height: 34px;
   min-height: 34px;
   padding-left: 30px;
   padding-right: 32px;
-  font-size: 13px;
+  font-size: 16px;
   border-radius: 10px;
 }
 .search :deep(.cf .cf__x) {

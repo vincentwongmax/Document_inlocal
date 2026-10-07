@@ -982,9 +982,12 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   color: var(--text-2);
   letter-spacing: 0.02em;
 }
+/* ⚠ 字級 16px 是 0.1.25 的全站約定（見 src/style.css）：iOS 對 < 16px 的可編輯元素
+   會 focus zoom，且 blur 後不保證還原 → 「點過輸入框後連點空白處頁面會往上滑」。
+   **這裡曾經是 14px，不能再改回去。**（高度仍由上面的 32px 控制） */
 .rate__input {
   height: 32px;
-  font-size: 14px;
+  font-size: 16px;
   padding: 0 8px;
   min-width: 0;
 }
@@ -1174,14 +1177,17 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   align-items: center;
   gap: 7px;
 }
-/* 這裡的輸入框刻意比 .field 矮（34px），跟旁邊的「新增」鈕同高，列才不會鬆掉 */
+/* 這裡的輸入框刻意比 .field 矮（34px），跟旁邊的「新增」鈕同高，列才不會鬆掉。
+   ⚠ 字級 16px 是 0.1.25 的全站約定（見 src/style.css）：iOS 對 < 16px 的可編輯元素
+   會 focus zoom，且 blur 後不保證還原 → 「點過輸入框後連點空白處頁面會往上滑」。
+   **這裡曾經是 14px，不能再改回去。**（高度仍然由上面的 34px 控制，字級不影響列高） */
 .qn__in,
 .qn__addin {
   flex: 1;
   min-width: 0;
   height: 34px;
   padding: 0 10px;
-  font-size: 14px;
+  font-size: 16px;
   background: var(--surface);
 }
 .qn__del {

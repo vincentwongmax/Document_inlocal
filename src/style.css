@@ -128,6 +128,23 @@ html.is-locked body {
 }
 
 /**
+ * iOS（PWA）聚焦輸入框後，連點空白處頁面又會往上滑（0.1.25）。
+ *
+ * 0.1.23 把 `body { height: 100% }` 改成 `min-height: 100%` 修好了「沒點過輸入框」的情況，
+ * 但**只要使用者點過任何文字輸入框，問題就會復發**。
+ * 點過輸入框之後會多出兩個「持續狀態」，各自讓 iOS 一直重新對齊畫面：
+ *
+ *   ① focus zoom：iOS 對 `font-size < 16px` 的可編輯元素會自動放大整頁，
+ *      而且 blur 之後**不保證還原** → visual viewport 一直小於 layout viewport。
+ *      → 根治在這裡：可編輯元素字級一律 16px（見下面 `input, select, textarea` 那組）。
+ *
+ *   ② 游標對齊迴圈：輸入框保持聚焦期間，iOS 會持續把游標位置對齊到可視範圍；
+ *      而 iOS 點空白處不會自動 blur，鍵盤也還開著（visual viewport 被壓短），
+ *      所以每點一下空白處就再對齊一次。
+ *      → 根治在 src/lib/iosScrollGuard.ts（點空白處時主動收掉鍵盤並扶正捲動位置）。
+ */
+
+/**
  * iOS（PWA）連點問題：
  * 快速連點同一顆鈕時，WebKit 會把手勢判成 double-tap → 放大／把畫面往下帶，
  * 使用者就會覺得「一直往下捲」。`touch-action: manipulation` 只關掉 double-tap 放大，
@@ -168,6 +185,35 @@ select,
 textarea {
   font: inherit;
   color: inherit;
+}
+
+/**
+ * ⚠⚠ 全站約定（0.1.25 起永久適用）：**會叫出鍵盤的可編輯元素，字級一律 16px**。
+ *
+ * 這是「點過輸入框後，連點空白處頁面會往上滑」的根治點之一：
+ * iOS 對 `font-size < 16px` 的可編輯元素會自動放大整頁（focus zoom），
+ * 那個縮放是持續狀態，blur 後不一定還原 → 之後每次點畫面都會被重新對齊。
+ * 只要字級 ≥ 16px，這顆放大開關就永遠不會被觸發。
+ *
+ * ⚠ 四件事一定要注意：
+ *   1. **必須排在 `font: inherit` 之後**（同特異度，靠源碼順序取勝）；
+ *      哪天搬家到上面，這個修正會整條失效，而症狀只會在 iPhone 上出現。
+ *   2. **不含 `<select>`**：iOS 的 select 是叫出原生滾輪選擇器（不是鍵盤）、
+ *      沒有游標，所以既不會 focus zoom 也沒有「游標對齊迴圈」。
+ *      站上的 select 都是刻意做小的膠囊／列內控制（`.sel` 13px、`.rates__addsel` 13px…），
+ *      硬套 16px 只會把那些版面撐壞。日後新增 select 也不用管這條。
+ *   3. 排除 checkbox／radio／range／color／file：同理，它們不跳鍵盤也不會被放大。
+ *   4. 元件自己的 scoped 樣式（特異度更高）仍可覆蓋 —— 但那就會讓 iPhone 上
+ *      重新出現 focus zoom。**要改小請先想清楚**，只在確認那個欄位不會被聚焦時才做。
+ *      日期／時間欄位（DateField／DateTimeField）本來就已經各自寫了 16px。
+ */
+input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not(
+    [type='file']
+  ),
+textarea,
+[contenteditable='true'],
+[contenteditable=''] {
+  font-size: 16px;
 }
 
 h1,

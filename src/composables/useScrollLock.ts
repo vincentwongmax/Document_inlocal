@@ -52,17 +52,54 @@ function releaseLock() {
 }
 
 /**
+ * 從觸發元素往上找「自己就能捲動」的祖先。
+ *
+ * ⚠⚠ 這是修「設定頁 › 管理分類，下拉選單打不開」的關鍵（0.1.25）：
+ *   原本只放行 `opts.scrollable()` 指定的那**一個**元素，其他一律 preventDefault。
+ *   但 CategorySelect 的下拉清單（`.pop`, z-index 95）是 **Teleport 到 body** 的、
+ *   不屬於彈窗內容 `.box` —— 手指在清單裡滑動時，`scroller.contains(target)` 是 false，
+ *   於是 touchmove 被 preventDefault，清單根本滑不動 → 使用者「無法選取下方的選擇」。
+ *
+ *   修正：不要再只認那一個元素，改成「任何**當下真的可以捲動**的元素」都放行。
+ *   判準是 `scrollHeight > clientHeight`（真的溢出才放行），所以：
+ *     - 下拉清單（內容超高）→ 放行，可以滑
+ *     - 彈窗內容 `.box`（內容超高）→ 放行
+ *     - 一般靜態區塊（沒有溢出）→ 一樣擋掉，背景仍然鎖得住
+ *   背景本身（`.mask` 以外的頁面）碰不到「可捲動祖先」，所以照樣被鎖。
+ */
+function scrollableAncestor(target: EventTarget | null): HTMLElement | null {
+  let el: HTMLElement | null = target instanceof HTMLElement ? target : null
+  while (el && el !== document.body && el !== document.documentElement) {
+    const cs = getComputedStyle(el)
+    const oy = cs.overflowY
+    const canScrollY =
+      (oy === 'auto' || oy === 'scroll' || oy === 'overlay') && el.scrollHeight > el.clientHeight + 1
+    if (canScrollY) return el
+    el = el.parentElement
+  }
+  return null
+}
+
+/**
  * 開啟彈窗時鎖住背景捲動。
  *
  * 用法：
  *   useScrollLock(toRef(props, 'open'))                                  // 整頁不捲（計算機）
- *   useScrollLock(toRef(props, 'open'), { scrollable: () => bodyEl.value }) // 只有某區可捲（分類）
+ *   useScrollLock(toRef(props, 'open'), { scrollable: () => bodyEl.value }) // 指定某區一定可捲
+ *
+ * ⚠ `opts.scrollable` 現在只是「額外保證放行」：
+ *   真正的判準是「手指底下有沒有可捲動祖先」（見 scrollableAncestor），
+ *   這樣 Teleport 出去的下拉清單才滑得動。傳進來的元素仍一律放行，
+ *   即使它的內容當下還沒溢出（例如剛好一頁高）。
  */
 export function useScrollLock(open: Ref<boolean>, opts: ScrollLockOptions = {}) {
   function onTouchMove(e: TouchEvent) {
     const scroller = opts.scrollable?.()
-    // 手指落在可捲動區裡面就放行，讓它自己捲（overscroll-behavior: contain 會擋住連鎖）
+    // ① 明確指定的可捲區：一律放行
     if (scroller && e.target instanceof Node && scroller.contains(e.target)) return
+    // ② 任何「當下真的可捲動」的祖先（含 Teleport 出去的下拉清單）：放行
+    if (scrollableAncestor(e.target)) return
+    // ③ 其餘（背景、靜態區）一律擋掉
     e.preventDefault()
   }
 

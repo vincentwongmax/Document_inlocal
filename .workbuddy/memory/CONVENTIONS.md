@@ -649,11 +649,26 @@ const boxEl = ref<HTMLElement | null>(null)
 useScrollLock(toRef(props, 'open'), { scrollable: () => boxEl.value })
 ```
 
-⚠⚠ **`scrollable` 一定要給**（除非這個彈窗真的完全不捲，例如計算機）：
-`useScrollLock` 是靠在 document 上 `touchmove` preventDefault 來擋背景，
-如果你沒把「內容區」列進可捲清單，**iOS 上連內容自己都滑不動**（整個卡住）。
-給的時候記得指到**真正 overflow 的那一層**（例如 `.box`／`.catsheet__body`／
-`RecordSheet` 的 `lbEl.stageEl`）。
+⚠⚠ **`scrollable` 還是建議給**（除非這個彈窗真的完全不捲，例如計算機），
+但 0.1.25 起它只是「額外保證放行」，**不再是唯一的放行條件**：
+
+`useScrollLock` 是靠在 document 上 `touchmove` preventDefault 來擋背景。
+0.1.22～0.1.24 只能放行「`opts.scrollable()` 指定的那一個元素」，
+結果 **Teleport 出去的下拉清單（`.pop`）整個滑不動** —— 詳見下面 0.1.25 那節。
+0.1.25 起改成兩段判斷（`composables/useScrollLock.ts` 的 `scrollableAncestor()`）：
+
+1. 手指落在 `scrollable()` 指定的元素裡 → 放行
+2. 否則往上找「**當下真的可以捲動**」的祖先（`overflow-y` 是 auto／scroll／overlay
+   **且** `scrollHeight > clientHeight + 1`）→ 放行
+3. 其餘（背景、沒有溢出的靜態區塊）→ preventDefault
+
+所以：**有溢出的東西都滑得動，沒溢出的東西都被鎖**。`scrollable` 仍然值得給
+（例如內容剛好一頁高、還不需要捲的時候，先讓它可捲以防之後長高），
+給的時候記得指到**真正 overflow 的那一層**（`.box`／`.catsheet__body`／`RecordSheet` 的 `lbEl.stageEl`）。
+
+⚠ 副作用（刻意保留、別「修」掉）：`scrollableAncestor` 會從 `document.body` 與
+`document.documentElement` **之前**就停住，所以那兩層永遠不算「可捲動祖先」——
+背景本身就是在這條線以外，鎖得住。
 
 搭配的 CSS（第二道保險）：內容區要有 `overscroll-behavior: contain`，
 捲到底才不會「連鎖」帶動背景。
@@ -791,3 +806,171 @@ useScrollLock(toRef(props, 'open'), { scrollable: () => boxEl.value })
   三欄那一排是內層的 `.usage__grid`
 
 測試：`.smoke/v103.mjs`（84 項，見上面「匯出」那節的「驗證」）
+
+## ⚠⚠ 點過輸入框之後，連點空白處頁面會往上滑（0.1.25 修）
+
+> 使用者原話：「在 pwa (IPHONE) 的所有頁面中，用戶連點空白的地方，頁面會向上滑
+> （不需要向上滑, 要無論怎樣點都保持不動），這個問題沒有修復成功，
+> **只要用戶有在文字輸入框點擊，就會出現問題**」
+
+0.1.23 的 `body { min-height: 100% }`（見上面那節）只修好了「**沒點過輸入框**」那一半。
+點過輸入框之後會多出兩個**持續狀態**，各自讓 iOS 一直重新對齊畫面。
+
+### ① focus zoom → CSS 根治
+
+iOS 對 `font-size < 16px` 的可編輯元素會**自動放大整頁**，而且那個縮放
+**blur 之後不保證還原** → visual viewport 一直小於 layout viewport，
+之後每次點畫面 iOS 都要重新對齊一次。
+
+→ `src/style.css` 那段（**必須排在 `input, select, textarea { font: inherit }` 之後**，
+同特異度靠源碼順序取勝；搬家到上面這條修正就整條失效）：
+
+```css
+input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']),
+textarea,
+[contenteditable='true'],
+[contenteditable=''] {
+  font-size: 16px;
+}
+```
+
+⚠⚠ **不含 `<select>`，這是刻意的**：iOS 的 select 是叫出**原生滾輪選擇器**（不是鍵盤）、
+沒有游標，所以既不會 focus zoom 也沒有游標對齊迴圈。站上的 select 都是刻意做小的
+膠囊／列內控制（`.sel` 13px、`.rates__addsel` 13px、`.currow__add` 13px），
+硬套 16px 只會撐壞版面。**日後新增 select 也不用管這條。**
+（對照：`.monthbar__sel`、`.row__ctl` 是 16px，那是它們各自的 scoped 樣式決定的。）
+
+⚠ 日期／時間欄位（`DateField`／`DateTimeField`）本來就已經各自寫了 16px。
+
+⚠⚠ **這條是「強制」的，特異度算過**：那一串 `:not()` 讓選擇器變成 **(0,5,1)**
+（每個 `[type=...]` 屬性選擇器各算一級），**會蓋過元件的 scoped 樣式**（通常 (0,2,0)）。
+這是刻意的 —— 讓任何元件都不能偷偷把字級改小、又讓 iOS 的 bug 復活。
+代價是三個原本刻意做小的輸入框跟著變大（**高度與版面都沒變**）：
+
+| 位置 | 原本 | 現在 |
+| --- | --- | --- |
+| 記錄頁標題列的搜尋框（`.search :deep(.field.cf__in)`） | 13px | **16px**（靠高度 34px 維持小巧） |
+| 設定頁快速備註 `.qn__in`／`.qn__addin` | 14px | **16px**（高度仍 34px） |
+| 設定頁匯率列 `.rate__input` | 14px | **16px**（高度仍 32px） |
+
+⚠ 這三處的宣告都已明寫成 16px 並加了註解（不要靠「別處的規則默默生效」），
+**不要再改小**。搜尋框那條也是 `.smoke/v95.mjs` 的重點：
+0.1.24 以前它在驗「字級 13px／比標準 `.field` 小」，0.1.25 起那條被本約定取代，
+改驗「≥ 16px ＋ 仍然靠高度維持小巧」。
+
+### ② 游標對齊迴圈 → `lib/iosScrollGuard.ts` 根治
+
+iOS 在輸入框**保持聚焦**期間會持續把游標位置對齊到可視範圍，
+而 iOS **點空白處不會自動 blur**、鍵盤也還開著（visual viewport 被鍵盤壓短），
+所以每點一下空白處就再對齊一次 = 一直往上滑。
+
+`src/lib/iosScrollGuard.ts`（`main.ts` 開機時 `installIosScrollGuard()` 一次）的做法：
+
+```
+pointerdown（capture）
+  ├─ 彈窗開著（html.is-locked）？        → 不插手（會跟 useScrollLock 打架）
+  ├─ document.activeElement 不是可編輯元素？ → 不插手（沒有對齊迴圈）
+  ├─ 點在互動元素上（isBlankTap 為 false）？ → 不插手（那是使用者的主動操作）
+  └─ 以上皆非（＝點在空白處且正有輸入框聚焦）
+       ① 記下這一刻的 scrollX/scrollY
+       ② active.blur()        ← 鍵盤跟著收起，對齊迴圈結束
+       ③ rAF ×2 之後把捲動位置扶回 ① 的值
+```
+
+⚠ 幾個刻意的決定，別「優化」掉：
+
+- **用 `pointerdown` 而不是 `click`**：要趕在 iOS 開始跑它自己的對齊之前動手；
+  也不能用 `touchstart`（pointerdown 才涵蓋觸控筆／藍牙滑鼠）
+- **不 preventDefault、不用 `{passive:false}`**：我們不阻止任何事，只是順手收鍵盤
+- **`isBlankTap()` 的判準要跟 `.smoke/v104.mjs` 的 `blankPoint()` 一致**
+  （`a,button,input,select,textarea,label,[role=button],[role=option],[role=tab],[contenteditable=true]`）
+- ③ 之所以安全：位置是**同一瞬間**記的，中間不可能有使用者自己的捲動
+- `isIOS()` 判斷不過就**整支不裝** → 桌機、Android 完全不受影響
+- ⚠ `.rec__pasteArea`／`.imgs__pasteArea` 是 `contenteditable="true"` **且** `role="button"`
+  → 被 `isBlankTap` 排除，所以點它不會把自己 blur 掉（貼上流程不受影響）
+
+### 測試（`.smoke/v104.mjs`，46 項）
+
+- A／A1／A2：記帳頁／記錄頁／設定頁＋統計頁（要先把「自訂」日期區打開）
+  ＋管理分類彈窗，所有可編輯元素字級 ≥ 16px（**用 `EDITABLE_SEL`，不含 select**）
+- B1～B3：**先捲到非 0 位置**（不然「不會動」是廢話）→ 聚焦輸入框 → 連點空白處 8 下
+  → 斷言 `scrollY` 完全不變、且 `activeElement` 不再是 input；再連點一輪也不能動
+- B4：聚焦輸入框時點按鈕，按鈕照常生效（護欄不插手）
+- C1～C4／D：下拉清單出現、**在 `.pop__item` 上的 touchmove `defaultPrevented === false`**
+  （對照組 `.mask` 上要是 `true`，證明鎖背景沒失效）、捲得到底、捲到底後點得到最後一項
+- ⚠ 記帳頁在 844 高的視窗裡剛好塞滿（`max=0`，畫面根本沒得動）→ 那一頁改用 **667**
+  （iPhone SE 高度）跑，讓「不會動」這句話有可證偽的空間
+- ⚠ 空集合假通過要防：每一組都有一條「確實有可編輯元素可驗（不是空集合）」
+
+## ⚠⚠ 測試常見殺手（完整清單）
+
+新測試一定要逐條對照；每一條都是真的踩過、而且症狀很會誤導人的。
+
+### 會讓整支測試「掛死」的
+
+- **`indexedDB.deleteDatabase` 只能在「App 重新載入後」呼叫**：
+  App 一載入就握著 `mop-ledger-images` 連線 → 請求卡在 `blocked` 永不完成
+  → **整支掛死（零輸出、被 SIGTERM、exit=1）**。正確順序：
+  `goto` → `localStorage.clear()` → **`reload`** → `deleteDatabase` → **`reload`** → 種資料。
+  - ⚠ 先 `goto('about:blank')` 沒用（沒有 origin →
+    `SecurityError: access to the Indexed Database API is denied in this context`）
+  - ⚠ 排查手法：塞 `process.stderr.write('M1 …')` 標記，看卡在哪一個 `evaluate`
+- **沙箱不允許 Node 開子行程**：`execFileSync`／`spawnSync` → `EBUSY`（連 `python -c` 都擋）
+  → 要「換個實作再驗一次」的步驟得拆成 shell 腳本（例：`.smoke/v98-verify.sh`）
+
+### 會讓斷言「假紅燈」的（不是程式壞）
+
+- **`index.html` 有 Google Fonts 外鏈** → 網路一抖 console 就噴 `ERR_NAME_NOT_RESOLVED`，
+  害所有「沒有 JS 錯誤」的斷言偶發紅燈。**每支測試都要照抄這個 helper**：
+
+  ```js
+  const ENV_NOISE = /ERR_NAME_NOT_RESOLVED|ERR_INTERNET_DISCONNECTED|ERR_CONNECTION|ERR_NETWORK|net::ERR|fonts.googleapis|fonts.gstatic|Failed to load resource/i
+  const isRealErr = (t) => !ENV_NOISE.test(String(t))
+  page.on('console', (m) => m.type() === 'error' && isRealErr(m.text()) && errors.push('console: ' + m.text()))
+  ```
+
+- **升版後忘了 `npm run build`** → `__APP_VERSION__` 是編譯期注入的，`dist/` 沒重建
+  → v79（拿 `package.json` 對畫面版本號）必紅
+- **`networkidle2` 會偶發 timeout**（`Navigation timeout of 60000 ms exceeded`）：
+  先用 `curl` 確認伺服器健康（200），再重跑一次就知道是它。舊測試（如 v99）沒有
+  `isRealErr`／request-interception 護盾，比較容易中
+- **等固定秒數不可靠**：v84 用 `sleep(900)` 等 SweetAlert2 彈窗，慢的時候量到
+  「還沒渲染完的空彈窗」→ 約 1/10 偶發紅燈。**要等狀態、不要等時間**：
+  `waitForFunction(() => !!document.querySelector(目標))` 再 `sleep(400)` 緩衝
+- **UI 文案／結構改過，測試沒跟著改**：v98（改文案、多一組 `.lb` 段、圖檔名多了錢包前綴）、
+  v99（Excel 預設範圍變全部錢包）。⚠ 這種紅燈要**逐條對照「這是不是刻意的行為改變」**，
+  確認是就改測試，別去改程式
+
+### 會讓測試「量錯東西」的
+
+- **`mop-ledger.wallets.v1` 是 `{ wallets, activeWalletId }`，不是裸陣列**
+  （裸陣列被 `loadRoot` 當成「沒存過」→ 走遷移 → 只剩 1 個錢包）
+- **測試圖別用兩張「內容相同」的**：MD5 去重會擋掉第二張，多張上傳就測不到
+- **暫存檔用 `os.tmpdir()` + `fs.mkdtempSync`**，別寫死 `/tmp`（Windows 讀不到）；
+  `curl` 輸出要存到專案內（`.smoke/tmp/`），Git Bash 的 `/tmp` 讀不到
+- **Node 直接 import `src/lib/*.ts` 會 `ERR_MODULE_NOT_FOUND`**（副檔名與 `@/` 別名只有 Vite 認得）
+  → 要單獨試 lib 先打包：見 `.smoke/run-probe.mjs`（`build({configFile:false, build:{ssr}})`，
+  用 `import { x } from '../src/lib/x'`，**從 `.smoke/` 出發是 `../` 不是 `../../`**）
+- **Python 管線輸出要 `PYTHONIOENCODING=utf-8`**，否則中文被打成 `?`
+  （別跑 `v73`：沒有 `v73.mjs`，只有 `v73-edge/-locale/...` 變體）
+- **空集合假通過要防**：條件式斷言（「所有元素都 ≥ 16px」）要配一條
+  「確實有元素可驗（不是空集合）」—— v104 就是靠這條抓到「統計頁只剩 select，
+  已經沒有可驗的文字框」
+- **「不會動」要先讓它「能動」**：驗 `scrollY` 不變之前要**先捲到非 0**
+  （在 0 的位置本來就上不去，0 → 0 證明不了任何事）。內容剛好塞滿視窗時
+  （`max=0`）要換個更矮的 viewport（v104 的記帳頁改用 iPhone SE 的 667）
+- **斷言的選擇器要對得上「實際渲染在哪」**：`CategorySelect` 的 `.pop__item`
+  是 **Teleport 到 body** 的 → 選擇器不能寫 `.box .pop__item`
+- **要驗「幾何關係」而不是「computed px」**：844 視窗下 `min-height: 100%` 與
+  `height: 100%` 算出來可能同值，要驗「body 盒子高 ≥ `scrollHeight`」才分得出來
+- **要靠名稱／標題找元素，不要靠索引**：v98 用 `d.segs[0]` 抓「格式」段，
+  0.1.24 多插了一組「錢包」段之後就指錯 → 改成用標題 key 起來的 `segGroups`
+
+### 沙箱環境限制
+
+- `reg.exe` 被擋、從 Bash 叫 PowerShell 被擋、個人目錄刪除被攔 → 回報使用者別硬刪
+- 對外網路會不穩（`CONNECT tunnel failed, response 502`／github.io timeout）
+- ⚠ **`npm install <pkg>` 會拔掉 `@esbuild/win32-x64`** → build 爆「needed by esbuild」。
+  那是 esbuild 的 optionalDependencies（**不該**進 package.json）：把那行從 package.json
+  刪掉再 `npm install` 就會裝回
+- `.smoke/`、`.deploy/` 已 gitignore；`CHANGELOG.md` 要進版控
