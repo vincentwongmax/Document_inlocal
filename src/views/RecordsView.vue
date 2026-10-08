@@ -363,11 +363,10 @@ function removeEditing(id: string) {
               </svg>
               分類
             </button>
-            <!-- 時間基準：切到「最近」＝用新增時間查詢（補登舊帳時用交易時間找不到）
-                 ⚠ 0.1.29：移到這一列的最右邊，並改成醒目的墨綠（使用者指定） -->
+            <!-- 時間基準：切到「最近」＝用新增時間查詢（補登舊帳時用交易時間找不到） -->
             <button
               type="button"
-              class="bycat bycat--recent"
+              class="bycat"
               :class="{ 'is-on': recent }"
               :aria-pressed="recent"
               :title="recent ? '改回依交易時間查詢' : '改為依新增時間查詢（不是交易時間）'"
@@ -679,38 +678,6 @@ function removeEditing(id: string) {
   stroke-width: 1.9;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-/**
- * 0.1.29：「最近」（＝依新增時間查詢）的按鈕改成醒目的，並移到這一列的最右邊。
- * 使用者原話：「檢視的按鈕中的最近的按鈕，把這個依新增時間的按鈕移動到這一行的最右邊，
- * 按鈕改成醒目的顏色(要和主題合)」。
- *
- * 為什麼要醒目：這顆按鈕會**改變整個清單在查的時間基準**（交易時間 ↔ 新增時間），
- * 按了之後內容會整批換掉，是這一頁最容易被誤觸、又最需要看得見的開關 ——
- * 以前跟旁邊的「分類」長得一模一樣，很容易沒注意到它開著。
- *
- * 顏色的選擇（和主題合）：
- *   - 沒開啟 → 淡綠底＋墨綠字（`--accent-soft`／`--accent`，跟分類佔比、統計頁的綠同一套）
- *   - 開啟   → **實心墨綠＋白字**（跟 `.btn--primary` 完全同一組顏色）
- *     全站只有這顆切換鈕用實心綠，所以「它開著」一眼就看得出來。
- */
-.bycat--recent {
-  margin-left: auto;
-}
-.bycat--recent:not(.is-on) {
-  background: var(--accent-soft);
-  border-color: var(--accent-light);
-  color: var(--accent);
-}
-.bycat--recent.is-on {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-.bycat--recent.is-on:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-  color: #fff;
 }
 
 /* ── 依分類分組 ────────────────────────────────────────── */
