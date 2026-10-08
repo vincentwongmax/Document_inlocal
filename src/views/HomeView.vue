@@ -82,6 +82,7 @@ const presetRows = computed(() =>
     const cat = p.categoryId ? settings.category(p.categoryId) ?? null : null
     const bits: string[] = []
     if (p.amount > 0) bits.push(`金額 ${p.amount}`)
+    if (p.currency) bits.push(`以 ${p.currency} 記錄`)
     if (cat) bits.push(settings.fullNameOf(cat.id))
     if (p.note.trim()) bits.push(p.note.trim())
     return {
@@ -99,6 +100,8 @@ const presetRows = computed(() =>
  */
 function applyPreset(p: QuickPreset) {
   type.value = p.type
+  // 幣別（0.1.32）：有指定才切，沒指定維持記帳頁目前的幣別
+  if (p.currency) curCode.value = p.currency
   if (p.categoryId && settings.category(p.categoryId)) categoryId.value = p.categoryId
   if (p.note.trim()) note.value = p.note
   if (p.amount > 0) {

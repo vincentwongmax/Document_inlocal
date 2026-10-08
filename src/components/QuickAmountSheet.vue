@@ -2,6 +2,7 @@
 import { computed, ref, toRef, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { confirmDialog, notify } from '@/lib/alerts'
+import { CURRENCIES } from '@/lib/currency'
 import { useScrollLock } from '@/composables/useScrollLock'
 import { usePullToClose } from '@/composables/usePullToClose'
 import type { QuickPreset, TxType } from '@/types'
@@ -42,7 +43,7 @@ const {
 /** 正在編輯的 preset（null＝清單態） */
 const editing = ref<QuickPreset | null>(null)
 /** 編輯中的草稿（沒按儲存就不會寫進 store） */
-const draft = ref({ amount: '', type: 'expense' as TxType, categoryId: '', note: '' })
+const draft = ref({ amount: '', type: 'expense' as TxType, categoryId: '', note: '', currency: '' })
 
 function edit(p: QuickPreset) {
   editing.value = p
@@ -51,13 +52,15 @@ function edit(p: QuickPreset) {
     type: p.type,
     categoryId: p.categoryId,
     note: p.note,
+    // 舊資料可能沒有這個欄位（0.1.32 才加）→ 空字串＝「預設」
+    currency: p.currency ?? '',
   }
 }
 
 /** 新增：先不寫進 store，按「儲存」才真的生一顆出來（跟管理分類同一個哲學） */
 function startNew() {
-  editing.value = { id: '', amount: 0, type: 'expense', categoryId: '', note: '' }
-  draft.value = { amount: '', type: 'expense', categoryId: '', note: '' }
+  editing.value = { id: '', amount: 0, type: 'expense', categoryId: '', note: '', currency: '' }
+  draft.value = { amount: '', type: 'expense', categoryId: '', note: '', currency: '' }
 }
 
 /** 回清單（沒儲存的草稿直接丟掉） */
@@ -74,6 +77,22 @@ watch(
 )
 
 const isEdit = computed(() => !!editing.value && !!editing.value.id)
+
+/* ── 即時預覽（0.1.32 美化：編輯時就看得到這顆按下去會發生什麼）── */
+const previewLabel = computed(() => {
+  const raw = String(draft.value.amount ?? '').trim()
+  const n = Number(raw)
+  return raw !== '' && Number.isFinite(n) && n > 0 ? String(n) : '—'
+})
+const previewLine = computed(() => {
+  const bits: string[] = [draft.value.type === 'expense' ? '支出' : '收入']
+  if (draft.value.currency) bits.push(`以 ${draft.value.currency} 記錄`)
+  const cat = draft.value.categoryId ? settings.category(draft.value.categoryId) : null
+  if (cat) bits.push(settings.fullNameOf(cat.id))
+  const note = String(draft.value.note ?? '').trim()
+  if (note) bits.push(note)
+  return bits.join(' · ')
+})
 const title = computed(() => (editing.value ? (isEdit.value ? '修改快速金額' : '新增快速金額') : '快速金額'))
 
 /** 分類選單：只列**這個草稿的收支類型**底下的分類（＋空＝維持目前） */
@@ -121,6 +140,7 @@ function submit() {
     type: draft.value.type,
     categoryId: draft.value.categoryId,
     note: draft.value.note,
+    currency: draft.value.currency,
   }
   if (isEdit.value && editing.value) {
     settings.updateQuickPreset(editing.value.id, patch)
@@ -222,26 +242,66 @@ async function askRemove() {
           <!-- ══ 編輯態（跟管理分類同一個 reveal 轉場）══ -->
           <Transition name="reveal">
             <div v-if="editing" class="reveal">
-              <label class="lb">
-                <span>金額 <em class="lb__hint">必填；按鈕上顯示的也是這個數字</em></span>
-                <input
-                  v-model="draft.amount"
-                  class="field num"
-                  type="number"
-                  inputmode="decimal"
-                  min="0"
-                  step="any"
-                  placeholder="例如 25"
-                  @keyup.enter="submit"
-                />
-              </label>
+              <!--
+                即時預覽（0.1.32 美化）：編輯時就看得到「這顆按下去會發生什麼」——
+                左邊是記帳頁那顆按鈕的樣子（只有數字），右邊一行摘要。
+                跟管理分類的 `.prev` 同一個概念。
+              -->
+              <div class="prev">
+                <span class="prev__b num">{{ previewLabel }}</span>
+                <span class="prev__txt">
+                  <b>點下去會 →</b>
+                  <em>{{ previewLine }}</em>
+                </span>
+              </div>
 
+              <!-- 金額 ＋ 貨幣：同一排（記帳頁也是金額旁邊掛幣別） -->
+              <div class="grid2">
+                <label class="lb">
+                  <span>金額 <em class="lb__hint">必填</em></span>
+                  <input
+                    v-model="draft.amount"
+                    class="field num"
+                    type="number"
+                    inputmode="decimal"
+                    min="0"
+                    step="any"
+                    placeholder="例如 25"
+                    @keyup.enter="submit"
+                  />
+                </label>
+                <label class="lb">
+                  <span>貨幣 <em class="lb__hint">「預設」＝不動記帳頁的幣別</em></span>
+                  <select v-model="draft.currency" class="field">
+                    <option value="">（預設）</option>
+                    <option v-for="c in CURRENCIES" :key="c.code" :value="c.code">
+                      {{ c.code }} · {{ c.name }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+
+              <!-- 類型：兩顆切換鈕（支出帶支出色、收入帶收入色），比下拉好按 -->
               <div class="lb">
                 <span>類型</span>
-                <select v-model="draft.type" class="field">
-                  <option value="expense">支出</option>
-                  <option value="income">收入</option>
-                </select>
+                <div class="type2">
+                  <button
+                    type="button"
+                    class="typebtn"
+                    :class="{ 'is-on': draft.type === 'expense', 'is-exp': draft.type === 'expense' }"
+                    @click="draft.type = 'expense'"
+                  >
+                    支出
+                  </button>
+                  <button
+                    type="button"
+                    class="typebtn"
+                    :class="{ 'is-on': draft.type === 'income', 'is-inc': draft.type === 'income' }"
+                    @click="draft.type = 'income'"
+                  >
+                    收入
+                  </button>
+                </div>
               </div>
 
               <label class="lb">
@@ -428,6 +488,41 @@ async function askRemove() {
   opacity: 0;
   transform: translateY(10px);
 }
+/* 金額＋貨幣同一排（貨幣窄一點）；窄到 320 也放得下 */
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 118px;
+  gap: 8px;
+}
+/* 類型切換：兩顆並排，選中帶該類型自己的顏色（支出暖紅／收入墨綠） */
+.type2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+.typebtn {
+  height: 38px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 650;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+.typebtn.is-exp {
+  background: var(--expense-soft);
+  border-color: var(--expense);
+  color: var(--expense);
+}
+.typebtn.is-inc {
+  background: var(--accent-soft);
+  border-color: var(--income);
+  color: var(--income);
+}
 .lb {
   display: flex;
   flex-direction: column;
@@ -444,6 +539,51 @@ async function askRemove() {
   font-weight: 500;
   font-size: 11.5px;
   color: var(--text-3);
+}
+/* 即時預覽卡：左邊是「那顆按鈕」的樣子（只有數字、跟記帳頁同一套），右邊一行摘要 */
+.prev {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border-radius: var(--r-md);
+  background: var(--surface-3);
+}
+.prev__b {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  height: 32px;
+  padding: 0 11px;
+  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 700;
+}
+.prev__txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.prev__txt b {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}
+.prev__txt em {
+  font-style: normal;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .acts {
   display: flex;

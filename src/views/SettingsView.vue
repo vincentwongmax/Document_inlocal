@@ -83,6 +83,7 @@ const presetViews = computed(() =>
     const cat = p.categoryId ? settings.category(p.categoryId) ?? null : null
     const bits: string[] = []
     if (p.amount > 0) bits.push(`金額 ${p.amount}`)
+    if (p.currency) bits.push(`以 ${p.currency} 記錄`)
     if (cat) bits.push(settings.fullNameOf(cat.id))
     if (p.note.trim()) bits.push(p.note.trim())
     return { preset: p, label: p.amount > 0 ? String(p.amount) : '—', summary: bits.join(' · ') || '還沒設定內容' }

@@ -43,9 +43,9 @@ export function defaultSettings(base = 'MOP'): Settings {
      *   完整版請到設定頁自己填（那才會存到使用者自己的分類 id）。
      */
     quickPresets: [
-      { id: 'qp_1', amount: 1, type: 'expense', categoryId: '', note: '' },
-      { id: 'qp_25', amount: 25, type: 'expense', categoryId: '', note: '' },
-      { id: 'qp_35', amount: 35, type: 'expense', categoryId: '', note: '' },
+      { id: 'qp_1', amount: 1, type: 'expense', categoryId: '', note: '', currency: '' },
+      { id: 'qp_25', amount: 25, type: 'expense', categoryId: '', note: '', currency: '' },
+      { id: 'qp_35', amount: 35, type: 'expense', categoryId: '', note: '', currency: '' },
     ],
   }
 }

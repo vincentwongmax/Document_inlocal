@@ -50,7 +50,11 @@ function merge(base: Settings, saved: Partial<Settings>): Settings {
     // 那時要尊重「空的」，不能拿預設值把它們叫回來
     quickNotes: Array.isArray(saved.quickNotes) ? saved.quickNotes : base.quickNotes,
     // ⚠ 同上：使用者可以把快速金額全部刪光（存成 []），那時要尊重「空的」
-    quickPresets: Array.isArray(saved.quickPresets) ? saved.quickPresets : base.quickPresets,
+    // ⚠ 舊資料的 preset 沒有 currency 欄位（0.1.32 才加的）→ 每一筆補空字串＝「預設」，
+    //   不然 v-model 綁上去會是 undefined
+    quickPresets: Array.isArray(saved.quickPresets)
+      ? saved.quickPresets.map((p) => ({ ...p, currency: p.currency ?? '' }))
+      : base.quickPresets,
   }
 }
 
@@ -530,6 +534,7 @@ export const useSettingsStore = defineStore('settings', () => {
       type: 'expense',
       categoryId: '',
       note: '',
+      currency: '',
     }
     state.value.quickPresets.push(p)
     return p
@@ -547,6 +552,7 @@ export const useSettingsStore = defineStore('settings', () => {
     if (patch.type !== undefined) p.type = patch.type
     if (patch.categoryId !== undefined) p.categoryId = patch.categoryId
     if (patch.note !== undefined) p.note = patch.note
+    if (patch.currency !== undefined) p.currency = patch.currency
   }
 
   function removeQuickPreset(id: string) {

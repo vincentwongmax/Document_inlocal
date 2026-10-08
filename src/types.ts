@@ -137,6 +137,11 @@ export interface QuickPreset {
   categoryId: string
   /** 空字串＝不指定（維持使用者已經打的字） */
   note: string
+  /**
+   * 記帳幣別（0.1.32）：空字串＝「預設」（維持記帳頁目前的幣別）；
+   * 填了某個幣別（MOP／HKD…）＝點下去連幣別一起切過去，補登外幣帳時不用再手動換。
+   */
+  currency: string
 }
 
 export interface Settings {
