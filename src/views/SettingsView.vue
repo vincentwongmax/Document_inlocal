@@ -19,7 +19,7 @@ import { listImageIds } from '@/lib/imageDb'
 import { formatBytes } from '@/lib/imaging'
 import { offlineReady, updateSW } from '@/lib/pwa'
 import { APP_VERSION } from '@/lib/version'
-import type { Category, Settings, TxType } from '@/types'
+import type { Category, QuickPreset, Settings, TxType } from '@/types'
 
 const settings = useSettingsStore()
 const records = useRecordsStore()
@@ -73,6 +73,44 @@ function renameQuick(i: number, e: Event) {
     notify('已經有同樣的快速備註', 'info')
     el.value = before
   }
+}
+
+/* ── 快速金額預設（0.1.29）────────────────────────────── */
+/**
+ * 分類選單要列出**這個 preset 的收支類型**底下的分類。
+ * ⚠ 如果 preset 存的分類是另一個類型（例如先選收入再切成支出），它不會出現在清單裡，
+ *   select 就會跳回「維持目前的分類」——看起來像設定自己跑掉。
+ *   所以這裡把那一筆補在最前面，至少看得到、也選得回來。
+ */
+function presetCats(p: QuickPreset) {
+  const list = settings.categoriesByType(p.type)
+  if (p.categoryId && !list.some((c) => c.id === p.categoryId)) {
+    const own = settings.category(p.categoryId)
+    if (own) return [own, ...list]
+  }
+  return list
+}
+
+function setPresetAmount(p: QuickPreset, e: Event) {
+  const el = e.target as HTMLInputElement
+  // 留白或負數一律歸 0（＝這一顆不帶入金額），store 那邊還會再擋一次 NaN
+  const n = Number(el.value)
+  settings.updateQuickPreset(p.id, { amount: el.value.trim() === '' ? 0 : n })
+  // 讓畫面上的值跟 store 一致（例如打了 -5 會被改成 0）
+  el.value = String(settings.quickPresets.find((x) => x.id === p.id)?.amount ?? 0)
+}
+
+function setPresetType(p: QuickPreset, e: Event) {
+  const v = (e.target as HTMLSelectElement).value
+  settings.updateQuickPreset(p.id, { type: v === 'income' ? 'income' : 'expense' })
+}
+
+function setPresetCat(p: QuickPreset, e: Event) {
+  settings.updateQuickPreset(p.id, { categoryId: (e.target as HTMLSelectElement).value })
+}
+
+function setPresetNote(p: QuickPreset, e: Event) {
+  settings.updateQuickPreset(p.id, { note: (e.target as HTMLInputElement).value })
 }
 
 /**
@@ -746,6 +784,101 @@ const activeWalletName = computed(() => settings.activeWallet.name)
       </div>
     </section>
 
+    <!-- 快速金額（0.1.29） -->
+    <section id="sec-quickamt" class="card sec">
+      <header class="sec__hd">
+        <span class="sec__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <rect x="3.4" y="6.2" width="17.2" height="11.6" rx="2.6" />
+            <circle cx="12" cy="12" r="2.7" />
+            <path d="M6.4 10.2h.01M17.6 13.8h.01" />
+          </svg>
+        </span>
+        <div class="sec__meta">
+          <h2 class="sec__title">快速金額</h2>
+          <p class="sec__desc">
+            記帳頁金額上方會長出這些方鈕，點一下帶入金額／分類／備註（還是要自己按「記錄」）
+          </p>
+        </div>
+      </header>
+
+      <div class="panel">
+        <div class="panel__hd">
+          <span class="panel__label">按鈕內容</span>
+          <span class="tiny muted panel__meta">已設定 {{ settings.quickPresets.length }} 個</span>
+        </div>
+        <p class="tiny muted favs__hint">
+          金額填 0（或留白）＝這一顆不帶入金額；分類、備註留空＝維持記帳頁目前的選擇，不會改。
+          數量沒上限，要幾顆就按幾次「新增」。
+        </p>
+
+        <p v-if="!settings.quickPresets.length" class="tiny muted qn__none">
+          還沒有任何快速金額，按下面的「新增」加第一顆。
+        </p>
+        <div v-else class="qa__list">
+          <div v-for="p in settings.quickPresets" :key="p.id" class="qa__item">
+            <div class="qa__line">
+              <input
+                class="field qa__amt num"
+                type="number"
+                inputmode="decimal"
+                min="0"
+                step="any"
+                :value="p.amount || ''"
+                placeholder="0"
+                aria-label="快速金額"
+                @change="setPresetAmount(p, $event)"
+              />
+              <select
+                class="field qa__type"
+                :value="p.type"
+                aria-label="收支類型"
+                @change="setPresetType(p, $event)"
+              >
+                <option value="expense">支出</option>
+                <option value="income">收入</option>
+              </select>
+              <button
+                class="qn__del"
+                type="button"
+                title="刪除"
+                :aria-label="`刪除快速金額 ${p.amount}`"
+                @click="settings.removeQuickPreset(p.id)"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M7.8 7.8 16.2 16.2M16.2 7.8 7.8 16.2" />
+                </svg>
+              </button>
+            </div>
+            <select
+              class="field qa__cat"
+              :value="p.categoryId"
+              aria-label="分類"
+              @change="setPresetCat(p, $event)"
+            >
+              <option value="">（維持目前的分類）</option>
+              <option v-for="c in presetCats(p)" :key="c.id" :value="c.id">
+                {{ settings.fullNameOf(c.id) }}
+              </option>
+            </select>
+            <input
+              class="field qa__note"
+              type="text"
+              :value="p.note"
+              :maxlength="80"
+              placeholder="備註（留空＝不改）"
+              aria-label="備註"
+              @change="setPresetNote(p, $event)"
+            />
+          </div>
+        </div>
+
+        <button class="btn btn--ghost btn--sm qa__add" type="button" @click="settings.addQuickPreset()">
+          ＋ 新增一顆
+        </button>
+      </div>
+    </section>
+
     <!-- 資料 -->
     <section class="card sec">
       <header class="sec__hd">
@@ -1378,6 +1511,58 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* ── 快速金額預設（0.1.29）────────────────────────────── */
+/* 一顆 preset 一列三行：金額＋類型＋刪除／分類／備註。
+   手機寬度只有 390，四個欄位擠一列一定會被壓扁，所以拆行放。 */
+.qa__list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-bottom: 10px;
+}
+.qa__item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.qa__line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+/* 金額：數字欄位本身不需要太寬，留給後面的類型選單 */
+.qa__amt {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  font-size: 16px;
+  background: var(--surface);
+}
+.qa__type {
+  flex: none;
+  width: 78px;
+  height: 34px;
+  padding: 0 8px;
+  font-size: 16px;
+  background: var(--surface);
+}
+.qa__cat,
+.qa__note {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  font-size: 16px;
+  background: var(--surface);
+}
+.qa__add {
+  align-self: flex-start;
 }
 
 /* ── 資料 ─────────────────────────────────────────────── */

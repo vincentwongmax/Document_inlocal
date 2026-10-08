@@ -17,13 +17,15 @@ const props = withDefaults(
     /** 搜尋關鍵字（已 trim 並轉小寫）：命中處在分類名與備註上以黃底標示 */
     highlight?: string
     /**
-     * 時間標籤的前綴文字。
-     * 「最近」檢視（依新增時間分組）時傳「交易」，因為那時分組標題代表的是**新增日期**，
-     * 而這顆標籤是**交易時間**——不標出來會以為是壞掉（今天的分組裡卻寫 5 天前）。
+     * 「最近」檢視（依新增時間查詢／分組）時傳 true（0.1.29）。
+     *
+     * 那時這一顆標籤代表**交易時間**（分組標題才是新增時間），原先用「交易」二字前綴
+     * 來區別；使用者要求拿掉那兩個字，改成**換一顆 icon（沙漏）＋淺綠色**來識別。
+     * ⚠ 只影響記錄頁開「最近」的時候；統計頁沒有這個開關，維持原樣。
      */
-    timePrefix?: string
+    timeRecent?: boolean
   }>(),
-  { showTime: false, highlight: '', timePrefix: '' },
+  { showTime: false, highlight: '', timeRecent: false },
 )
 const emit = defineEmits<{ edit: [id: string]; remove: [id: string] }>()
 const settings = useSettingsStore()
@@ -49,6 +51,13 @@ const isExpense = computed(() => props.record.type === 'expense')
  * ⚠ 只換顯示；存的資料（amount／rate／baseAmount）完全不動。
  */
 const shownAmount = computed(() => settings.toBase(props.record.amount, props.record.currency))
+
+/**
+ * 時間標籤的文字。
+ * 「最近」檢視刻意**不加**「交易」二字（0.1.29）——改用沙漏 icon ＋ 淺綠底識別。
+ */
+const timeText = computed(() => relativeTime(props.record.occurredAt))
+
 /** 記錄的幣別跟「現在的主幣別」不同才要顯示換算說明（以前是跟「當時的主幣別」比） */
 const converted = computed(() => props.record.currency !== settings.baseCurrency)
 /** 換算說明用的匯率也要用「現在」的，不是記帳當下凍結的那個 */
@@ -67,12 +76,24 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
         <span class="row__cat">
           <HighlightText :text="catName" :query="highlight" />
         </span>
-        <span v-if="showTime" class="ttag" :title="formatFull(record.occurredAt)">
-          <svg class="ttag__ic" viewBox="0 0 16 16" aria-hidden="true">
+        <span
+          v-if="showTime"
+          class="ttag"
+          :class="{ 'ttag--recent': timeRecent }"
+          :title="formatFull(record.occurredAt)"
+        >
+          <!-- 「最近」檢視（0.1.29）：換成沙漏（跟一般的時鐘做區別） -->
+          <svg v-if="timeRecent" class="ttag__ic" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4.9 3.1h6.2" />
+            <path d="M4.9 12.9h6.2" />
+            <path d="M5.6 3.1 8 7.9l2.4-4.8" />
+            <path d="M10.4 12.9 8 8.1l-2.4 4.8" />
+          </svg>
+          <svg v-else class="ttag__ic" viewBox="0 0 16 16" aria-hidden="true">
             <circle class="ttag__face" cx="8" cy="8" r="6.3" />
             <path d="M8 4.55v3.75l2.3 1.4" />
           </svg>
-          <span>{{ timePrefix ? `${timePrefix} ` : '' }}{{ relativeTime(record.occurredAt) }}</span>
+          <span>{{ timeText }}</span>
         </span>
         <span v-if="imgCount" class="imtag">
           <svg class="imtag__ic" viewBox="0 0 16 16" aria-hidden="true">
@@ -236,6 +257,20 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
 .ttag__face {
   fill: currentColor;
   fill-opacity: 0.16;
+}
+/*
+ * 0.1.29：記錄頁開「最近」時的時間標籤 —— 淺綠底／墨綠字／沙漏 icon。
+ * 使用者原話：「交易 x 分鐘前 → x 分鐘前（移除交易 2 個字）、icon 換一個、顏色改淺綠色」。
+ * ⚠ 用 `.ttag--recent .ttag__ic`（0,2,0）才蓋得掉上面的 `.ttag__ic`（0,1,0）。
+ */
+.ttag--recent {
+  background: var(--accent-soft);
+  border-color: var(--accent-light);
+  color: var(--accent);
+}
+.ttag--recent .ttag__ic {
+  stroke: var(--accent);
+  stroke-width: 1.45;
 }
 .imtag__ic {
   stroke: var(--accent);
