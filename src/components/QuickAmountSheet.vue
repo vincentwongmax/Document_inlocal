@@ -37,7 +37,11 @@ const {
   onTouchMove: onSheetTouchMove,
   onTouchEnd: onSheetTouchEnd,
   onMouseDown: onSheetMouseDown,
-} = usePullToClose({ panel: sheetEl, scroller: boxEl, onClose: () => backToList() })
+// ⚠⚠ 0.1.34 修 bug：這裡原本錯接成 `onClose: () => backToList()`——
+//   往下拉只會把內容切回清單，**子頁面根本沒關**，暗幕就一直蓋著、
+//   背景又被 useScrollLock 鎖住 → 整個畫面都不能動（使用者回報的正是這個）。
+//   跟其他七個子頁面一樣：下拉＝emit('close')，真的收起來。
+} = usePullToClose({ panel: sheetEl, scroller: boxEl, onClose: () => emit('close') })
 
 /* ── 編輯狀態 ─────────────────────────────────────────── */
 /** 正在編輯的 preset（null＝清單態） */
@@ -172,7 +176,7 @@ async function askRemove() {
 
 <template>
   <Transition name="fade">
-    <div v-if="open" class="mask bsheet-mask" @click.self="backToList()">
+    <div v-if="open" class="mask bsheet-mask" @click.self="emit('close')">
       <div
         ref="sheetEl"
         class="card bsheet"
