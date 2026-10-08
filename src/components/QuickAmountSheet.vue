@@ -270,8 +270,14 @@ async function askRemove() {
                     @keyup.enter="submit"
                   />
                 </label>
+                <!--
+                  0.1.33：貨幣標籤**不再放說明文字**——使用者原話「移除貨幣
+                  『預設』＝不動記帳頁的幣別的文字」。那串字在 118px 的窄欄位裡會折行，
+                  把貨幣欄撐得比金額高，整行看起來走位。
+                  「（預設）」這個選項本身就是說明，夠了。
+                -->
                 <label class="lb">
-                  <span>貨幣 <em class="lb__hint">「預設」＝不動記帳頁的幣別</em></span>
+                  <span>貨幣</span>
                   <select v-model="draft.currency" class="field">
                     <option value="">（預設）</option>
                     <option v-for="c in CURRENCIES" :key="c.code" :value="c.code">
@@ -491,8 +497,20 @@ async function askRemove() {
 /* 金額＋貨幣同一排（貨幣窄一點）；窄到 320 也放得下 */
 .grid2 {
   display: grid;
-  grid-template-columns: 1fr 118px;
+  /* ⚠ minmax(0, 1fr)：純 1fr 的話，select 的內容寬度會把欄位撐開、把另一欄擠走（走位） */
+  grid-template-columns: minmax(0, 1fr) 128px;
   gap: 8px;
+  /* 兩個欄位各自等高，標籤不會一高一低 */
+  align-items: start;
+}
+.grid2 .lb {
+  min-width: 0;
+}
+/* 標籤文字不折行：金額／貨幣兩邊的標籤高度才會一樣 */
+.grid2 .lb > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* 類型切換：兩顆並排，選中帶該類型自己的顏色（支出暖紅／收入墨綠） */
 .type2 {
