@@ -66,6 +66,8 @@ function keyOf(r: TxRecord): string {
  * 每一組的「真實」加總與筆數。
  * ⚠ 用 `totalsFrom`（完整清單）算，不是用 `records`（可能被精選過）——
  *   這樣「每個月只顯示 2 筆」時，標題上的金額仍然是那個月的全額。
+ * ⚠ 0.1.28：金額一律即時換算成「目前的主幣別」（`settings.toBase`），
+ *   不是用記帳當下凍結的 `baseAmount` —— 主幣別改了，標題也要跟著變。
  */
 const totalsOf = computed(() => {
   const src = props.totalsFrom ?? props.records
@@ -73,8 +75,9 @@ const totalsOf = computed(() => {
   for (const r of src) {
     const k = keyOf(r)
     const cur = m.get(k) ?? { exp: 0, inc: 0, count: 0 }
-    if (r.type === 'expense') cur.exp += r.baseAmount
-    else cur.inc += r.baseAmount
+    const v = settings.toBase(r.amount, r.currency)
+    if (r.type === 'expense') cur.exp += v
+    else cur.inc += v
     cur.count += 1
     m.set(k, cur)
   }

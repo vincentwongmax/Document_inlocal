@@ -106,7 +106,9 @@ const currentName = computed(() => settings.category(props.modelValue)?.name ?? 
 }
 
 .catsheet__card {
-  padding: 0 12px 14px;
+  /* ⚠ 0.1.28：**不要寫 padding-bottom**——面板底部的 safe-area 抬升
+     由 style.css 的 `.bsheet.bsheet.bsheet` 統一處理，這裡寫了會蓋掉它。 */
+  padding: 0 12px;
 }
 
 .catsheet__hd {

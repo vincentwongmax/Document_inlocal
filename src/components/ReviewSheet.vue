@@ -246,9 +246,9 @@ function applyDate(d: DraftRecord, iso: string) {
 .wrap {
   z-index: 70;
 }
-.panel {
-  padding: 0;
-}
+/* ⚠ 0.1.28 移除原本的 `.panel { padding: 0 }`：
+   它會蓋掉 `.bsheet` 的 safe-area 抬升（scoped 特異度比較高）。
+   `.card` 本來就沒有 padding，這條是不必要的。 */
 .hd {
   display: flex;
   align-items: flex-start;

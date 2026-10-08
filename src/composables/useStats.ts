@@ -36,6 +36,15 @@ export function useStats(range: Ref<DateRange>) {
   const records = useRecordsStore()
   const settings = useSettingsStore()
 
+  /**
+   * 0.1.28：統計頁所有金額一律即時換算成「目前的主幣別」。
+   * 使用者原話：「當主幣別設定做其他的貨幣時，記錄頁和統計頁中的記錄也要更改做
+   * 用戶指定的貨幣…就用匯率算出數字」。
+   * ⚠ 以前用 `r.baseAmount`（記帳當下凍結的值），主幣別改了它不會跟著變。
+   * ⚠ 只換顯示；存的資料完全不動。下面的 computed 都依賴 settings，會自動重算。
+   */
+  const amt = (r: { amount: number; currency: string }) => settings.toBase(r.amount, r.currency)
+
   /** 落在選取區間內的記錄 */
   const rows = computed(() => {
     const { start, end } = range.value
@@ -46,10 +55,10 @@ export function useStats(range: Ref<DateRange>) {
   })
 
   const income = computed(() =>
-    rows.value.filter((r) => r.type === 'income').reduce((s, r) => s + r.baseAmount, 0),
+    rows.value.filter((r) => r.type === 'income').reduce((s, r) => s + amt(r), 0),
   )
   const expense = computed(() =>
-    rows.value.filter((r) => r.type === 'expense').reduce((s, r) => s + r.baseAmount, 0),
+    rows.value.filter((r) => r.type === 'expense').reduce((s, r) => s + amt(r), 0),
   )
   const balance = computed(() => income.value - expense.value)
 
@@ -64,7 +73,7 @@ export function useStats(range: Ref<DateRange>) {
     for (const r of rows.value) {
       if (r.type !== type) continue
       const cur = own.get(r.categoryId) ?? { total: 0, count: 0 }
-      cur.total += r.baseAmount
+      cur.total += amt(r)
       cur.count += 1
       own.set(r.categoryId, cur)
     }
@@ -156,15 +165,15 @@ export function useStats(range: Ref<DateRange>) {
       }
       for (const r of rows.value) {
         const b = ensure(monthKey(r.occurredAt), '')
-        if (r.type === 'expense') b.expense += r.baseAmount
-        else b.income += r.baseAmount
+        if (r.type === 'expense') b.expense += amt(r)
+        else b.income += amt(r)
       }
     } else {
       for (const r of rows.value) {
         const k = dayKey(r.occurredAt)
         const b = ensure(k, String(Number(k.split('-')[2])))
-        if (r.type === 'expense') b.expense += r.baseAmount
-        else b.income += r.baseAmount
+        if (r.type === 'expense') b.expense += amt(r)
+        else b.income += amt(r)
       }
     }
 
@@ -179,8 +188,8 @@ export function useStats(range: Ref<DateRange>) {
       const list = records.records.filter((r) => monthKey(r.occurredAt) === m)
       return {
         month: m,
-        expense: list.filter((r) => r.type === 'expense').reduce((s, r) => s + r.baseAmount, 0),
-        income: list.filter((r) => r.type === 'income').reduce((s, r) => s + r.baseAmount, 0),
+        expense: list.filter((r) => r.type === 'expense').reduce((s, r) => s + amt(r), 0),
+        income: list.filter((r) => r.type === 'income').reduce((s, r) => s + amt(r), 0),
       }
     })
   })
@@ -194,7 +203,7 @@ export function useStats(range: Ref<DateRange>) {
         const k = dayKey(r.occurredAt)
         return k >= start && k <= end && r.type === 'expense'
       })
-      .reduce((s, r) => s + r.baseAmount, 0)
+      .reduce((s, r) => s + amt(r), 0)
   })
   const momChange = computed(() => {
     if (!prevExpense.value) return null
@@ -204,7 +213,7 @@ export function useStats(range: Ref<DateRange>) {
   const topRecords = computed(() =>
     [...rows.value]
       .filter((r) => r.type === 'expense')
-      .sort((a, b) => b.baseAmount - a.baseAmount)
+      .sort((a, b) => amt(b) - amt(a))
       .slice(0, 5),
   )
 

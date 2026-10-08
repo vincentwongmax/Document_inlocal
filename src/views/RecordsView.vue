@@ -170,8 +170,10 @@ const catGroups = computed<CatGroup[]>(() => {
       const per = new Map<string, { exp: number; inc: number }>()
       for (const r of sorted) {
         const cur = per.get(r.categoryId) ?? { exp: 0, inc: 0 }
-        if (r.type === 'expense') cur.exp += r.baseAmount
-        else cur.inc += r.baseAmount
+        // 0.1.28：即時換算成目前的主幣別（不用記帳當下凍結的 baseAmount）
+        const v = settings.toBase(r.amount, r.currency)
+        if (r.type === 'expense') cur.exp += v
+        else cur.inc += v
         per.set(r.categoryId, cur)
       }
       const sumOf = (pick: (v: { exp: number; inc: number }) => number) =>
@@ -218,11 +220,12 @@ watch([range, typeFilter, kw, recent], () => {
   byCatOpen.value.clear()
 })
 
+// 0.1.28：即時換算成目前的主幣別（使用者：主幣別改了，記錄也要跟著變）
 const expense = computed(() =>
-  rows.value.filter((r) => r.type === 'expense').reduce((s, r) => s + r.baseAmount, 0),
+  rows.value.filter((r) => r.type === 'expense').reduce((s, r) => s + settings.toBase(r.amount, r.currency), 0),
 )
 const income = computed(() =>
-  rows.value.filter((r) => r.type === 'income').reduce((s, r) => s + r.baseAmount, 0),
+  rows.value.filter((r) => r.type === 'income').reduce((s, r) => s + settings.toBase(r.amount, r.currency), 0),
 )
 const net = computed(() => income.value - expense.value)
 

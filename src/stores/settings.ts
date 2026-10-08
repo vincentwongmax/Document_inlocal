@@ -312,6 +312,27 @@ export const useSettingsStore = defineStore('settings', () => {
     return typeof r === 'number' && r > 0 ? r : 1
   }
 
+  /**
+   * 把「某幣別的金額」換算成「**目前**的主幣別」（0.1.28）。
+   *
+   * 使用者原話：「當主幣別設定做其他的貨幣時，記錄頁和統計頁中的記錄也要更改做
+   * 用戶指定的貨幣，例如本來主幣是 MOP，現在改成 HKD，那記錄也要變成 HKD
+   * （即使原記錄是用 MOP 記錄的就用匯率算出數字）」。
+   *
+   * ⚠⚠ 為什麼不用 `record.baseAmount`：那是**記帳當下**用當時的主幣別凍結的
+   *   （`records.ts` 建立時寫死），主幣別後來改了它也不會跟著變 ——
+   *   這正是使用者看到的問題。顯示一律用這裡即時換算。
+   *
+   * ⚠ **只換「顯示」，不改任何存的資料**：`amount`／`rate`／`baseAmount` 都保持原樣
+   *   （那是歷史事實：當時用什麼幣別、當時換算成多少）。換回去也算得回來。
+   * ⚠ 匯率表缺某個幣別時 `rate()` 會回 1 → 顯示「原數字＋新幣別符號」，
+   *   這是刻意的降級（總比顯示 0 或 NaN 好），離線時也是這樣。
+   */
+  function toBase(amount: number, code: string): number {
+    const v = (Number.isFinite(amount) ? amount : 0) * rate(code)
+    return Number.isFinite(v) ? v : 0
+  }
+
   async function setBaseCurrency(code: string) {
     state.value.baseCurrency = code
     state.value.rates = defaultRates(code)
@@ -527,6 +548,7 @@ export const useSettingsStore = defineStore('settings', () => {
     fullNameOf,
     canRemove,
     rate,
+    toBase,
     preferredCurrency,
     setPreferredCurrency,
     setBaseCurrency,

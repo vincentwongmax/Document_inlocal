@@ -9,7 +9,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 
 ## 版本號
 
-- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.27`
+- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.28`
 - 單一來源＝`package.json` 的 `version` → `vite.config.ts` `define` 注入 `__APP_VERSION__`
   （型別在 `env.d.ts`）→ `src/lib/version.ts` → 設定頁「離線與版本」膠囊
 - 每次更新要改 `package.json` ＋ 補一筆 `CHANGELOG.md`
@@ -22,7 +22,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 - 流程：`npx vue-tsc --noEmit` → `npm run build` → `.smoke/vNN.mjs` → 截圖 → CHANGELOG → memory → commit
 - 跑測試：`bash .smoke/run-regress.sh`（全部）或 `bash .smoke/run-regress.sh v104`（指定幾支）。
   ⚠ **判準以 exit code 為主**，摘要行格式各支不一（`pass=N fail=N` vs `N 通過 / N 失敗`）
-- **維護中的回歸集＝v70～v106**；`v45/v46/v56/v57` 早已失效，別當基準
+- **維護中的回歸集＝v70～v107**；`v45/v46/v56/v57` 早已失效，別當基準
 - Chrome `C:/Program Files/Google/Chrome/Application/chrome.exe`；puppeteer-core 在
   `C:\Users\user\.workbuddy\binaries\node\workspace\`；`node` 已在 PATH
   （⚠ 版本目錄會變，用過 `22.22.2-3`／`22.22.2-6`，找不到先 `ls ~/.workbuddy/binaries/node/versions/`）
@@ -43,16 +43,13 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 | 輸入框字級／點空白處的捲動／下拉清單能不能滑 | **v104** |
 | **雙擊**空白處／統計摘要卡／子頁面彈層／收據 BETA／金額點擊 | **v105** |
 | 摘要卡箭頭／記帳頁標題／彈層避開 home indicator／區間記錄精選／分類轉場 | **v106** |
+| 彈層 safe-area 被 scoped padding 蓋掉／記帳頁副標／主幣別換算顯示／淺綠外框 | **v107** |
 
-- v100（42 項）＝日期輸入框約定 ＋ iOS 貼上 ＋ 向左滑空白 ＋ Toast「知道了」
-- v101（51 項）＝0.1.22 六需求（徽章「圖」／計算公式位置／圖片去重／摘要卡詳情／預設分類／彈窗鎖背景）
-- v102（30 項）＝「連點空白頁面不能動」（body 幾何 ＋ 捲動不動 ＋ 連點防護設定）。
-  **用 390×667 跑**（記帳頁在 844 會剛好塞滿，捲不動就驗不到「不會動」）
-- v103（84 項）＝0.1.24（資料統計分本錢包／總資料 ＋ 匯出可選錢包範圍）
-- v104（46 項）＝0.1.25（輸入框 16px ＋ iosScrollGuard ＋ 下拉清單滑得動）
-- v105（44 項）＝0.1.26（雙擊防護 ＋ 摘要卡 ＋ 六個子頁面彈層 ＋ 收據 BETA ＋ 金額點擊）
-- v106（39 項）＝0.1.27（摘要卡連箭頭一起移除 ＋ 記帳頁標題 ＋ 彈層避開 home indicator
-  ＋ 區間記錄依日／月／年精選 ＋ 分類轉場動畫）
+- v102（30 項）＝「連點空白頁面不能動」。**用 390×667 跑**（記帳頁在 844 會剛好塞滿）
+- v100（42 項）＝日期輸入框 ＋ iOS 貼上 ＋ Toast「知道了」；v101（51 項）＝0.1.22 六需求
+- v103（84 項）＝0.1.24；v104（46 項）＝0.1.25；v105（44 項）＝0.1.26；
+  v106（39 項）＝0.1.27；v107（38 項）＝0.1.28
+- （各版細節看該版的 CHANGELOG 與 CONVENTIONS，不重複在這裡）
 
 ### ⚠⚠ 測試常見殺手（**完整清單在 `CONVENTIONS.md`**）
 
@@ -160,13 +157,22 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 8. 連點防護別拆：`html { touch-action: manipulation }`、
    `button/a/[role=button] { -webkit-touch-callout: none; user-select: none }`、
    `body { overscroll-behavior-y: none }`、`html { overflow-x: hidden }`
-9. **彈層內容要避開 iPhone 底部工作條**（0.1.27）
-   `.bsheet` 有 `padding-bottom: calc(var(--safe-b) + 8px)`
-   （`--safe-b`＝`env(safe-area-inset-bottom)`，有 Home Indicator 的機型 34px）。
-   ⚠ **背景仍延伸到螢幕最底**（只有內容往上收，否則底部會露出一條遮罩）；
-   ⚠ 各元件的 footer **不要再加一次** `var(--safe-b)`（會變兩份）
+9. **彈層內容要避開 iPhone 底部工作條**（0.1.27 → 0.1.28 修根因）
+   `.bsheet.bsheet.bsheet { padding-bottom: calc(var(--safe-b) + 12px) }`
+   （`--safe-b`＝`env(safe-area-inset-bottom)`，有 Home Indicator 的機型 34px → 共 46px）。
+   ⚠ **三連類別是刻意的**（特異度 (0,3,0)）：`CalcSheet` 的 `.calccard`、
+   `CategorySheet` 的 `.catsheet__card` 是 scoped（(0,2,0)），
+   0.1.27 寫 `padding: 0 12px 14px` 就把全域抬升蓋掉了 —— 那正是
+   「選擇分類和計算機還是弄到底部工作條」的根因。
+   ⚠ **元件裡不要寫面板的 `padding-bottom`**；⚠ 背景仍延伸到最底（只抬內容）。
 10. **`<Transition>` 包出來的 wrapper 要自己補 `flex + gap`**（0.1.27 的 `.reveal`）
     包一層 div 之後 `.box > *` 只剩它一個，原本的 `gap` 幫不到裡面的欄位
+11. **金額顯示一律用「目前的主幣別」即時換算**（0.1.28）
+    `settings.toBase(amount, code)`＝`amount × rate(code)`。
+    ⚠ **不要用 `record.baseAmount`**——那是記帳當下凍結的，主幣別改了不會跟著變。
+    ⚠ **只換顯示，不改存的資料**（amount／rate／baseAmount 都是歷史事實）。
+    已套用：RecordRow／RecordList 組標題／useStats 全部／RecordsView 合計／記帳通知。
+    ⚠ `RecordSheet` 的「詳細資訊」刻意維持記帳當下的數字（那是記錄的歷史事實）。
 
 ## 統計頁「區間記錄」的精選規則（0.1.27）
 

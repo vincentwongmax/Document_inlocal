@@ -305,9 +305,27 @@ h4 {
    *   這是刻意的：彈層的底色不該在底部露出一條遮罩，那會看起來像做壞了。
    * ⚠ 各元件自己的 footer **不要再寫一次** `var(--safe-b)`，否則會加到兩份。
    */
-  padding-bottom: calc(var(--safe-b) + 8px);
+  padding-bottom: calc(var(--safe-b) + 12px);
   /* 下拉回彈／送出畫面用；拖曳中由 .is-dragging 關掉 */
   transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+/**
+ * ⚠⚠ 0.1.28：這條要用**三連類別**把特異度推到 (0,3,0)，不是手滑。
+ *
+ * 使用者 0.1.28 回報「子頁面（選擇分類和計算機）還是會弄到 iPhone 的底部工作條」，
+ * 而且**點名的正是那兩個** —— 原因找到了：
+ *   `CalcSheet` 的 `.calccard`／`CategorySheet` 的 `.catsheet__card` 是 scoped 樣式
+ *   （`.calccard[data-v-xxx]`，特異度 (0,2,0)），各自寫了 `padding: 0 12px 14px`，
+ *   **把上面那條全域 `.bsheet`（(0,1,0)）的 `padding-bottom` 整個蓋掉**。
+ *   所以那兩個彈層的抬升只剩 14px，safe-area 完全沒生效。
+ *   （`ReviewSheet` 的 `.panel { padding: 0 }` 也是同一個問題。）
+ *
+ * 三連類別 (0,3,0) 穩贏 (0,2,0)，跟 0.1.25 那條 16px 字級規則用高特異度
+ * 「不讓任何元件把字級改小」是同一個理由：**全站約定必須贏過元件樣式**。
+ * ⚠ 元件裡**不要**再寫面板的 `padding-bottom`（要留白就在內容區自己加）。
+ */
+.bsheet.bsheet.bsheet {
+  padding-bottom: calc(var(--safe-b) + 12px);
 }
 .bsheet.is-dragging {
   transition: none;

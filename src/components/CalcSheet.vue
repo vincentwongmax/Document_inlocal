@@ -124,7 +124,11 @@ const {
 }
 
 .calccard {
-  padding: 0 12px 14px;
+  /* ⚠ 0.1.28：**不要寫 padding-bottom**。
+     面板底部的 safe-area 抬升由 style.css 的 `.bsheet.bsheet.bsheet` 統一處理，
+     這裡寫了會蓋掉它（特異度 (0,2,0) > (0,1,0)），
+     0.1.27 就是這樣讓「計算機還是弄到 iPhone 底部工作條」的。 */
+  padding: 0 12px;
 }
 
 .calccard__hd {

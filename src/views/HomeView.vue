@@ -227,7 +227,8 @@ function submit() {
   })
   // 圖片已經被這筆記錄接手：清空面板但**不能**刪 blob
   imgEl.value?.release()
-  const label = `${fmtMoney(rec.baseAmount, rec.baseCurrency)} · ${settings.category(rec.categoryId)?.name ?? ''}`
+  // 0.1.28：通知裡的金額也用「目前的主幣別」顯示（跟清單同一套換算）
+  const label = `${fmtMoney(settings.toBase(rec.amount, rec.currency), settings.baseCurrency)} · ${settings.category(rec.categoryId)?.name ?? ''}`
   notify(`已記錄 ${label}`, 'ok', { label: '復原', run: () => records.remove(rec.id) })
 
   resetForm()
@@ -255,19 +256,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   <div class="page home">
     <!--
       0.1.27 加上標題（使用者：「記帳的頁面也加上標題」）。
-      跟記錄／統計／設定三頁同一套 `.page-head`／`.page-title`／`.page-sub`（全域樣式），
+      跟記錄／統計／設定三頁同一套 `.page-head`／`.page-title`（全域樣式），
       四個頁面的標題才會長得一樣、切換時不會跳。
+      ⚠ 0.1.28：**副標「記下每一筆收支」拿掉了**（使用者：移除記下每一筆收支），
+        這一頁只留標題；其他三頁的副標不受影響。
     -->
-    <div class="page-head">
+    <div class="page-head page-head--home">
       <div class="page-head__txt">
         <h1 class="page-title">記帳</h1>
-        <p class="page-sub">記下每一筆收支</p>
       </div>
     </div>
 
     <div class="home__grid">
       <!-- 記帳表單 -->
-      <section class="card pad">
+      <section class="card pad card--ledger">
         <div class="seg">
           <button
             class="seg__btn"
@@ -383,8 +385,29 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   max-width: 560px;
   margin: 0 auto;
 }
+/**
+ * 0.1.28：記帳頁整體往上移一點（使用者：「整體向上移一點」）。
+ * 做了兩件事：頁首的下方留白 16px → 8px、這一頁自己的上內距 20px → 12px。
+ * 標題只有一行（沒有副標），留白跟著收緊才不會看起來頭重。
+ * ⚠ 只動這一頁（scoped），其他三頁的 `.page-head`／`.page` 不受影響。
+ */
+.page-head--home {
+  margin-bottom: 8px;
+}
+.home {
+  padding-top: 12px;
+}
 .pad {
   padding: 16px;
+}
+/**
+ * 0.1.28：記帳表單的外框加一圈**淺綠**（使用者：「在記帳頁中的外框，加一個淺綠外框」）。
+ * 用的是既有的 `--accent-light`（墨綠的淺色版），只換框色、不動圓角與陰影，
+ * 也不加背景色 —— 背景仍是原本的白，才不會跟「米白紙感」的基調打架。
+ * ⚠ 只圈**表單這一張卡**（下面的「收據圖片」「最近」卡維持原框色）。
+ */
+.card--ledger {
+  border-color: var(--accent-light);
 }
 /*
  * ⚠ 0.1.26 移除：`.upload`／`.upload:hover`／`.upload em`／`.uic`／`.dropzone`。

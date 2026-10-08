@@ -38,7 +38,21 @@ const catName = computed(() =>
   cat.value ? settings.fullNameOf(props.record.categoryId) : '未分類',
 )
 const isExpense = computed(() => props.record.type === 'expense')
-const converted = computed(() => props.record.currency !== props.record.baseCurrency)
+/**
+ * 0.1.28：金額一律用「**目前**的主幣別」顯示，即時用匯率換算。
+ *
+ * 使用者原話：「當主幣別設定做其他的貨幣時，記錄頁和統計頁中的記錄也要更改做
+ * 用戶指定的貨幣…（即使原記錄是用 MOP 記錄的就用匯率算出數字）」。
+ *
+ * ⚠ 以前用 `record.baseAmount`／`record.baseCurrency`——那是記帳當下凍結的值，
+ *   主幣別後來改了它也不會變，這正是使用者看到的問題。
+ * ⚠ 只換顯示；存的資料（amount／rate／baseAmount）完全不動。
+ */
+const shownAmount = computed(() => settings.toBase(props.record.amount, props.record.currency))
+/** 記錄的幣別跟「現在的主幣別」不同才要顯示換算說明（以前是跟「當時的主幣別」比） */
+const converted = computed(() => props.record.currency !== settings.baseCurrency)
+/** 換算說明用的匯率也要用「現在」的，不是記帳當下凍結的那個 */
+const shownRate = computed(() => settings.rate(props.record.currency))
 /** 舊資料可能沒有 images 欄位 */
 const imgCount = computed(() => props.record.images?.length ?? 0)
 </script>
@@ -91,10 +105,10 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
     -->
     <button class="row__amt" type="button" @click="emit('edit', record.id)">
       <strong class="num" :class="isExpense ? 'is-exp' : 'is-inc'">
-        {{ isExpense ? '−' : '+' }}{{ fmtMoney(record.baseAmount, record.baseCurrency) }}
+        {{ isExpense ? '−' : '+' }}{{ fmtMoney(shownAmount, settings.baseCurrency) }}
       </strong>
       <span v-if="converted" class="tiny muted num">
-        {{ fmtMoney(record.amount, record.currency) }} × {{ record.rate }}
+        {{ fmtMoney(record.amount, record.currency) }} × {{ shownRate }}
       </span>
     </button>
   </div>
