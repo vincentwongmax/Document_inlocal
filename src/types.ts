@@ -119,6 +119,26 @@ export interface TxRecord {
  * 每個錢包各自的設定。切換錢包時這整份都會跟著換。
  * （欄位與「單錢包時代」的 Settings 完全相同，所以既有程式碼讀 state.xxx 不必改。）
  */
+/**
+ * 快速金額預設（0.1.29）：記帳頁金額上方那排方型小按鈕。
+ *
+ * 點一下就自動帶入**金額／收支類型／分類／備註**，但仍然要使用者自己按「記錄」才會存
+ * ——刻意不自動送出，避免手滑多記一筆。
+ *
+ * 使用者原話：「按下例如 25 的按鈕，自動填寫金額、自動選取分類、自動填備注，
+ * 但依然要用戶手動按記錄的按鈕。例：25 --> 支出金額 25、分類(餐飲 › 午餐)、備注(公司3餸飯)」
+ */
+export interface QuickPreset {
+  id: string
+  /** 按鈕上顯示、也是帶入的金額；0 表示還沒填（按下去不會動金額） */
+  amount: number
+  type: TxType
+  /** 空字串＝不指定（維持記帳頁目前選到的分類） */
+  categoryId: string
+  /** 空字串＝不指定（維持使用者已經打的字） */
+  note: string
+}
+
 export interface Settings {
   baseCurrency: string
   /** 目前輸入幣別（旅行模式：一律以某幣記錄，自動換算為主幣） */
@@ -152,6 +172,11 @@ export interface Settings {
    * 點一下就填入備註欄（取代原有內容），使用者可在設定頁新增／修改／刪除。
    */
   quickNotes: string[]
+  /**
+   * 快速金額預設（0.1.29）：記帳頁金額上方的方型小按鈕，數量由使用者在設定頁決定。
+   * 空陣列＝記帳頁不顯示那一排。
+   */
+  quickPresets: QuickPreset[]
 }
 
 export interface ExportPayload {

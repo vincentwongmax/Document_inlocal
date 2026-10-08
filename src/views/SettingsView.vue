@@ -19,7 +19,7 @@ import { listImageIds } from '@/lib/imageDb'
 import { formatBytes } from '@/lib/imaging'
 import { offlineReady, updateSW } from '@/lib/pwa'
 import { APP_VERSION } from '@/lib/version'
-import type { Category, Settings, TxType } from '@/types'
+import type { Category, QuickPreset, Settings, TxType } from '@/types'
 
 const settings = useSettingsStore()
 const records = useRecordsStore()
@@ -73,6 +73,66 @@ function renameQuick(i: number, e: Event) {
     notify('已經有同樣的快速備註', 'info')
     el.value = before
   }
+}
+
+/* ── 快速金額預設（0.1.29）────────────────────────────── */
+/**
+ * 「快速金額」區塊的顯示用資料（編號、icon、預覽數字、一行摘要）。
+ * 放在 script 裡算好，模板就不用對 `category()` 的 null 做一堆判斷。
+ */
+const presetViews = computed(() =>
+  settings.quickPresets.map((p, i) => {
+    const cat = p.categoryId ? settings.category(p.categoryId) ?? null : null
+    const bits: string[] = []
+    if (p.amount > 0) bits.push(`金額 ${p.amount}`)
+    if (cat) bits.push(settings.fullNameOf(cat.id))
+    if (p.note.trim()) bits.push(p.note.trim())
+    return {
+      preset: p,
+      idx: i + 1,
+      icon: cat ? iconForCategory(cat) : '',
+      color: cat?.color ?? '',
+      label: p.amount > 0 ? String(p.amount) : '—',
+      summary: bits.length ? bits.join(' · ') : '還沒設定內容',
+    }
+  }),
+)
+
+/**
+ * 分類選單要列出**這個 preset 的收支類型**底下的分類。
+ * ⚠ 如果 preset 存的分類是另一個類型（例如先選收入再切成支出），它不會出現在清單裡，
+ *   select 就會跳回「維持目前的分類」——看起來像設定自己跑掉。
+ *   所以這裡把那一筆補在最前面，至少看得到、也選得回來。
+ */
+function presetCats(p: QuickPreset) {
+  const list = settings.categoriesByType(p.type)
+  if (p.categoryId && !list.some((c) => c.id === p.categoryId)) {
+    const own = settings.category(p.categoryId)
+    if (own) return [own, ...list]
+  }
+  return list
+}
+
+function setPresetAmount(p: QuickPreset, e: Event) {
+  const el = e.target as HTMLInputElement
+  // 留白或負數一律歸 0（＝這一顆不帶入金額），store 那邊還會再擋一次 NaN
+  const n = Number(el.value)
+  settings.updateQuickPreset(p.id, { amount: el.value.trim() === '' ? 0 : n })
+  // 讓畫面上的值跟 store 一致（例如打了 -5 會被改成 0）
+  el.value = String(settings.quickPresets.find((x) => x.id === p.id)?.amount ?? 0)
+}
+
+function setPresetType(p: QuickPreset, e: Event) {
+  const v = (e.target as HTMLSelectElement).value
+  settings.updateQuickPreset(p.id, { type: v === 'income' ? 'income' : 'expense' })
+}
+
+function setPresetCat(p: QuickPreset, e: Event) {
+  settings.updateQuickPreset(p.id, { categoryId: (e.target as HTMLSelectElement).value })
+}
+
+function setPresetNote(p: QuickPreset, e: Event) {
+  settings.updateQuickPreset(p.id, { note: (e.target as HTMLInputElement).value })
 }
 
 /**
@@ -746,6 +806,122 @@ const activeWalletName = computed(() => settings.activeWallet.name)
       </div>
     </section>
 
+    <!-- 快速金額（0.1.29） -->
+    <section id="sec-quickamt" class="card sec">
+      <header class="sec__hd">
+        <span class="sec__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <rect x="3.4" y="6.2" width="17.2" height="11.6" rx="2.6" />
+            <circle cx="12" cy="12" r="2.7" />
+            <path d="M6.4 10.2h.01M17.6 13.8h.01" />
+          </svg>
+        </span>
+        <div class="sec__meta">
+          <h2 class="sec__title">快速金額</h2>
+          <p class="sec__desc">
+            記帳頁金額上方會長出這些方鈕，點一下帶入金額／分類／備註（還是要自己按「記錄」）
+          </p>
+        </div>
+      </header>
+
+      <div class="panel">
+        <div class="panel__hd">
+          <span class="panel__label">按鈕內容</span>
+          <span class="tiny muted panel__meta">已設定 {{ settings.quickPresets.length }} 個</span>
+        </div>
+        <p class="tiny muted favs__hint">
+          金額填 0（或留白）＝這一顆不帶入金額；分類、備註留空＝維持記帳頁目前的選擇，不會改。
+          數量沒上限，要幾顆就按幾次「新增」。
+        </p>
+
+        <!-- 即時預覽：設定時就看得到記帳頁那排按鈕會長什麼樣（外觀跟記帳頁同一套） -->
+        <div v-if="settings.quickPresets.length" class="qprev">
+          <span class="qprev__lb">記帳頁會長這樣</span>
+          <div class="qprev__row">
+            <span v-for="v in presetViews" :key="v.preset.id" class="qprev__b">
+              <span v-if="v.icon" class="qprev__ic" :style="{ color: v.color }">
+                <CategoryIcon :name="v.icon" :size="15" :stroke="1.9" />
+              </span>
+              <svg v-else class="qprev__ic" viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="8" cy="8" r="5.7" />
+                <path d="M6.2 5.7h3.6M8 4.7v6.6M6.2 10.3h3.6" />
+              </svg>
+              <span class="qprev__n num">{{ v.label }}</span>
+            </span>
+          </div>
+        </div>
+
+        <p v-if="!settings.quickPresets.length" class="tiny muted qn__none">
+          還沒有任何快速金額，按下面的「新增」加第一顆。
+        </p>
+        <div v-else class="qa__list">
+          <div v-for="v in presetViews" :key="v.preset.id" class="qa__item">
+            <div class="qa__hd">
+              <span class="qa__idx num">{{ v.idx }}</span>
+              <span class="qa__sum tiny">{{ v.summary }}</span>
+              <button
+                class="qn__del"
+                type="button"
+                title="刪除"
+                :aria-label="`刪除快速金額 ${v.label}`"
+                @click="settings.removeQuickPreset(v.preset.id)"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M7.8 7.8 16.2 16.2M16.2 7.8 7.8 16.2" />
+                </svg>
+              </button>
+            </div>
+            <div class="qa__grid">
+              <label class="qa__f">
+                <span class="qa__lb">金額</span>
+                <input
+                  class="field qa__amt num"
+                  type="number"
+                  inputmode="decimal"
+                  min="0"
+                  step="any"
+                  :value="v.preset.amount || ''"
+                  placeholder="0"
+                  @change="setPresetAmount(v.preset, $event)"
+                />
+              </label>
+              <label class="qa__f">
+                <span class="qa__lb">類型</span>
+                <select class="field qa__type" :value="v.preset.type" @change="setPresetType(v.preset, $event)">
+                  <option value="expense">支出</option>
+                  <option value="income">收入</option>
+                </select>
+              </label>
+            </div>
+            <label class="qa__f">
+              <span class="qa__lb">分類</span>
+              <select class="field qa__cat" :value="v.preset.categoryId" @change="setPresetCat(v.preset, $event)">
+                <option value="">（維持目前的分類）</option>
+                <option v-for="c in presetCats(v.preset)" :key="c.id" :value="c.id">
+                  {{ settings.fullNameOf(c.id) }}
+                </option>
+              </select>
+            </label>
+            <label class="qa__f">
+              <span class="qa__lb">備註</span>
+              <input
+                class="field qa__note"
+                type="text"
+                :value="v.preset.note"
+                :maxlength="80"
+                placeholder="留空＝不改"
+                @change="setPresetNote(v.preset, $event)"
+              />
+            </label>
+          </div>
+        </div>
+
+        <button class="btn btn--ghost btn--sm qa__add" type="button" @click="settings.addQuickPreset()">
+          ＋ 新增一顆
+        </button>
+      </div>
+    </section>
+
     <!-- 資料 -->
     <section class="card sec">
       <header class="sec__hd">
@@ -1378,6 +1554,140 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* ── 快速金額預設（0.1.29）────────────────────────────── */
+/*
+ * 一顆 preset 一張小卡：標題列（編號＋摘要＋刪除）／金額＋類型／分類／備註。
+ * 手機寬度只有 390，四個欄位擠一列一定會被壓扁，所以拆行放。
+ * ⚠ 每一個欄位都自己帶一個小標籤（金額／類型／分類／備註）——
+ *   只靠 placeholder 的話，往下捲就不知道哪一格是什麼（「美觀」是使用者這次的要求）。
+ */
+.qa__list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-bottom: 10px;
+}
+.qa__item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 11px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.qa__hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+/* 編號：小圓點，讓「第幾顆」跟記帳頁那排的順序對得起來 */
+.qa__idx {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-light);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+.qa__sum {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qa__grid {
+  display: grid;
+  grid-template-columns: 1fr 96px;
+  gap: 8px;
+}
+.qa__f {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.qa__lb {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}
+/* 欄位高度比 .field 矮（34px）：跟旁邊的小標籤與按鈕同一個密度。
+   ⚠ 字級 16px 是 0.1.25 的全站約定（iOS 對 < 16px 的可編輯元素會 focus zoom） */
+.qa__amt,
+.qa__type,
+.qa__cat,
+.qa__note {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  font-size: 16px;
+  background: var(--surface);
+}
+.qa__add {
+  align-self: flex-start;
+}
+
+/* 即時預覽：外觀刻意跟記帳頁的 .qamt__b 一致（42px 高、12px 圓角、白底描邊） */
+.qprev {
+  margin: 0 0 12px;
+  padding: 10px 11px 11px;
+  border: 1px dashed var(--accent-light);
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+}
+.qprev__lb {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+.qprev__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.qprev__b {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 64px;
+  height: 42px;
+  padding: 0 13px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text-2);
+}
+.qprev__ic {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.qprev__n {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 /* ── 資料 ─────────────────────────────────────────────── */

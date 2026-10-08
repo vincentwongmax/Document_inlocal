@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
-import type { Category, Settings, TxType, Wallet, WalletState } from '@/types'
+import type { Category, QuickPreset, Settings, TxType, Wallet, WalletState } from '@/types'
 import { Keys, readJSON, writeJSON, remove, walletSettingsKey } from '@/lib/storage'
 import { defaultSettings } from '@/lib/defaults'
 import { fetchRates, defaultRates } from '@/lib/currency'
@@ -49,6 +49,8 @@ function merge(base: Settings, saved: Partial<Settings>): Settings {
     // ⚠ 一定要用 Array.isArray 判斷：使用者可能刻意把快速備註全部刪光（存成 []），
     // 那時要尊重「空的」，不能拿預設值把它們叫回來
     quickNotes: Array.isArray(saved.quickNotes) ? saved.quickNotes : base.quickNotes,
+    // ⚠ 同上：使用者可以把快速金額全部刪光（存成 []），那時要尊重「空的」
+    quickPresets: Array.isArray(saved.quickPresets) ? saved.quickPresets : base.quickPresets,
   }
 }
 
@@ -516,6 +518,42 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  /* ── 快速金額預設（0.1.29）───────────────────────────── */
+  /** 記帳頁金額上方那排方鈕；數量由使用者在設定頁決定，可以是空的 */
+  const quickPresets = computed(() => state.value.quickPresets)
+
+  /** 新增一組（金額先給 0，讓使用者自己填） */
+  function addQuickPreset(): QuickPreset {
+    const p: QuickPreset = {
+      id: uid(),
+      amount: 0,
+      type: 'expense',
+      categoryId: '',
+      note: '',
+    }
+    state.value.quickPresets.push(p)
+    return p
+  }
+
+  /** 改其中一組；找不到 id 就不動作 */
+  function updateQuickPreset(id: string, patch: Partial<Omit<QuickPreset, 'id'>>) {
+    const p = state.value.quickPresets.find((x) => x.id === id)
+    if (!p) return
+    if (patch.amount !== undefined) {
+      // 金額：只收有限且 ≥ 0 的數字，其他（NaN／負數）一律歸 0＝「不帶入金額」
+      const n = Number(patch.amount)
+      p.amount = Number.isFinite(n) && n >= 0 ? n : 0
+    }
+    if (patch.type !== undefined) p.type = patch.type
+    if (patch.categoryId !== undefined) p.categoryId = patch.categoryId
+    if (patch.note !== undefined) p.note = patch.note
+  }
+
+  function removeQuickPreset(id: string) {
+    const i = state.value.quickPresets.findIndex((x) => x.id === id)
+    if (i >= 0) state.value.quickPresets.splice(i, 1)
+  }
+
   function restoreDefaults() {
     state.value.categories = JSON.parse(JSON.stringify(defaultSettings().categories))
   }
@@ -571,6 +609,10 @@ export const useSettingsStore = defineStore('settings', () => {
     addQuickNote,
     updateQuickNote,
     removeQuickNote,
+    quickPresets,
+    addQuickPreset,
+    updateQuickPreset,
+    removeQuickPreset,
     restoreDefaults,
   }
 })

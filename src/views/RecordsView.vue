@@ -92,13 +92,14 @@ const rangeText = computed(() =>
     : formatRange(range.value.start, range.value.end),
 )
 
-/** 區間與筆數兩顆小標籤（依單位模式靠「日／月／年」右側，自訂範圍模式靠日期列下方）。
- *  開著「最近」時多一顆提示，否則光看區間看不出來是用哪個時間在查。 */
-const rangeTags = computed(() => [
-  ...(recent.value ? ['依新增時間'] : []),
-  rangeText.value,
-  `${rows.value.length} 筆`,
-])
+/**
+ * ⚠ 0.1.29：「依新增時間」**不再放在這裡**。
+ * 使用者原話：「用戶按了最近按鈕，就會見到…日月年按鈕右手邊的依新增時間標籤，
+ *   現在要把依新增時間**按鈕**放到檢視分類按鈕和最近按鈕的最右手邊」。
+ * 所以它搬到「檢視」那一列的最右邊，而且變成**可以按的按鈕**（見下面 `.bycat--basis`），
+ * 這裡只留區間與筆數兩顆標籤。
+ */
+const rangeTags = computed(() => [rangeText.value, `${rows.value.length} 筆`])
 
 const rows = computed(() =>
   records.records
@@ -378,6 +379,30 @@ function removeEditing(id: string) {
               </svg>
               最近
             </button>
+            <!--
+              0.1.29：「依新增時間」從區間列的小標籤（.rangetag）搬來這裡，
+              而且改成**按鈕**（使用者：「把依新增時間按鈕放到分類按鈕和最近按鈕的最右手邊」）。
+              它跟「最近」控制的是同一個東西（用新增時間還是交易時間查詢／分組），
+              差別是它**一直看得到**——關掉時也知道現在是依交易時間；外框一律黃色，
+              開啟（＝依新增時間）時才補黃底＋深黃字。
+              ⚠ 為什麼不直接改「最近」那顆就好：使用者明確說「是依新增時間的標籤，不是最近的按鈕」。
+            -->
+            <button
+              type="button"
+              class="bycat bycat--basis"
+              :class="{ 'is-on': recent }"
+              :aria-pressed="recent"
+              :title="recent ? '改回依交易時間查詢' : '改為依新增時間查詢（不是交易時間）'"
+              @click="recent = !recent"
+            >
+              <!-- 時鐘＋加號（「新增」），跟「最近」那顆「時鐘＋指針」做出區別 -->
+              <svg class="bycat__ic" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="8.4" />
+                <path d="M12 8.7v4.9" />
+                <path d="M9.55 11.15h4.9" />
+              </svg>
+              依新增時間
+            </button>
           </div>
         </div>
 
@@ -517,7 +542,7 @@ function removeEditing(id: string) {
               :record="r"
               :show-time="true"
               :highlight="kw"
-              :time-prefix="recent ? '交易' : ''"
+              :time-recent="recent"
               @edit="editingId = $event"
               @remove="removeEditing($event)"
             />
@@ -668,6 +693,28 @@ function removeEditing(id: string) {
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent);
+}
+/*
+ * 0.1.29：「依新增時間」按鈕（從區間列的 .rangetag 搬來）＋黃色外框。
+ * - `margin-left: auto`：那一列是 flex，這樣它會黏在最右邊
+ * - 黃框**常駐**（不管有沒有開啟），開啟時才補黃底＋深黃字
+ * ⚠ 一定要自己寫一份 `:hover`：`.bycat:hover`（0,2,0）會蓋掉這裡的（0,1,0），
+ *   不然滑過去黃框就變墨綠框了。
+ */
+.bycat--basis {
+  margin-left: auto;
+  border-color: var(--amber);
+}
+.bycat--basis:hover {
+  border-color: var(--amber);
+  color: var(--text);
+  background: var(--surface-3);
+}
+.bycat--basis.is-on,
+.bycat--basis.is-on:hover {
+  background: var(--amber-soft);
+  border-color: var(--amber);
+  color: var(--warn);
 }
 .bycat__ic {
   width: 15px;

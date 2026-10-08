@@ -298,10 +298,16 @@ watch(
 .cat:hover {
   background: var(--surface-3);
 }
+/*
+ * 0.1.29（使用者：「選取的按鈕改成淺綠色（在設定頁中選取按鈕使用中的顏色）」）：
+ * 已選中：粉紅 --pick 底＋白字 → **淺綠**（--accent-soft 底、墨綠框、墨綠字），
+ * 跟設定頁「使用中」的 `.chip.is-on` 同一套配色。
+ * ⚠ 形狀**刻意維持膠囊圓角 999px**（使用者這次指定「維持膠囊圓角」），只改顏色。
+ */
 .cat.is-on {
-  background: var(--pick);
-  border-color: var(--pick);
-  color: #fff;
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .cat__ic {
   display: grid;
@@ -313,9 +319,11 @@ watch(
   background: var(--bg);
   flex: none;
 }
+/* 選中時圖示改成「白底＋原本的分類色」：淺綠底上再疊一層半透明白會髒掉，
+   直接保留分類本身的顏色反而更好認（以前是粉紅底上反白，所以才用半透明白） */
 .cat.is-on .cat__ic {
-  background: rgba(255, 255, 255, 0.18);
-  color: #fff;
+  background: var(--surface);
+  color: var(--c);
 }
 .cat-more {
   display: inline-flex;

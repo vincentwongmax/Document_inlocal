@@ -10,6 +10,8 @@ import ClearableInput from '@/components/ClearableInput.vue'
 import QuickNotePicker from '@/components/QuickNotePicker.vue'
 import DateTimeField from '@/components/DateTimeField.vue'
 import ReceiptImages from '@/components/ReceiptImages.vue'
+import CategoryIcon from '@/components/CategoryIcon.vue'
+import { iconForCategory } from '@/lib/icons'
 import {
   displayMain,
   displaySub,
@@ -23,7 +25,7 @@ import {
 } from '@/lib/calc'
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { fromLocalInput, nowLocalInput } from '@/lib/date'
-import type { ImageRef, TxType } from '@/types'
+import type { ImageRef, QuickPreset, TxType } from '@/types'
 import { readJSON, writeJSON } from '@/lib/storage'
 
 const records = useRecordsStore()
@@ -71,6 +73,46 @@ const currencyOptions = computed(() => {
   return list
 })
 const convertedAmount = computed(() => Number((amount.value * settings.rate(curCode.value)).toFixed(2)))
+
+/* ── 快速金額預設（0.1.29）────────────────────────────── */
+/**
+ * 設定頁「快速金額」那一組 → 記帳頁這排方鈕要用的顯示資料。
+ * ⚠ 分類是**另查**的：使用者可能把 preset 指到的分類刪掉，那時要當作「沒指定」，
+ *   不要讓按鈕按下去把分類清成空白。
+ */
+const presetRows = computed(() =>
+  settings.quickPresets.map((p) => {
+    const cat = p.categoryId ? settings.category(p.categoryId) ?? null : null
+    const bits: string[] = []
+    if (p.amount > 0) bits.push(`金額 ${p.amount}`)
+    if (cat) bits.push(settings.fullNameOf(cat.id))
+    if (p.note.trim()) bits.push(p.note.trim())
+    return {
+      preset: p,
+      icon: cat ? iconForCategory(cat) : '',
+      color: cat?.color ?? '',
+      label: p.amount > 0 ? String(p.amount) : '—',
+      title: bits.length ? bits.join(' · ') : '還沒設定內容',
+    }
+  }),
+)
+
+/**
+ * 點一顆快速金額：帶入類型 → 分類 → 備註 → 金額。
+ * ⚠ 順序有關係：先切類型，分類清單才會是對的那一組；
+ *   分類用「有指定且還存在」才蓋，否則維持使用者目前選的。
+ */
+function applyPreset(p: QuickPreset) {
+  type.value = p.type
+  if (p.categoryId && settings.category(p.categoryId)) categoryId.value = p.categoryId
+  if (p.note.trim()) note.value = p.note
+  if (p.amount > 0) {
+    // 把金額一位一位餵進計算機，最後按 = ：這樣顯示、換算預覽跟手打的一模一樣
+    calc.value = initCalc()
+    for (const ch of String(p.amount)) calc.value = input(calc.value, ch)
+    calc.value = equals(calc.value)
+  }
+}
 
 /**
  * 分類預設的優先順序：
@@ -299,6 +341,32 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             已搬到「設定 → BETA 收據辨識記帳」。記帳頁不再顯示它。
             下面的「收據圖片」區塊是完全不同的功能（附加圖片到這次記帳），維持不動。
         -->
+
+        <!--
+          快速金額（0.1.29）：這排方鈕的數量與內容由設定頁「快速金額」區塊決定。
+          ⚠ 點下去**只帶入**金額／類型／分類／備註，**不自動送出**——
+            使用者原話：「依然要用戶手動按記錄的按鈕」。
+        -->
+        <div v-if="presetRows.length" class="qamt">
+          <button
+            v-for="row in presetRows"
+            :key="row.preset.id"
+            type="button"
+            class="qamt__b"
+            :title="row.title"
+            @click="applyPreset(row.preset)"
+          >
+            <!-- 有指定分類就顯示分類自己的 icon（帶分類色），沒有就用一個通用的金額 icon -->
+            <span v-if="row.icon" class="qamt__ic" :style="{ color: row.color }">
+              <CategoryIcon :name="row.icon" :size="15" :stroke="1.9" />
+            </span>
+            <svg v-else class="qamt__ic" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="5.7" />
+              <path d="M6.2 5.7h3.6M8 4.7v6.6M6.2 10.3h3.6" />
+            </svg>
+            <span class="qamt__n num">{{ row.label }}</span>
+          </button>
+        </div>
 
         <!-- 金額：只留顯示欄位，點一下開計算機子頁面 -->
         <button
@@ -557,6 +625,59 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   white-space: nowrap;
 }
 /* 還沒輸入時把 0 壓淡，讓「點擊輸入金額」是主視覺 */
+/*
+ * 快速金額（0.1.29）：金額欄上方那排方鈕（內容由設定頁決定）。
+ * 外觀**照記錄頁的日期方型按鈕**（`.field`）做：同高 42px、同一個 12px 圓角、
+ * 同一條 `--line-strong` 外框、一樣的白底 —— 使用者原話：
+ * 「方型的圓角（小型 icon），可參成記錄頁中的日期方型按鈕」。
+ * 內容是「icon ＋ 數字」橫排，看起來就像一排小小的日期框。
+ */
+.qamt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 9px;
+}
+.qamt__b {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 64px;
+  height: 42px;
+  padding: 0 13px;
+  flex: none;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text-2);
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+.qamt__b:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.qamt__ic {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.qamt__n {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
 .amount.is-empty .amount__num {
   color: var(--text-3);
 }
@@ -577,12 +698,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   min-width: 0;
 }
 /* 分類：把整組選框框成一個明顯的區塊，方便一眼看到 */
+/*
+ * 0.1.29：底色改成**白色**（使用者：「分類的區塊的底色改成白色」）——原本是淡墨綠
+ * --accent-soft。白底＋淡綠描邊，區塊邊界一樣清楚，但不會跟選中的分類鈕（淺綠）撞色。
+ * ⚠ 邊框刻意留著：整塊純白會跟卡片本身（也是白的）糊在一起。
+ */
 .catbox {
   padding: 10px 11px 11px;
-  /* 淡墨綠底（--accent-soft）＋ 取自 --accent #2c6e5b 的淡色描邊 */
   border: 1px solid rgba(44, 110, 91, 0.16);
   border-radius: var(--r-md);
-  background: var(--accent-soft);
+  background: var(--surface);
 }
 .catbox__label {
   display: block;
