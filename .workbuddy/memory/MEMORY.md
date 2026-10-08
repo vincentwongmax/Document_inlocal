@@ -9,10 +9,9 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 
 ## 版本號
 
-- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.28`
-  （⚠⚠ **0.1.29 已經被回退兩次**：第一次＝「最近」右移＋圖表 tooltip；
-  第二次＝「最近」右移＋黃框／分類區塊白底／快速金額／時間標籤去「交易」。
-  兩次的實作都留在 commit 裡，`git revert` 各自的回退 commit 就能整批帶回來）
+- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.29`
+  （⚠ **0.1.29 來回三次**：前兩次都被使用者 ROLL BACK，第三次（現在這版）才是定案。
+  內容差異：「最近」按鈕 vs 「依新增時間」標籤、方形圓角 vs 膠囊、淺綠 vs 淺黃外框）
 - 單一來源＝`package.json` 的 `version` → `vite.config.ts` `define` 注入 `__APP_VERSION__`
   （型別在 `env.d.ts`）→ `src/lib/version.ts` → 設定頁「離線與版本」膠囊
 - 每次更新要改 `package.json` ＋ 補一筆 `CHANGELOG.md`
@@ -25,8 +24,8 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 - 流程：`npx vue-tsc --noEmit` → `npm run build` → `.smoke/vNN.mjs` → 截圖 → CHANGELOG → memory → commit
 - 跑測試：`bash .smoke/run-regress.sh`（全部）或 `bash .smoke/run-regress.sh v104`（指定幾支）。
   ⚠ **判準以 exit code 為主**，摘要行格式各支不一（`pass=N fail=N` vs `N 通過 / N 失敗`）
-- **維護中的回歸集＝v70～v107**；`v45/v46/v56/v57` 早已失效，別當基準
-  （`v108`／`v109` 驗的都是被回退掉的 0.1.29，**刻意不放進回歸集**，檔案留在原處）
+- **維護中的回歸集＝v70～v107 ＋ v109**；`v45/v46/v56/v57` 早已失效，別當基準
+  （`v108` 驗的是第一次被回退的 0.1.29，**刻意不放進回歸集**，檔案留在原處）
 - Chrome `C:/Program Files/Google/Chrome/Application/chrome.exe`；puppeteer-core 在
   `C:\Users\user\.workbuddy\binaries\node\workspace\`；`node` 已在 PATH
   （⚠ 版本目錄會變，用過 `22.22.2-3`／`22.22.2-6`，找不到先 `ls ~/.workbuddy/binaries/node/versions/`）
@@ -48,15 +47,16 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 | **雙擊**空白處／統計摘要卡／子頁面彈層／收據 BETA／金額點擊 | **v105** |
 | 摘要卡箭頭／記帳頁標題／彈層避開 home indicator／區間記錄精選／分類轉場 | **v106** |
 | 彈層 safe-area 被 scoped padding 蓋掉／記帳頁副標／主幣別換算顯示／淺綠外框 | **v107** |
-| ~~最近鈕右移＋黃框／分類區塊白底／快速金額／時間標籤去「交易」~~ | **v109**（0.1.29，已回退，不在回歸集裡） |
+| 依新增時間按鈕（最右＋黃框）／分類區塊白底／快速金額／時間標籤去「交易」 | **v109**（54 項） |
 | 「最近」檢視本身（補登情境、基準切換、空清單文案） | **v85** |
+| 記錄頁各寬度的排版（320～768） | **v94**（⚠ 0.1.29 起「檢視」列是三顆；320px 允許掉行） |
 - ⚠ **`.smoke/` 是 gitignored** → `git revert` 不會動它。回退時要**手動**把
   回歸集的 `ALL` 與被改過的舊測試（如 v85）改回去
 
 - v102（30 項）＝「連點空白頁面不能動」。**用 390×667 跑**（記帳頁在 844 會剛好塞滿）
 - v100（42 項）＝日期輸入框 ＋ iOS 貼上 ＋ Toast「知道了」；v101（51 項）＝0.1.22 六需求
 - v103（84 項）＝0.1.24；v104（46 項）＝0.1.25；v105（44 項）＝0.1.26；
-  v106（39 項）＝0.1.27；v107（38 項）＝0.1.28
+  v106（39 項）＝0.1.27；v107（38 項）＝0.1.28；**v109（54 項）＝0.1.29**
 - （各版細節看該版的 CHANGELOG 與 CONVENTIONS，不重複在這裡）
 
 ### ⚠⚠ 測試常見殺手（**完整清單在 `CONVENTIONS.md`**）
@@ -181,18 +181,29 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
     ⚠ **只換顯示，不改存的資料**（amount／rate／baseAmount 都是歷史事實）。
     已套用：RecordRow／RecordList 組標題／useStats 全部／RecordsView 合計／記帳通知。
     ⚠ `RecordSheet` 的「詳細資訊」刻意維持記帳當下的數字（那是記錄的歷史事實）。
-12. ~~快速金額預設~~（0.1.29 做過，**已回退**；需要時 `git revert 8b0e73d` 可整批帶回）
-    當時的設計：`settings.quickPresets: QuickPreset[]`（`{ id, amount, type, categoryId, note }`），
-    記帳頁金額欄上方渲染成 `.qamt__b`，**點下去只帶入、不送出**
-13. **「檢視」列（分類／最近）只存在於記錄頁**
+12. **快速金額預設＝設定頁決定，按下去只帶入、不送出**（0.1.29）
+    `settings.quickPresets: QuickPreset[]`（`{ id, amount, type, categoryId, note }`），
+    記帳頁金額欄上方渲染成 `.qamt__b`。
+    ⚠ 外觀**照記錄頁的日期方型按鈕**（`.field`）：42px 高、`--r-md`(12px) 圓角、
+    `--line-strong` 描邊、白底、icon＋數字橫排。
+    ⚠ **點下去不送出**，一定要使用者自己按「記錄」；金額 ≤ 0＝不帶入；
+    分類／備註空＝維持目前選擇；分類被刪掉就當沒指定。
+    帶入順序＝類型 → 分類 → 備註 → 金額（金額用 `initCalc()` 逐字 `input()` 再 `equals()`，
+    才不會被記成算式）。設定頁那一區有**即時預覽**（`.qprev__b`，外觀跟記帳頁同步）
+13. **「檢視」列（分類／最近／依新增時間）只存在於記錄頁**（0.1.29）
+    ⚠ 統計頁最上面是**區間選擇**（日／月份／年份／自訂），**沒有**「檢視」那一列。
+    使用者常常把兩頁搞混，講「統計頁的檢視／最近」時**先跟他確認是哪一頁**
+    - ⚠⚠ **「依新增時間」是一顆按鈕（`.bycat--basis`，在那一列最右、黃框），
+      不是「最近」那顆**。它原本是開「最近」時才出現在區間列的 `.rangetag` 小標籤，
+      0.1.29 才搬過去並改成可按（使用者特別強調「不是最近的按鈕」）。
+      ⚠ 320px 極窄時這一列會掉行（三顆 274px > 那列 254px），是既有行為、不算 bug
     ⚠ 統計頁最上面是**區間選擇**（日／月份／年份／自訂），**沒有**「檢視／最近」。
     使用者常常把兩頁搞混，講「統計頁的檢視／最近」時**先跟他確認是哪一頁**
-14. **`RecordRow` 的時間標籤：開「最近」時要加「交易」前綴**
-    prop 是 `timePrefix`（RecordList 傳 `dateBasis==='created' ? '交易' : ''`；
-    RecordsView 的分類檢視傳 `recent ? '交易' : ''`）。
-    因為那時分組標題是**新增**日期、這顆標籤是**交易**時間，不標出來會以為壞掉。
-    ⚠ 0.1.29 曾改成 `timeRecent` ＋ `.ttag--recent`（沙漏 icon、淺綠、不加「交易」），
-    **已回退**——那次是使用者自己要求退的，不要再主動改這個
+14. **`RecordRow` 開「最近」時的時間標籤：不加「交易」二字**（0.1.29）
+    prop 是 `timeRecent?: boolean`（RecordList 傳 `dateBasis==='created'`；
+    RecordsView 的分類檢視傳 `recent`）。開啟時＝沙漏 icon ＋ `.ttag--recent`，
+    而 `.ttag--recent` **只改外框**（淺黃 `--amber-line`）——
+    底色 `--surface-3`、字色 `--text-2` 都維持原值（使用者追問時明確選「只改外框顏色」）
 
 ## 統計頁「區間記錄」的精選規則（0.1.27）
 
