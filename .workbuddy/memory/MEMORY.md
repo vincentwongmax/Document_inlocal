@@ -9,8 +9,10 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 
 ## 版本號
 
-- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.29`
-  （⚠ 0.1.29 用過兩次：前一個 0.1.29 已整版回退，這一個是**新的** 0.1.29，內容完全不同）
+- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.28`
+  （⚠⚠ **0.1.29 已經被回退兩次**：第一次＝「最近」右移＋圖表 tooltip；
+  第二次＝「最近」右移＋黃框／分類區塊白底／快速金額／時間標籤去「交易」。
+  兩次的實作都留在 commit 裡，`git revert` 各自的回退 commit 就能整批帶回來）
 - 單一來源＝`package.json` 的 `version` → `vite.config.ts` `define` 注入 `__APP_VERSION__`
   （型別在 `env.d.ts`）→ `src/lib/version.ts` → 設定頁「離線與版本」膠囊
 - 每次更新要改 `package.json` ＋ 補一筆 `CHANGELOG.md`
@@ -23,8 +25,8 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 - 流程：`npx vue-tsc --noEmit` → `npm run build` → `.smoke/vNN.mjs` → 截圖 → CHANGELOG → memory → commit
 - 跑測試：`bash .smoke/run-regress.sh`（全部）或 `bash .smoke/run-regress.sh v104`（指定幾支）。
   ⚠ **判準以 exit code 為主**，摘要行格式各支不一（`pass=N fail=N` vs `N 通過 / N 失敗`）
-- **維護中的回歸集＝v70～v107 ＋ v109**；`v45/v46/v56/v57` 早已失效，別當基準
-  （v108 驗的是被回退掉的 0.1.29，**刻意不放進回歸集**）
+- **維護中的回歸集＝v70～v107**；`v45/v46/v56/v57` 早已失效，別當基準
+  （`v108`／`v109` 驗的都是被回退掉的 0.1.29，**刻意不放進回歸集**，檔案留在原處）
 - Chrome `C:/Program Files/Google/Chrome/Application/chrome.exe`；puppeteer-core 在
   `C:\Users\user\.workbuddy\binaries\node\workspace\`；`node` 已在 PATH
   （⚠ 版本目錄會變，用過 `22.22.2-3`／`22.22.2-6`，找不到先 `ls ~/.workbuddy/binaries/node/versions/`）
@@ -46,13 +48,15 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 | **雙擊**空白處／統計摘要卡／子頁面彈層／收據 BETA／金額點擊 | **v105** |
 | 摘要卡箭頭／記帳頁標題／彈層避開 home indicator／區間記錄精選／分類轉場 | **v106** |
 | 彈層 safe-area 被 scoped padding 蓋掉／記帳頁副標／主幣別換算顯示／淺綠外框 | **v107** |
-| **最近鈕右移＋黃框／分類區塊白底＋已選鈕淺綠方角／快速金額／時間標籤去「交易」** | **v109** |
-| 「最近」檢視本身（補登情境、基準切換、空清單文案） | **v85**（⚠ 0.1.29 已改掉「交易」前綴的斷言） |
+| ~~最近鈕右移＋黃框／分類區塊白底／快速金額／時間標籤去「交易」~~ | **v109**（0.1.29，已回退，不在回歸集裡） |
+| 「最近」檢視本身（補登情境、基準切換、空清單文案） | **v85** |
+- ⚠ **`.smoke/` 是 gitignored** → `git revert` 不會動它。回退時要**手動**把
+  回歸集的 `ALL` 與被改過的舊測試（如 v85）改回去
 
 - v102（30 項）＝「連點空白頁面不能動」。**用 390×667 跑**（記帳頁在 844 會剛好塞滿）
 - v100（42 項）＝日期輸入框 ＋ iOS 貼上 ＋ Toast「知道了」；v101（51 項）＝0.1.22 六需求
 - v103（84 項）＝0.1.24；v104（46 項）＝0.1.25；v105（44 項）＝0.1.26；
-  v106（39 項）＝0.1.27；v107（38 項）＝0.1.28；**v109（44 項）＝0.1.29**
+  v106（39 項）＝0.1.27；v107（38 項）＝0.1.28
 - （各版細節看該版的 CHANGELOG 與 CONVENTIONS，不重複在這裡）
 
 ### ⚠⚠ 測試常見殺手（**完整清單在 `CONVENTIONS.md`**）
@@ -177,20 +181,18 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
     ⚠ **只換顯示，不改存的資料**（amount／rate／baseAmount 都是歷史事實）。
     已套用：RecordRow／RecordList 組標題／useStats 全部／RecordsView 合計／記帳通知。
     ⚠ `RecordSheet` 的「詳細資訊」刻意維持記帳當下的數字（那是記錄的歷史事實）。
-12. **快速金額預設＝設定頁決定，按下去只帶入、不送出**（0.1.29）
-    `settings.quickPresets: QuickPreset[]`（`{ id, amount, type, categoryId, note }`），
-    記帳頁金額欄上方渲染成 `.qamt__b`（方型圓角 10px）。
-    ⚠ **點下去不送出**，一定要使用者自己按「記錄」；金額 ≤ 0＝不帶入；
-    分類／備註空＝維持目前選擇；分類被刪掉就當沒指定。
-    帶入順序＝類型 → 分類 → 備註 → 金額（金額用 `initCalc()` 逐字 `input()` 再 `equals()`，
-    才不會被記成算式）
-13. **「檢視」列（分類／最近）只存在於記錄頁**（0.1.29 確認）
+12. ~~快速金額預設~~（0.1.29 做過，**已回退**；需要時 `git revert 8b0e73d` 可整批帶回）
+    當時的設計：`settings.quickPresets: QuickPreset[]`（`{ id, amount, type, categoryId, note }`），
+    記帳頁金額欄上方渲染成 `.qamt__b`，**點下去只帶入、不送出**
+13. **「檢視」列（分類／最近）只存在於記錄頁**
     ⚠ 統計頁最上面是**區間選擇**（日／月份／年份／自訂），**沒有**「檢視／最近」。
     使用者常常把兩頁搞混，講「統計頁的檢視／最近」時**先跟他確認是哪一頁**
-14. **`RecordRow` 的時間標籤不再有「交易」前綴**（0.1.29）
-    舊的 `timePrefix` prop 已刪除，改成 `timeRecent?: boolean`
-    （RecordList 傳 `dateBasis==='created'`；RecordsView 分類檢視傳 `recent`）。
-    開啟時＝沙漏 icon ＋ `.ttag--recent`（accent-soft 底、墨綠字）＋ **文字不帶「交易」**
+14. **`RecordRow` 的時間標籤：開「最近」時要加「交易」前綴**
+    prop 是 `timePrefix`（RecordList 傳 `dateBasis==='created' ? '交易' : ''`；
+    RecordsView 的分類檢視傳 `recent ? '交易' : ''`）。
+    因為那時分組標題是**新增**日期、這顆標籤是**交易**時間，不標出來會以為壞掉。
+    ⚠ 0.1.29 曾改成 `timeRecent` ＋ `.ttag--recent`（沙漏 icon、淺綠、不加「交易」），
+    **已回退**——那次是使用者自己要求退的，不要再主動改這個
 
 ## 統計頁「區間記錄」的精選規則（0.1.27）
 
