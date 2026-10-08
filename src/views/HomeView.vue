@@ -10,8 +10,6 @@ import ClearableInput from '@/components/ClearableInput.vue'
 import QuickNotePicker from '@/components/QuickNotePicker.vue'
 import DateTimeField from '@/components/DateTimeField.vue'
 import ReceiptImages from '@/components/ReceiptImages.vue'
-import CategoryIcon from '@/components/CategoryIcon.vue'
-import { iconForCategory } from '@/lib/icons'
 import {
   displayMain,
   displaySub,
@@ -74,11 +72,10 @@ const currencyOptions = computed(() => {
 })
 const convertedAmount = computed(() => Number((amount.value * settings.rate(curCode.value)).toFixed(2)))
 
-/* ── 快速金額預設（0.1.29）────────────────────────────── */
+/* ── 快速金額預設（0.1.29；0.1.30 搬進金額框內＋拿掉 icon）── */
 /**
- * 設定頁「快速金額」那一組 → 記帳頁這排方鈕要用的顯示資料。
- * ⚠ 分類是**另查**的：使用者可能把 preset 指到的分類刪掉，那時要當作「沒指定」，
- *   不要讓按鈕按下去把分類清成空白。
+ * 顯示用資料（按鈕上只秀數字，tooltip 秀完整內容）。
+ * ⚠ 分類是**另查**的：使用者可能把 preset 指到的分類刪掉，那時要當作「沒指定」。
  */
 const presetRows = computed(() =>
   settings.quickPresets.map((p) => {
@@ -89,8 +86,6 @@ const presetRows = computed(() =>
     if (p.note.trim()) bits.push(p.note.trim())
     return {
       preset: p,
-      icon: cat ? iconForCategory(cat) : '',
-      color: cat?.color ?? '',
       label: p.amount > 0 ? String(p.amount) : '—',
       title: bits.length ? bits.join(' · ') : '還沒設定內容',
     }
@@ -343,59 +338,62 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         -->
 
         <!--
-          快速金額（0.1.29）：這排方鈕的數量與內容由設定頁「快速金額」區塊決定。
-          ⚠ 點下去**只帶入**金額／類型／分類／備註，**不自動送出**——
-            使用者原話：「依然要用戶手動按記錄的按鈕」。
+          金額框（0.1.30 改版）：
+          ⚠ 外框改成包一層 `.amountbox`（框線／底色／陰影都移到它身上），
+            因為「快速金額」那一排要放在**框內上方**（使用者：「放在計算機的點擊輸入金額裡
+            （金額數字的框內上方）」），而按鈕裡面不能再包按鈕（HTML 不允許，
+            瀏覽器會把巢狀 button 解析壞掉）→ `.amount` 保持是 button（點它開計算機），
+            快速金額按鈕跟它是**平輩**，一起被包在 `.amountbox` 裡。
         -->
-        <div v-if="presetRows.length" class="qamt">
+        <div class="amountbox">
+          <!--
+            快速金額（0.1.29 → 0.1.30）：這排的數量與內容由設定頁「快速金額」決定。
+            0.1.30 兩個改動：①搬進金額框**內**的上方；②按鈕**不用 icon**（使用者明確要求）。
+            ⚠ 點下去**只帶入**金額／類型／分類／備註，**不自動送出**——
+              使用者原話：「依然要用戶手動按記錄的按鈕」。
+          -->
+          <div v-if="presetRows.length" class="qamt">
+            <button
+              v-for="row in presetRows"
+              :key="row.preset.id"
+              type="button"
+              class="qamt__b"
+              :title="row.title"
+              @click="applyPreset(row.preset)"
+            >
+              <span class="qamt__n num">{{ row.label }}</span>
+            </button>
+          </div>
+
+          <!-- 金額：只留顯示欄位，點一下開計算機子頁面 -->
           <button
-            v-for="row in presetRows"
-            :key="row.preset.id"
             type="button"
-            class="qamt__b"
-            :title="row.title"
-            @click="applyPreset(row.preset)"
+            class="amount"
+            :class="{ 'is-empty': !calc.tokens.length }"
+            @click="keypadOpen = true"
           >
-            <!-- 有指定分類就顯示分類自己的 icon（帶分類色），沒有就用一個通用的金額 icon -->
-            <span v-if="row.icon" class="qamt__ic" :style="{ color: row.color }">
-              <CategoryIcon :name="row.icon" :size="15" :stroke="1.9" />
+            <span class="amount__hint">
+              <svg class="amount__ic" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="4.7" y="2.7" width="14.6" height="18.6" rx="2.8" />
+                <path d="M8.2 7h7.6" />
+                <path d="M8.6 11.4h.01M12 11.4h.01M15.4 11.4h.01" />
+                <path d="M8.6 14.6h.01M12 14.6h.01M15.4 14.6h.01" />
+                <path d="M8.6 17.8h3.6" />
+              </svg>
+              <em class="tiny">{{ calc.tokens.length ? '點擊修改' : '點擊輸入金額' }}</em>
             </span>
-            <svg v-else class="qamt__ic" viewBox="0 0 16 16" aria-hidden="true">
-              <circle cx="8" cy="8" r="5.7" />
-              <path d="M6.2 5.7h3.6M8 4.7v6.6M6.2 10.3h3.6" />
-            </svg>
-            <span class="qamt__n num">{{ row.label }}</span>
+            <span class="amount__val">
+              <span class="amount__expr num">{{ expr || '\u00a0' }}</span>
+              <span class="amount__main">
+                <span class="amount__sym">{{ currency(curCode).symbol }}</span>
+                <span class="amount__num num" :class="{ 'is-long': displayLong }">{{ display }}</span>
+              </span>
+              <span v-if="converted && amount > 0" class="amount__conv num tiny">
+                ≈ {{ fmtMoney(convertedAmount, settings.baseCurrency) }}
+              </span>
+            </span>
           </button>
         </div>
-
-        <!-- 金額：只留顯示欄位，點一下開計算機子頁面 -->
-        <button
-          type="button"
-          class="amount"
-          :class="{ 'is-empty': !calc.tokens.length }"
-          @click="keypadOpen = true"
-        >
-          <span class="amount__hint">
-            <svg class="amount__ic" viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="4.7" y="2.7" width="14.6" height="18.6" rx="2.8" />
-              <path d="M8.2 7h7.6" />
-              <path d="M8.6 11.4h.01M12 11.4h.01M15.4 11.4h.01" />
-              <path d="M8.6 14.6h.01M12 14.6h.01M15.4 14.6h.01" />
-              <path d="M8.6 17.8h3.6" />
-            </svg>
-            <em class="tiny">{{ calc.tokens.length ? '點擊修改' : '點擊輸入金額' }}</em>
-          </span>
-          <span class="amount__val">
-            <span class="amount__expr num">{{ expr || '\u00a0' }}</span>
-            <span class="amount__main">
-              <span class="amount__sym">{{ currency(curCode).symbol }}</span>
-              <span class="amount__num num" :class="{ 'is-long': displayLong }">{{ display }}</span>
-            </span>
-            <span v-if="converted && amount > 0" class="amount__conv num tiny">
-              ≈ {{ fmtMoney(convertedAmount, settings.baseCurrency) }}
-            </span>
-          </span>
-        </button>
 
         <div class="pad__meta">
           <div class="catbox">
@@ -539,14 +537,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 
 /* 金額欄本身是一顆按鈕：點一下開計算機子頁面 */
-.amount {
+/*
+ * 0.1.30：金額框改成包一層 `.amountbox`——框線／底色／圓角／陰影都在它身上
+ * （原本這些是 `.amount` 的），因為「快速金額」那排要放在**框內上方**，
+ * 而按鈕裡不能包按鈕 → `.amount` 退成「框內下方那塊可點開計算機的區域」。
+ */
+.amountbox {
   width: 100%;
   margin: 16px 0 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 15px;
+  padding: 10px 12px 0;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: var(--surface-2);
@@ -557,9 +556,59 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     background 0.15s,
     border-color 0.15s;
 }
-.amount:hover {
+.amountbox:hover {
   background: var(--accent-soft);
   border-color: var(--accent);
+}
+/*
+ * 快速金額（0.1.30）：在金額框**內**的上方；按鈕**只有數字、沒有 icon**
+ * （使用者原話：「按鈕不要使用 ICON」）。
+ * 外觀仍然照記錄頁的日期方型按鈕那種「描邊＋白底＋方型圓角」做，只是縮小一號
+ * （在金額框裡面，跟下面的金額是同一個視覺群組）。
+ */
+.qamt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+.qamt__b {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  height: 32px;
+  padding: 0 11px;
+  flex: none;
+  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 700;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+.qamt__b:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.qamt__n {
+  line-height: 1;
+}
+/* 金額本體：框線那些都交給外層 .amountbox，這裡只留排版 */
+.amount {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  /* 框內左右留白由 .amountbox 統一給，這裡只補下面的（上面的間隙是 .qamt 的 margin） */
+  padding: 0 3px 12px;
+  border-radius: 0 0 calc(var(--r-md) - 1px) calc(var(--r-md) - 1px);
 }
 .amount__hint {
   display: flex;
@@ -625,59 +674,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   white-space: nowrap;
 }
 /* 還沒輸入時把 0 壓淡，讓「點擊輸入金額」是主視覺 */
-/*
- * 快速金額（0.1.29）：金額欄上方那排方鈕（內容由設定頁決定）。
- * 外觀**照記錄頁的日期方型按鈕**（`.field`）做：同高 42px、同一個 12px 圓角、
- * 同一條 `--line-strong` 外框、一樣的白底 —— 使用者原話：
- * 「方型的圓角（小型 icon），可參成記錄頁中的日期方型按鈕」。
- * 內容是「icon ＋ 數字」橫排，看起來就像一排小小的日期框。
- */
-.qamt {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-bottom: 9px;
-}
-.qamt__b {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-width: 64px;
-  height: 42px;
-  padding: 0 13px;
-  flex: none;
-  border-radius: var(--r-md);
-  border: 1px solid var(--line-strong);
-  background: var(--surface);
-  color: var(--text-2);
-  transition:
-    background 0.12s,
-    border-color 0.12s,
-    color 0.12s;
-}
-.qamt__b:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.qamt__ic {
-  display: grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  flex: none;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.qamt__n {
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1;
-}
 .amount.is-empty .amount__num {
   color: var(--text-3);
 }
