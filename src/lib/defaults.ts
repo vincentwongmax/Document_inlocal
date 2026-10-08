@@ -47,5 +47,7 @@ export function defaultSettings(base = 'MOP'): Settings {
       { id: 'qp_25', amount: 25, type: 'expense', categoryId: '', note: '', currency: '' },
       { id: 'qp_35', amount: 35, type: 'expense', categoryId: '', note: '', currency: '' },
     ],
+    // 旅行模式（0.1.35）：一開始沒有進行中的旅行
+    activeTrip: null,
   }
 }

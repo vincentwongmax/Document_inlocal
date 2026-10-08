@@ -6,6 +6,7 @@ import { useRecordsStore } from '@/stores/records'
 import { notify, confirmDialog } from '@/lib/alerts'
 import CategoryManageModal from '@/components/CategoryManageModal.vue'
 import QuickAmountSheet from '@/components/QuickAmountSheet.vue'
+import TravelSheet from '@/components/TravelSheet.vue'
 import CategoryIcon from '@/components/CategoryIcon.vue'
 import { iconForCategory } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
@@ -92,6 +93,9 @@ const presetViews = computed(() =>
 
 /** 「詳細」子頁面開關（新增／修改／刪除都在 QuickAmountSheet 裡做） */
 const quickAmtOpen = ref(false)
+
+/** 「旅行模式」子頁面開關（0.1.35；入口在「幣別與匯率」區塊的標題列） */
+const travelOpen = ref(false)
 
 /**
  * 從備註欄的「管理快速備註」跳過來時（?sec=quicknotes）直接捲到那一段。
@@ -430,6 +434,19 @@ const activeWalletName = computed(() => settings.activeWallet.name)
           <h2 class="sec__title">幣別與匯率</h2>
           <p class="sec__desc">每筆記錄會把「當下的匯率」快照下來，之後改匯率不會影響既有記錄</p>
         </div>
+        <!--
+          旅行模式（0.1.35）：入口在「幣別與匯率」標題列最右（使用者指定位置）。
+          進行中會亮成琥珀色並顯示旅行名；點開的子頁面跟其他子頁面同一套骨架。
+        -->
+        <button
+          class="btn btn--ghost btn--sm travel__btn"
+          :class="{ 'is-on': !!settings.activeTrip }"
+          type="button"
+          :title="settings.activeTrip ? '旅行進行中，點開查看或結束' : '出國旅行時用'"
+          @click="travelOpen = true"
+        >
+          {{ settings.activeTrip ? `旅行中 · ${settings.activeTrip.name}` : '旅行模式' }}
+        </button>
       </header>
 
       <div class="panel">
@@ -966,6 +983,9 @@ const activeWalletName = computed(() => settings.activeWallet.name)
     <!-- 快速金額的詳細子頁面（格局照「管理分類」：鎖背景、下拉關閉、清單↔編輯轉場） -->
     <QuickAmountSheet :open="quickAmtOpen" @close="quickAmtOpen = false" />
 
+    <!-- 旅行模式子頁面（0.1.35；骨架與其他子頁面同一套） -->
+    <TravelSheet :open="travelOpen" @close="travelOpen = false" />
+
     <ExportModal :open="exportOpen" @close="exportOpen = false" />
 
     <!--
@@ -1484,6 +1504,20 @@ const activeWalletName = computed(() => settings.activeWallet.name)
 .qa__detail {
   margin-left: auto;
   align-self: center;
+}
+/* 旅行模式入口（0.1.35）：一樣貼在標題列最右；進行中亮成琥珀（旅行的主題色） */
+.travel__btn {
+  margin-left: auto;
+  align-self: center;
+  max-width: 46vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.travel__btn.is-on {
+  background: var(--amber-soft);
+  border-color: var(--amber);
+  color: var(--amber);
 }
 
 /* ── 資料 ─────────────────────────────────────────────── */

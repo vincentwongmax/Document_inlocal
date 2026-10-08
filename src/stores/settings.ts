@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
-import type { Category, QuickPreset, Settings, TxType, Wallet, WalletState } from '@/types'
+import type { Category, QuickPreset, Settings, TravelTrip, TxType, Wallet, WalletState } from '@/types'
 import { Keys, readJSON, writeJSON, remove, walletSettingsKey } from '@/lib/storage'
 import { defaultSettings } from '@/lib/defaults'
 import { fetchRates, defaultRates } from '@/lib/currency'
@@ -24,6 +24,26 @@ function withIcons(list: Category[]): Category[] {
 
 /** 單一則快速備註的字數上限（記帳頁備註欄本身是 80 字，這裡留得比較短才好按） */
 export const QUICK_NOTE_MAX = 20
+
+/**
+ * 舊資料／異常資料的 activeTrip 正規化：形狀不對就當「沒有旅行」。
+ * ⚠ 不能直接信 `saved.activeTrip`——localStorage 可能是任何東西。
+ */
+function normTrip(v: unknown): TravelTrip | null {
+  if (!v || typeof v !== 'object') return null
+  const o = v as Partial<TravelTrip>
+  if (typeof o.id !== 'string' || !o.id || typeof o.name !== 'string' || !o.name.trim()) return null
+  return {
+    id: o.id,
+    name: o.name.trim(),
+    startDate: typeof o.startDate === 'string' ? o.startDate : '',
+    endDate: typeof o.endDate === 'string' ? o.endDate : '',
+    currency: typeof o.currency === 'string' ? o.currency : '',
+    prevCurrency: typeof o.prevCurrency === 'string' ? o.prevCurrency : '',
+    mode1: o.mode1 === true,
+    mode2: o.mode2 === true,
+  }
+}
 
 function merge(base: Settings, saved: Partial<Settings>): Settings {
   return {
@@ -55,6 +75,8 @@ function merge(base: Settings, saved: Partial<Settings>): Settings {
     quickPresets: Array.isArray(saved.quickPresets)
       ? saved.quickPresets.map((p) => ({ ...p, currency: p.currency ?? '' }))
       : base.quickPresets,
+    // 旅行模式（0.1.35）：舊資料沒有這個欄位 → null＝沒有旅行；形狀不對也當沒有
+    activeTrip: normTrip(saved.activeTrip),
   }
 }
 
@@ -560,6 +582,73 @@ export const useSettingsStore = defineStore('settings', () => {
     if (i >= 0) state.value.quickPresets.splice(i, 1)
   }
 
+  /* ── 旅行模式（0.1.35）─────────────────────────────────
+   * 一次只有一個進行中的旅行（使用者拍板）。
+   * ⚠ 記錄本身（蓋 tripId／解除標記）在 records store——這裡只管「旅行本體」與幣別，
+   *   避免兩個 store 互相 import（records 已經 import settings，反過來會成循環）。
+   */
+  const activeTrip = computed(() => state.value.activeTrip)
+
+  /**
+   * 開始旅行：把旅行本體存進當前錢包的設定。
+   * 設了旅行貨幣時，同時把記帳幣別切過去，並把**原幣別**快照在 `prevCurrency`
+   * （結束旅行時恢復用）——快照只發生在開始時，中途改旅行貨幣不會蓋掉它。
+   */
+  function startTrip(input: {
+    name: string
+    startDate: string
+    endDate: string
+    currency: string
+    mode1: boolean
+    mode2: boolean
+  }): TravelTrip {
+    const currency = input.currency || ''
+    const trip: TravelTrip = {
+      id: uid('trip'),
+      name: input.name.trim() || '旅行',
+      startDate: input.startDate || '',
+      endDate: input.endDate || '',
+      currency,
+      prevCurrency: currency ? state.value.inputCurrency : '',
+      mode1: input.mode1 === true,
+      mode2: input.mode2 === true,
+    }
+    state.value.activeTrip = trip
+    if (currency) state.value.inputCurrency = currency
+    return trip
+  }
+
+  /**
+   * 旅行進行中改內容（名稱／日期／貨幣／模式）。
+   * 貨幣變了要跟著重切記帳幣別：切到新幣別；切回「不自動切換」（空字串）＝
+   * 恢復開始前快照的那個幣別。
+   */
+  function updateActiveTrip(patch: Partial<Omit<TravelTrip, 'id' | 'prevCurrency'>>) {
+    const t = state.value.activeTrip
+    if (!t) return
+    if (patch.name !== undefined && patch.name.trim()) t.name = patch.name.trim()
+    if (patch.startDate !== undefined) t.startDate = patch.startDate
+    if (patch.endDate !== undefined) t.endDate = patch.endDate
+    if (patch.mode1 !== undefined) t.mode1 = patch.mode1 === true
+    if (patch.mode2 !== undefined) t.mode2 = patch.mode2 === true
+    if (patch.currency !== undefined && patch.currency !== t.currency) {
+      t.currency = patch.currency
+      state.value.inputCurrency = t.currency || t.prevCurrency || state.value.inputCurrency
+    }
+  }
+
+  /**
+   * 結束旅行：清掉旅行本體、把記帳幣別恢復成開始前的快照。
+   * ⚠ 記錄的解除標記由呼叫端先做（records.untagTrip）——這裡只管設定。
+   */
+  function finishTrip(): TravelTrip | null {
+    const t = state.value.activeTrip
+    if (!t) return null
+    if (t.prevCurrency) state.value.inputCurrency = t.prevCurrency
+    state.value.activeTrip = null
+    return t
+  }
+
   function restoreDefaults() {
     state.value.categories = JSON.parse(JSON.stringify(defaultSettings().categories))
   }
@@ -619,6 +708,11 @@ export const useSettingsStore = defineStore('settings', () => {
     addQuickPreset,
     updateQuickPreset,
     removeQuickPreset,
+    /* ── 旅行模式 ── */
+    activeTrip,
+    startTrip,
+    updateActiveTrip,
+    finishTrip,
     restoreDefaults,
   }
 })

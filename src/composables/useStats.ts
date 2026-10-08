@@ -66,18 +66,68 @@ export function useStats(range: Ref<DateRange>) {
    * 分類統計（含子分類）。
    * 每個節點的 total 會把自己底下所有子分類的金額都算進來，
    * 所以頂層那一列就是「餐飲全部多少」，展開才看早餐／午餐／晚餐各多少。
+   *
+   * 旅行模式（0.1.35）：有 `tripId` 標記的記錄**不進**原分類的統計（不被污染），
+   * 改成一顆獨立的頂層節點「旅行名」（琥珀色），底下按原分類的大類分組 ——
+   * 也就是「日本旅行 → 餐飲／交通…」的樹。結束旅行（解除標記）後自動回到原分類。
    */
   function byCategory(type: 'expense' | 'income'): CatStat[] {
-    // 先算出「直接掛在某個分類身上」的金額
+    // 先把旅行記錄撈出來做成獨立節點（要在算 grand 之前，比例才會對）
+    const trip = settings.activeTrip
+    let tripNode: CatStat | null = null
+    if (trip) {
+      const tripRows = rows.value.filter((r) => r.tripId === trip.id && r.type === type)
+      if (tripRows.length) {
+        const per = new Map<string, { total: number; count: number }>()
+        for (const r of tripRows) {
+          // 旅行節點底下按「原分類的大類」分組（子分類併進大類）
+          const root = settings.pathOf(r.categoryId)[0]?.id ?? r.categoryId
+          const cur = per.get(root) ?? { total: 0, count: 0 }
+          cur.total += amt(r)
+          cur.count += 1
+          per.set(root, cur)
+        }
+        const children: CatStat[] = [...per.entries()]
+          .map(([id, v]) => {
+            const c = settings.category(id)
+            return {
+              id,
+              name: c?.name ?? '未分類',
+              color: c?.color ?? '#8a857c',
+              total: v.total,
+              own: v.total,
+              count: v.count,
+              ratio: 0,
+              parentRatio: 0,
+              children: [],
+            }
+          })
+          .sort((a, b) => b.total - a.total)
+        const total = children.reduce((s, k) => s + k.total, 0)
+        tripNode = {
+          id: `trip:${trip.id}`,
+          name: trip.name,
+          color: '#d9a326',
+          total,
+          own: 0,
+          count: tripRows.length,
+          ratio: 0,
+          parentRatio: 0,
+          children,
+        }
+      }
+    }
+
+    // 先算出「直接掛在某個分類身上」的金額（旅行記錄不算進來）
     const own = new Map<string, { total: number; count: number }>()
     for (const r of rows.value) {
-      if (r.type !== type) continue
+      if (r.type !== type || r.tripId) continue
       const cur = own.get(r.categoryId) ?? { total: 0, count: 0 }
       cur.total += amt(r)
       cur.count += 1
       own.set(r.categoryId, cur)
     }
-    const grand = [...own.values()].reduce((s, v) => s + v.total, 0) || 1
+    const grand = [...own.values()].reduce((s, v) => s + v.total, 0) + (tripNode?.total ?? 0) || 1
     const used = new Set<string>()
 
     const build = (parentId: string | null): CatStat[] => {
@@ -105,6 +155,12 @@ export function useStats(range: Ref<DateRange>) {
     }
 
     const top = build(null)
+
+    // 旅行節點掛進頂層（有記錄才會存在）
+    if (tripNode) {
+      tripNode.ratio = tripNode.total / grand
+      top.push(tripNode)
+    }
 
     // 已刪除（封存）或查不到的分類：補在最上層，金額才不會憑空消失
     for (const [id, v] of own) {

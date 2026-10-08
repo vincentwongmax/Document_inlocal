@@ -70,6 +70,8 @@ const categoryId = ref('')
 const occurredAt = ref('')
 const note = ref('')
 const rate = ref(1)
+/** 旅行模式（0.1.35）：這筆記錄屬於哪個旅行（空字串＝不屬於任何旅行） */
+const tripId = ref('')
 /** 記帳當下用計算機算出來的算式（唯讀顯示；沒有就是單純輸入一個數字） */
 const expr = ref('')
 /** 載入時的金額：用來判斷使用者有沒有在明細裡改過金額 */
@@ -261,6 +263,7 @@ watch(
     occurredAt.value = toLocalInput(r.occurredAt)
     note.value = r.note ?? ''
     rate.value = r.rate
+    tripId.value = r.tripId ?? ''
     expr.value = r.expr ?? ''
     loadedAmount.value = r.amount
     images.value = [...(r.images ?? [])]
@@ -273,6 +276,31 @@ watch(
 watch(currencyCode, (c) => {
   rate.value = settings.rate(c)
 })
+
+/* ── 旅行模式（0.1.35）：移入／移出旅行 ─────────────────── */
+/** 只有「旅行進行中」才顯示這一欄（旅行結束後記錄都會被解除標記，欄位也沒意義了） */
+const activeTrip = computed(() => settings.activeTrip)
+const inTrip = computed(() => !!activeTrip.value && tripId.value === activeTrip.value.id)
+
+/**
+ * 移入／移出旅行。
+ * ⚠ 模式二開著時「移入」要跟著補備注後綴（使用者拍板：跟新記的一致）；
+ *   已經有同樣後綴就不重複補；「移出」**不動備注**（那已是使用者資料的一部分）。
+ */
+function toggleTrip() {
+  const t = activeTrip.value
+  if (!t) return
+  if (inTrip.value) {
+    tripId.value = ''
+    return
+  }
+  tripId.value = t.id
+  if (t.mode2) {
+    const suf = `_${t.name}`
+    const n = note.value.trim()
+    if (n && !n.endsWith(suf)) note.value = n + suf
+  }
+}
 
 function save() {
   if (!(numeric.value > 0)) {
@@ -295,6 +323,8 @@ function save() {
     occurredAt: fromLocalInput(occurredAt.value),
     note: note.value.trim(),
     images: images.value,
+    // 旅行標記：跟著這一欄的狀態走（空＝解除）
+    tripId: tripId.value || undefined,
     ...(amountChanged ? { expr: undefined } : {}),
   })
 }
@@ -384,6 +414,37 @@ function save() {
           <div class="flat">
             <span class="flat__label">分類</span>
             <CategoryPicker v-model="categoryId" :type="type" variant="select" />
+          </div>
+
+          <!-- 旅行（0.1.35）：旅行進行中才出現；移入／移出就是提前補登與事後修改的入口 -->
+          <div v-if="activeTrip" class="flat">
+            <span class="flat__label">旅行</span>
+            <div class="triprow">
+              <span class="triprow__tag" :class="{ 'is-on': inTrip }">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="2.8" y="7.2" width="18.4" height="12.6" rx="2.6" />
+                  <path d="M8.4 7.2V4.6A1.6 1.6 0 0 1 10 3h4a1.6 1.6 0 0 1 1.6 1.6v2.6" />
+                  <path d="M8.4 10.6v5.8M15.6 10.6v5.8" />
+                </svg>
+                {{ activeTrip.name }}
+              </span>
+              <button
+                class="btn btn--sm"
+                :class="inTrip ? 'btn--ghost' : 'btn--primary'"
+                type="button"
+                @click="toggleTrip"
+              >
+                {{ inTrip ? '移出旅行' : '移入旅行' }}
+              </button>
+            </div>
+            <p class="tiny muted triprow__hint">
+              {{
+                inTrip
+                  ? '這筆記錄歸在這個旅行名下（記錄頁／統計頁會歸到它）'
+                  : '移入後記錄頁／統計頁會把這筆歸到旅行名下' +
+                    (activeTrip.mode2 ? '，備注會補上旅行名' : '')
+              }}
+            </p>
           </div>
 
           <!-- 日期時間 -->
@@ -842,6 +903,48 @@ function save() {
 }
 .sel2 {
   padding: 0 10px;
+}
+/* 旅行欄（0.1.35）：左邊是旅行標籤（開＝琥珀）、右邊是移入／移出鈕 */
+.triprow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.triprow__tag {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.triprow__tag.is-on {
+  border-color: var(--amber);
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+.triprow__tag svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.triprow__hint {
+  margin: -3px 0 0;
 }
 .conv {
   grid-column: 1 / -1;

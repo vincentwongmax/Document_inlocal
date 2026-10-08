@@ -96,6 +96,13 @@ export interface TxRecord {
   amount: number
   /** 原幣別 */
   currency: string
+  /**
+   * 旅行模式（0.1.35）：這筆記錄屬於哪個旅行（`settings.activeTrip.id`）。
+   * 模式一開著時記帳會自動蓋上；「結束旅行」時會整批解除。
+   * ⚠ 只是「顯示歸組」用的標記——分類資料完全不動（原分類照樣留在記錄上）。
+   * 舊資料沒有這個欄位。
+   */
+  tripId?: string
   /** 寫入當下的匯率快照：1 單位原幣 = rate 單位主幣 */
   rate: number
   /** 主幣別快照 */
@@ -144,9 +151,46 @@ export interface QuickPreset {
   currency: string
 }
 
+/**
+ * 旅行模式（0.1.35）：一個進行中的旅行。
+ *
+ * 使用者拍板的設計（0.1.35 討論定案）：
+ * - 一次只有一個進行中的旅行；出發／回程日期**純顯示**（不影響記錄歸屬）。
+ * - **模式一**＝期間的記錄自動蓋 `tripId` 標記，記錄頁／統計頁歸到「日本旅行」名下
+ *   （＝日本旅行→餐飲→午餐 的效果）；記帳頁分類介面**外觀完全不變**。
+ * - **模式二**＝提交記錄後備注自動補「_旅行名」（例：買了一個包包_日本旅行）。
+ *   兩個模式可同時開。
+ * - 旅行貨幣：旅行期間記帳頁自動用該幣別（每一筆仍可手動改），結束後恢復。
+ * - 「結束旅行」＝該旅行的記錄**全部解除標記**（回歸一般記錄）、旅行清空；
+ *   備注已加的後綴**保留不動**（記錄是歷史事實）。
+ */
+export interface TravelTrip {
+  id: string
+  /** 旅行名稱（例：日本旅行）；也是模式二要補進備注的字、歸組顯示的組名 */
+  name: string
+  /** 出發日 YYYY-MM-DD（純顯示）；空字串＝沒填 */
+  startDate: string
+  /** 回程日 YYYY-MM-DD（純顯示）；空字串＝沒填 */
+  endDate: string
+  /**
+   * 旅行貨幣；空字串＝不自動切換（記帳頁維持目前的幣別）。
+   * 旅行期間記帳頁的預設幣別會切到它（`settings.inputCurrency`），結束後恢復。
+   */
+  currency: string
+  /** 開始旅行當下的輸入幣別快照（結束旅行時恢復用）；空字串＝開始時沒有自動切換 */
+  prevCurrency: string
+  /** 模式一：期間的記錄歸入這個旅行（tripId 標記） */
+  mode1: boolean
+  /** 模式二：提交記錄後備注自動補「_旅行名」 */
+  mode2: boolean
+}
+
 export interface Settings {
   baseCurrency: string
-  /** 目前輸入幣別（旅行模式：一律以某幣記錄，自動換算為主幣） */
+  /**
+   * 目前輸入幣別（記帳頁的預設幣別，可在此手動切換）。
+   * 旅行模式（0.1.35）開著且設了旅行貨幣時，會被自動切換並在結束後恢復。
+   */
   inputCurrency: string
   /** currency -> 兌主幣匯率（1 外幣 = ? 主幣） */
   rates: Record<string, number>
@@ -182,6 +226,11 @@ export interface Settings {
    * 空陣列＝記帳頁不顯示那一排。
    */
   quickPresets: QuickPreset[]
+  /**
+   * 旅行模式（0.1.35）：目前進行中的旅行；null＝沒有。
+   * 一次只有一個（使用者拍板）；結束後清回 null。
+   */
+  activeTrip: TravelTrip | null
 }
 
 export interface ExportPayload {

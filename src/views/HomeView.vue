@@ -253,22 +253,34 @@ function submit() {
     notify('請選擇分類', 'warn')
     return
   }
+  /*
+   * 旅行模式（0.1.35）：
+   * - 模式一 → 這筆記錄蓋上 tripId 標記（記錄頁／統計頁歸到旅行名下；分類照舊）
+   * - 模式二 → 備注**提交後**自動補「_旅行名」（使用者原話：
+   *   「用戶正常輸入的備注, 用戶提交記錄後才增加補上(這個旅行的名字)」）
+   *   ⚠ 只在有打備注時補——空備注沒有東西可以「補上」。
+   */
+  const trip = settings.activeTrip
+  const noteBase = note.value.trim()
+  const noteOut = trip?.mode2 && noteBase ? `${noteBase}_${trip.name}` : noteBase
   const rec = records.add({
     type: type.value,
     categoryId: categoryId.value,
     amount: amount.value,
     currency: curCode.value,
     occurredAt: fromLocalInput(occurredAt.value),
-    note: note.value.trim(),
+    note: noteOut,
     // 算出來的才記算式（單純輸入一個數字不記）
     expr: calcExpr(calc.value),
     images: [...images.value],
     source: 'manual',
+    ...(trip?.mode1 ? { tripId: trip.id } : {}),
   })
   // 圖片已經被這筆記錄接手：清空面板但**不能**刪 blob
   imgEl.value?.release()
   // 0.1.28：通知裡的金額也用「目前的主幣別」顯示（跟清單同一套換算）
-  const label = `${fmtMoney(settings.toBase(rec.amount, rec.currency), settings.baseCurrency)} · ${settings.category(rec.categoryId)?.name ?? ''}`
+  // 0.1.35：模式一開著時補上旅行名，讓使用者知道這筆進了旅行
+  const label = `${fmtMoney(settings.toBase(rec.amount, rec.currency), settings.baseCurrency)} · ${settings.category(rec.categoryId)?.name ?? ''}${trip?.mode1 ? ` · ${trip.name}` : ''}`
   notify(`已記錄 ${label}`, 'ok', { label: '復原', run: () => records.remove(rec.id) })
 
   resetForm()

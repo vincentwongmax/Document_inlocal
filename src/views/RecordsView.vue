@@ -151,12 +151,18 @@ interface CatGroup {
 /**
  * 依「大類」分組：子分類的記錄一律歸到它最上層的大類去，
  * 所以「交通」與「交通 › 巴士」會在同一組，不會被拆開。
+ *
+ * 旅行模式（0.1.35）：有 `tripId` 標記的記錄**整筆**歸到「旅行名」這一組（不看原分類），
+ * 組名＝旅行名（例：日本旅行），組內的子分類小計仍是真分類 ——
+ * 畫面上就是「日本旅行 → 餐飲／交通…」的效果（使用者拍板：旅行標記方案）。
  */
 const catGroups = computed<CatGroup[]>(() => {
   const m = new Map<string, TxRecord[]>()
   for (const r of rows.value) {
     // 沒有上層就是自己；資料異常查不到時退回自己的 id，至少不會消失
-    const root = settings.pathOf(r.categoryId)[0]?.id ?? r.categoryId
+    const root = r.tripId
+      ? `trip:${r.tripId}`
+      : (settings.pathOf(r.categoryId)[0]?.id ?? r.categoryId)
     const list = m.get(root)
     if (list) list.push(r)
     else m.set(root, [r])
@@ -164,7 +170,9 @@ const catGroups = computed<CatGroup[]>(() => {
 
   return [...m.entries()]
     .map(([rootId, list]) => {
-      const c = settings.category(rootId)
+      // 旅行組：分類表裡查不到是正常的（它不是分類），名稱／顏色／icon 用旅行主題
+      const isTrip = rootId.startsWith('trip:')
+      const c = isTrip ? undefined : settings.category(rootId)
       const sorted = [...list].sort((a, b) => (timeOf(a) < timeOf(b) ? 1 : -1))
 
       // 先把每一筆按它自己的分類累加，才知道各子分類佔多少
@@ -191,9 +199,13 @@ const catGroups = computed<CatGroup[]>(() => {
 
       return {
         id: rootId,
-        name: c?.name ?? '未分類',
-        color: c?.color ?? '#8a857c',
-        icon: c ? iconForCategory(c) : iconForCategory({ id: '', name: '' }),
+        name: isTrip ? (settings.activeTrip?.name ?? '旅行') : (c?.name ?? '未分類'),
+        color: isTrip ? '#d9a326' : (c?.color ?? '#8a857c'),
+        icon: isTrip
+          ? 'luggage'
+          : c
+            ? iconForCategory(c)
+            : iconForCategory({ id: '', name: '' }),
         exp: sumOf((v) => v.exp),
         inc: sumOf((v) => v.inc),
         list: sorted,
