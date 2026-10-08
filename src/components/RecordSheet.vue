@@ -277,24 +277,53 @@ watch(currencyCode, (c) => {
   rate.value = settings.rate(c)
 })
 
-/* ── 旅行模式（0.1.35）：移入／移出旅行 ─────────────────── */
-/** 只有「旅行進行中」才顯示這一欄（旅行結束後記錄都會被解除標記，欄位也沒意義了） */
-const activeTrip = computed(() => settings.activeTrip)
-const inTrip = computed(() => !!activeTrip.value && tripId.value === activeTrip.value.id)
+/* ── 旅行模式（0.1.35；0.1.36 改成下拉選單）──────────────── */
+/**
+ * 可選的旅行清單：進行中的在前（標示「進行中」）、已結束的照結束順序在後（新的在上）。
+ * 0.1.36 起標記結束後保留，這一欄**一直有意義**——把普通記錄歸進任何一個旅行
+ * （使用者：用戶也可以在記錄明細的頁面中，把一個普通的記錄加至這個旅行）。
+ */
+const tripOptions = computed(() => {
+  const out: { id: string; label: string; mode2: boolean }[] = []
+  const seen = new Set<string>()
+  const t = settings.activeTrip
+  if (t) {
+    out.push({ id: t.id, label: `${t.name}（進行中）`, mode2: t.mode2 })
+    seen.add(t.id)
+  }
+  for (const h of [...settings.tripHistory].reverse()) {
+    if (seen.has(h.id)) continue
+    seen.add(h.id)
+    out.push({ id: h.id, label: h.name, mode2: h.mode2 })
+  }
+  return out
+})
+
+/** 目前這筆歸屬的旅行（沒有則 null） */
+const currentTrip = computed(() => (tripId.value ? (settings.tripById(tripId.value) ?? null) : null))
+
+const tripHint = computed(() => {
+  if (currentTrip.value) return `這筆歸在「${currentTrip.value.name}」名下（記錄頁／統計頁會歸到它）`
+  return tripOptions.value.length ? '可把這筆歸進某個旅行（進行中或已結束的都可以）' : ''
+})
 
 /**
- * 移入／移出旅行。
- * ⚠ 模式二開著時「移入」要跟著補備注後綴（使用者拍板：跟新記的一致）；
- *   已經有同樣後綴就不重複補；「移出」**不動備注**（那已是使用者資料的一部分）。
+ * 改選旅行（select 的 change）。
+ * ⚙ 拍板的規則（0.1.36）：
+ * - 從「不屬於任何旅行」選到某旅行，且那個旅行模式二開著、備注非空、還沒有後綴
+ *   → 補上「_旅行名」（跟新記的一致）；
+ * - 已經有同樣後綴就不重複補；
+ * - 旅行之間互換、或改回「不屬於任何旅行」→ **不動備注**（那是使用者資料的一部分，
+ *   跟 0.1.35「移出不動備注」同一原則）。
+ * - 查不到的 id（異常資料）→ 自動跳回「不屬於任何旅行」。
  */
-function toggleTrip() {
-  const t = activeTrip.value
-  if (!t) return
-  if (inTrip.value) {
+function onTripChange() {
+  if (!tripId.value) return
+  const t = settings.tripById(tripId.value)
+  if (!t) {
     tripId.value = ''
     return
   }
-  tripId.value = t.id
   if (t.mode2) {
     const suf = `_${t.name}`
     const n = note.value.trim()
@@ -416,35 +445,14 @@ function save() {
             <CategoryPicker v-model="categoryId" :type="type" variant="select" />
           </div>
 
-          <!-- 旅行（0.1.35）：旅行進行中才出現；移入／移出就是提前補登與事後修改的入口 -->
-          <div v-if="activeTrip" class="flat">
+          <!-- 旅行（0.1.35 膠囊＋按鈕 → 0.1.36 下拉）：把這筆歸進任何一個旅行（結束過的也行） -->
+          <div v-if="tripOptions.length" class="flat">
             <span class="flat__label">旅行</span>
-            <div class="triprow">
-              <span class="triprow__tag" :class="{ 'is-on': inTrip }">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="2.8" y="7.2" width="18.4" height="12.6" rx="2.6" />
-                  <path d="M8.4 7.2V4.6A1.6 1.6 0 0 1 10 3h4a1.6 1.6 0 0 1 1.6 1.6v2.6" />
-                  <path d="M8.4 10.6v5.8M15.6 10.6v5.8" />
-                </svg>
-                {{ activeTrip.name }}
-              </span>
-              <button
-                class="btn btn--sm"
-                :class="inTrip ? 'btn--ghost' : 'btn--primary'"
-                type="button"
-                @click="toggleTrip"
-              >
-                {{ inTrip ? '移出旅行' : '移入旅行' }}
-              </button>
-            </div>
-            <p class="tiny muted triprow__hint">
-              {{
-                inTrip
-                  ? '這筆記錄歸在這個旅行名下（記錄頁／統計頁會歸到它）'
-                  : '移入後記錄頁／統計頁會把這筆歸到旅行名下' +
-                    (activeTrip.mode2 ? '，備注會補上旅行名' : '')
-              }}
-            </p>
+            <select v-model="tripId" class="field tripsel" @change="onTripChange">
+              <option value="">不屬於任何旅行</option>
+              <option v-for="t in tripOptions" :key="t.id" :value="t.id">{{ t.label }}</option>
+            </select>
+            <p v-if="tripHint" class="tiny muted triprow__hint">{{ tripHint }}</p>
           </div>
 
           <!-- 日期時間 -->
@@ -904,44 +912,9 @@ function save() {
 .sel2 {
   padding: 0 10px;
 }
-/* 旅行欄（0.1.35）：左邊是旅行標籤（開＝琥珀）、右邊是移入／移出鈕 */
-.triprow {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-.triprow__tag {
-  flex: 1;
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 34px;
-  padding: 0 12px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--line);
-  background: var(--surface-3);
-  color: var(--text-2);
-  font-size: 13px;
-  font-weight: 650;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.triprow__tag.is-on {
-  border-color: var(--amber);
-  background: var(--amber-soft);
-  color: var(--amber);
-}
-.triprow__tag svg {
-  flex: none;
-  width: 15px;
-  height: 15px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+/* 旅行欄（0.1.36 改成下拉）：select 用全站的 .field 樣式，這裡只留滿寬與提示的位置 */
+.tripsel {
+  width: 100%;
 }
 .triprow__hint {
   margin: -3px 0 0;

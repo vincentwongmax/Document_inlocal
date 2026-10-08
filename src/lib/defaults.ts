@@ -49,5 +49,7 @@ export function defaultSettings(base = 'MOP'): Settings {
     ],
     // 旅行模式（0.1.35）：一開始沒有進行中的旅行
     activeTrip: null,
+    // 旅行模式（0.1.36）：已結束的旅行（結束時從 activeTrip 移進來）
+    tripHistory: [],
   }
 }

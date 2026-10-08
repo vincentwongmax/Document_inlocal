@@ -196,9 +196,10 @@ export const useRecordsStore = defineStore('records', () => {
 
   /* ── 旅行模式（0.1.35）────────────────────────────────── */
   /**
-   * 某個旅行的摘要（結束前的確認視窗、TravelSheet 的即時小計都用它）。
+   * 某個旅行的摘要（結束前的確認視窗、TravelSheet 的即時小計與「過去的旅行」都用它）。
    * 只算**當前錢包**的記錄（旅行是跟著錢包走的）。
-   * 金額與清單同一套：即時換算成目前的主幣別。
+   * 金額與清單同一套：即時換算成目前的顯示幣別（0.1.36 起旅行中＝旅行貨幣）。
+   * ⚠ 結束過的旅行也查得到（標記保留，0.1.36）——「過去的旅行」列表就靠它。
    */
   function tripSummary(tripId: string): { count: number; expense: number; income: number } {
     let count = 0
@@ -207,27 +208,11 @@ export const useRecordsStore = defineStore('records', () => {
     for (const r of records.value) {
       if (r.tripId !== tripId) continue
       count++
-      const v = settings.toBase(r.amount, r.currency)
+      const v = settings.toDisplay(r.amount, r.currency)
       if (r.type === 'expense') expense += v
       else income += v
     }
     return { count, expense: Number(expense.toFixed(2)), income: Number(income.toFixed(2)) }
-  }
-
-  /**
-   * 結束旅行：把該旅行的記錄**全部解除標記**（回歸一般記錄）。
-   * 使用者拍板的行為（0.1.35）：「關閉即解除」——備注已加的「_旅行名」**保留不動**
-   * （那已經是記錄的一部分，不是標記）。
-   * @returns 解除了幾筆
-   */
-  function untagTrip(tripId: string): number {
-    let n = 0
-    for (const r of all.value) {
-      if (r.tripId !== tripId) continue
-      delete r.tripId
-      n++
-    }
-    return n
   }
 
   /* ── 查詢（一律只涵蓋當前錢包） ─────────────────────── */
@@ -262,7 +247,6 @@ export const useRecordsStore = defineStore('records', () => {
     replaceAll,
     /* ── 旅行模式 ── */
     tripSummary,
-    untagTrip,
     byNewest,
     byOccurred,
     totalExpense,

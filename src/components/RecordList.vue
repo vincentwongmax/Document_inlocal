@@ -68,6 +68,7 @@ function keyOf(r: TxRecord): string {
  *   這樣「每個月只顯示 2 筆」時，標題上的金額仍然是那個月的全額。
  * ⚠ 0.1.28：金額一律即時換算成「目前的主幣別」（`settings.toBase`），
  *   不是用記帳當下凍結的 `baseAmount` —— 主幣別改了，標題也要跟著變。
+ * ⚠ 0.1.36：改成「顯示幣別」（旅行中＝旅行貨幣）；分組標題的小計與幣別符號都跟著。
  */
 const totalsOf = computed(() => {
   const src = props.totalsFrom ?? props.records
@@ -75,7 +76,7 @@ const totalsOf = computed(() => {
   for (const r of src) {
     const k = keyOf(r)
     const cur = m.get(k) ?? { exp: 0, inc: 0, count: 0 }
-    const v = settings.toBase(r.amount, r.currency)
+    const v = settings.toDisplay(r.amount, r.currency)
     if (r.type === 'expense') cur.exp += v
     else cur.inc += v
     cur.count += 1
@@ -170,13 +171,13 @@ watch(
           <span class="day__rule"></span>
           <span class="day__amt">
             <span v-if="g.inc > 0" class="day__chip is-inc num">
-              +{{ fmtMoney(g.inc, settings.baseCurrency) }}
+              +{{ fmtMoney(g.inc, settings.displayCurrency) }}
             </span>
             <span v-if="g.exp > 0" class="day__chip is-exp num">
-              −{{ fmtMoney(g.exp, settings.baseCurrency) }}
+              −{{ fmtMoney(g.exp, settings.displayCurrency) }}
             </span>
             <span v-if="g.inc === 0 && g.exp === 0" class="day__chip num">
-              {{ fmtMoney(0, settings.baseCurrency) }}
+              {{ fmtMoney(0, settings.displayCurrency) }}
             </span>
           </span>
         </div>

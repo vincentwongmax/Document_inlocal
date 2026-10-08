@@ -41,16 +41,18 @@ const catName = computed(() =>
 )
 const isExpense = computed(() => props.record.type === 'expense')
 /**
- * 0.1.28：金額一律用「**目前**的主幣別」顯示，即時用匯率換算。
+ * 0.1.28：金額一律用「目前的主幣別」顯示，即時用匯率換算。
+ * 0.1.36：改成「目前的**顯示幣別**」——旅行進行中＝旅行貨幣
+ * （使用者：「打開旅行模式時，記帳頁面和統計頁面以旅行中的貨幣顯示」）。
  *
- * 使用者原話：「當主幣別設定做其他的貨幣時，記錄頁和統計頁中的記錄也要更改做
+ * 使用者原話（0.1.28）：「當主幣別設定做其他的貨幣時，記錄頁和統計頁中的記錄也要更改做
  * 用戶指定的貨幣…（即使原記錄是用 MOP 記錄的就用匯率算出數字）」。
  *
  * ⚠ 以前用 `record.baseAmount`／`record.baseCurrency`——那是記帳當下凍結的值，
  *   主幣別後來改了它也不會變，這正是使用者看到的問題。
  * ⚠ 只換顯示；存的資料（amount／rate／baseAmount）完全不動。
  */
-const shownAmount = computed(() => settings.toBase(props.record.amount, props.record.currency))
+const shownAmount = computed(() => settings.toDisplay(props.record.amount, props.record.currency))
 
 /**
  * 時間標籤的文字。
@@ -58,10 +60,14 @@ const shownAmount = computed(() => settings.toBase(props.record.amount, props.re
  */
 const timeText = computed(() => relativeTime(props.record.occurredAt))
 
-/** 記錄的幣別跟「現在的主幣別」不同才要顯示換算說明（以前是跟「當時的主幣別」比） */
-const converted = computed(() => props.record.currency !== settings.baseCurrency)
-/** 換算說明用的匯率也要用「現在」的，不是記帳當下凍結的那個 */
-const shownRate = computed(() => settings.rate(props.record.currency))
+/** 記錄的幣別跟「現在的顯示幣別」不同才要顯示換算說明（0.1.36：旅行中＝跟旅行貨幣比） */
+const converted = computed(() => props.record.currency !== settings.displayCurrency)
+/** 換算說明的乘數＝這筆換成顯示幣別實際用的倍率（平時＝兌主幣的匯率；旅行中再除以旅行貨幣匯率） */
+const shownRate = computed(() => {
+  const r = settings.rate(props.record.currency)
+  const dc = settings.displayCurrency
+  return dc === settings.baseCurrency ? r : r / settings.rate(dc)
+})
 /** 舊資料可能沒有 images 欄位 */
 const imgCount = computed(() => props.record.images?.length ?? 0)
 </script>
@@ -126,7 +132,7 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
     -->
     <button class="row__amt" type="button" @click="emit('edit', record.id)">
       <strong class="num" :class="isExpense ? 'is-exp' : 'is-inc'">
-        {{ isExpense ? '−' : '+' }}{{ fmtMoney(shownAmount, settings.baseCurrency) }}
+        {{ isExpense ? '−' : '+' }}{{ fmtMoney(shownAmount, settings.displayCurrency) }}
       </strong>
       <span v-if="converted" class="tiny muted num">
         {{ fmtMoney(record.amount, record.currency) }} × {{ shownRate }}

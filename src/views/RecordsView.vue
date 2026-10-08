@@ -52,7 +52,7 @@ function timeOf(r: TxRecord): string {
   return recent.value ? r.createdAt : r.occurredAt
 }
 
-/** 關鍵字搜尋：只比對「備註」與「分類名稱」 */
+/** 關鍵字搜尋：比對「備註」「分類名稱」與「旅行名稱」（0.1.36 加旅行名） */
 const q = ref('')
 /** trim + 轉小寫後的關鍵字（空字串代表沒在搜尋） */
 const kw = computed(() => q.value.trim().toLowerCase())
@@ -61,6 +61,14 @@ const kw = computed(() => q.value.trim().toLowerCase())
 /** 子分類顯示成「餐飲 › 早餐」，搜尋時打大類或子類都找得到 */
 function catNameOf(categoryId: string) {
   return settings.category(categoryId) ? settings.fullNameOf(categoryId) : '未分類'
+}
+
+/**
+ * 記錄所屬旅行的名稱（0.1.36）。
+ * 標記結束後保留，所以歷史旅行也搜得到；沒有標記回空字串（不參與比對）。
+ */
+function tripNameOf(r: TxRecord): string {
+  return r.tripId ? (settings.tripById(r.tripId)?.name ?? '') : ''
 }
 
 watch(unit, (u) => {
@@ -110,7 +118,9 @@ const rows = computed(() =>
       if (!kw.value) return true
       const note = r.note ?? ''
       return (
-        note.toLowerCase().includes(kw.value) || catNameOf(r.categoryId).toLowerCase().includes(kw.value)
+        note.toLowerCase().includes(kw.value) ||
+        catNameOf(r.categoryId).toLowerCase().includes(kw.value) ||
+        tripNameOf(r).toLowerCase().includes(kw.value)
       )
     })
     .sort((a, b) => (timeOf(a) < timeOf(b) ? 1 : -1)),
@@ -155,6 +165,7 @@ interface CatGroup {
  * 旅行模式（0.1.35）：有 `tripId` 標記的記錄**整筆**歸到「旅行名」這一組（不看原分類），
  * 組名＝旅行名（例：日本旅行），組內的子分類小計仍是真分類 ——
  * 畫面上就是「日本旅行 → 餐飲／交通…」的效果（使用者拍板：旅行標記方案）。
+ * 0.1.36：標記結束後保留，所以結束過的旅行照樣有自己的組（名稱用 tripById 查）。
  */
 const catGroups = computed<CatGroup[]>(() => {
   const m = new Map<string, TxRecord[]>()
@@ -180,7 +191,7 @@ const catGroups = computed<CatGroup[]>(() => {
       for (const r of sorted) {
         const cur = per.get(r.categoryId) ?? { exp: 0, inc: 0 }
         // 0.1.28：即時換算成目前的主幣別（不用記帳當下凍結的 baseAmount）
-        const v = settings.toBase(r.amount, r.currency)
+        const v = settings.toDisplay(r.amount, r.currency)
         if (r.type === 'expense') cur.exp += v
         else cur.inc += v
         per.set(r.categoryId, cur)
@@ -199,7 +210,10 @@ const catGroups = computed<CatGroup[]>(() => {
 
       return {
         id: rootId,
-        name: isTrip ? (settings.activeTrip?.name ?? '旅行') : (c?.name ?? '未分類'),
+        // 旅行組（0.1.36）：結束過的旅行照樣有組——名稱用 tripById 查（先進行中、後歷史）
+        name: isTrip
+          ? (settings.tripById(rootId.slice('trip:'.length))?.name ?? '旅行')
+          : (c?.name ?? '未分類'),
         color: isTrip ? '#d9a326' : (c?.color ?? '#8a857c'),
         icon: isTrip
           ? 'luggage'
@@ -235,10 +249,10 @@ watch([range, typeFilter, kw, recent], () => {
 
 // 0.1.28：即時換算成目前的主幣別（使用者：主幣別改了，記錄也要跟著變）
 const expense = computed(() =>
-  rows.value.filter((r) => r.type === 'expense').reduce((s, r) => s + settings.toBase(r.amount, r.currency), 0),
+  rows.value.filter((r) => r.type === 'expense').reduce((s, r) => s + settings.toDisplay(r.amount, r.currency), 0),
 )
 const income = computed(() =>
-  rows.value.filter((r) => r.type === 'income').reduce((s, r) => s + settings.toBase(r.amount, r.currency), 0),
+  rows.value.filter((r) => r.type === 'income').reduce((s, r) => s + settings.toDisplay(r.amount, r.currency), 0),
 )
 const net = computed(() => income.value - expense.value)
 
@@ -329,7 +343,7 @@ function removeEditing(id: string) {
           <circle cx="10.8" cy="10.8" r="6.4" />
           <path d="M15.6 15.6 20 20" />
         </svg>
-        <ClearableInput v-model="q" placeholder="搜尋備註或分類" :maxlength="40" />
+        <ClearableInput v-model="q" placeholder="搜尋備註或旅行" :maxlength="40" />
       </div>
     </div>
 
@@ -338,16 +352,16 @@ function removeEditing(id: string) {
       <div class="sum__grid">
         <div class="sum__col">
           <span class="sum__label"><i class="sum__dot sum__dot--exp"></i>支出</span>
-          <span class="sum__val num is-exp">{{ fmtMoney(expense, settings.baseCurrency) }}</span>
+          <span class="sum__val num is-exp">{{ fmtMoney(expense, settings.displayCurrency) }}</span>
         </div>
         <div class="sum__col">
           <span class="sum__label"><i class="sum__dot sum__dot--inc"></i>收入</span>
-          <span class="sum__val num is-inc">{{ fmtMoney(income, settings.baseCurrency) }}</span>
+          <span class="sum__val num is-inc">{{ fmtMoney(income, settings.displayCurrency) }}</span>
         </div>
         <div class="sum__col">
           <span class="sum__label">結餘</span>
           <span class="sum__val num" :class="net >= 0 ? 'is-inc' : 'is-exp'">
-            {{ fmtMoney(net, settings.baseCurrency) }}
+            {{ fmtMoney(net, settings.displayCurrency) }}
           </span>
         </div>
       </div>
@@ -526,10 +540,10 @@ function removeEditing(id: string) {
           <span class="catgrp__rule"></span>
           <span class="catgrp__amt">
             <span v-if="g.inc > 0" class="catgrp__chip is-inc num">
-              +{{ fmtMoney(g.inc, settings.baseCurrency) }}
+              +{{ fmtMoney(g.inc, settings.displayCurrency) }}
             </span>
             <span v-if="g.exp > 0" class="catgrp__chip is-exp num">
-              −{{ fmtMoney(g.exp, settings.baseCurrency) }}
+              −{{ fmtMoney(g.exp, settings.displayCurrency) }}
             </span>
           </span>
         </div>
@@ -539,10 +553,10 @@ function removeEditing(id: string) {
           <span v-for="s in g.subs" :key="s.id" class="subchip">
             <span class="subchip__n"><HighlightText :text="s.name" :query="kw" /></span>
             <span v-if="s.exp > 0" class="subchip__v num is-exp">
-              −{{ fmtMoney(s.exp, settings.baseCurrency) }}
+              −{{ fmtMoney(s.exp, settings.displayCurrency) }}
             </span>
             <span v-if="s.inc > 0" class="subchip__v num is-inc">
-              +{{ fmtMoney(s.inc, settings.baseCurrency) }}
+              +{{ fmtMoney(s.inc, settings.displayCurrency) }}
             </span>
           </span>
         </div>

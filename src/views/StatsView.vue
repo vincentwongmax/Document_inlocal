@@ -59,7 +59,8 @@ const years = computed(() => {
 })
 
 const st = useStats(range)
-const base = computed(() => settings.baseCurrency)
+// 0.1.36：顯示幣別——旅行進行中＝旅行貨幣，平時＝主幣別（所有 fmtMoney 的幣別都靠它）
+const base = computed(() => settings.displayCurrency)
 
 const months = computed(() => st.monthList(24))
 const monthIndex = computed(() => months.value.indexOf(month.value))
@@ -713,7 +714,7 @@ watch([mode, range], () => {
             <span class="top__rank num">{{ i + 1 }}</span>
             <span class="top__cat">{{ settings.category(r.categoryId)?.name ?? '未分類' }}</span>
             <span class="top__note tiny muted">{{ r.note }}</span>
-            <span class="top__amt num">{{ fmtMoney(r.baseAmount, r.baseCurrency) }}</span>
+            <span class="top__amt num">{{ fmtMoney(settings.toDisplay(r.amount, r.currency), settings.displayCurrency) }}</span>
           </li>
         </ul>
         <p v-if="!st.topRecords.value.length" class="muted tiny">沒有支出記錄</p>

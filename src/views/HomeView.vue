@@ -280,7 +280,8 @@ function submit() {
   imgEl.value?.release()
   // 0.1.28：通知裡的金額也用「目前的主幣別」顯示（跟清單同一套換算）
   // 0.1.35：模式一開著時補上旅行名，讓使用者知道這筆進了旅行
-  const label = `${fmtMoney(settings.toBase(rec.amount, rec.currency), settings.baseCurrency)} · ${settings.category(rec.categoryId)?.name ?? ''}${trip?.mode1 ? ` · ${trip.name}` : ''}`
+  // 0.1.36：顯示幣別——旅行中金額直接用旅行貨幣呈現
+  const label = `${fmtMoney(settings.toDisplay(rec.amount, rec.currency), settings.displayCurrency)} · ${settings.category(rec.categoryId)?.name ?? ''}${trip?.mode1 ? ` · ${trip.name}` : ''}`
   notify(`已記錄 ${label}`, 'ok', { label: '復原', run: () => records.remove(rec.id) })
 
   resetForm()

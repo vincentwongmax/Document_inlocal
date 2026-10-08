@@ -434,19 +434,6 @@ const activeWalletName = computed(() => settings.activeWallet.name)
           <h2 class="sec__title">幣別與匯率</h2>
           <p class="sec__desc">每筆記錄會把「當下的匯率」快照下來，之後改匯率不會影響既有記錄</p>
         </div>
-        <!--
-          旅行模式（0.1.35）：入口在「幣別與匯率」標題列最右（使用者指定位置）。
-          進行中會亮成琥珀色並顯示旅行名；點開的子頁面跟其他子頁面同一套骨架。
-        -->
-        <button
-          class="btn btn--ghost btn--sm travel__btn"
-          :class="{ 'is-on': !!settings.activeTrip }"
-          type="button"
-          :title="settings.activeTrip ? '旅行進行中，點開查看或結束' : '出國旅行時用'"
-          @click="travelOpen = true"
-        >
-          {{ settings.activeTrip ? `旅行中 · ${settings.activeTrip.name}` : '旅行模式' }}
-        </button>
       </header>
 
       <div class="panel">
@@ -465,10 +452,28 @@ const activeWalletName = computed(() => settings.activeWallet.name)
           </label>
 
           <label class="row">
-            <span>目前記帳幣別<small class="tiny muted">出國時改成當地幣別</small></span>
+            <span>
+              目前記帳幣別
+              <small v-if="settings.activeTrip?.currency" class="tiny muted">
+                旅行模式進行中，由旅行貨幣（{{ settings.activeTrip.currency }}）決定
+              </small>
+              <small v-else-if="settings.activeTrip" class="tiny muted">
+                旅行模式進行中（這趟沒有設旅行貨幣）
+              </small>
+              <small v-else class="tiny muted">出國時改成當地幣別</small>
+            </span>
+            <!--
+              0.1.36：旅行模式進行中把這個 select 停用（灰色、不可動）——
+              使用者原話：「如果打開了旅行模式，目前記帳幣別的選擇變成灰色，而且不會生效，
+              旅行模式中的貨幣單位變成目前記帳的貨幣單位」。
+              ⚠ 值顯示的就是 inputCurrency——旅行開始時已自動切到旅行貨幣，所以灰色框裡
+              看到的正是旅行貨幣；結束旅行後自動恢復、select 跟著解鎖。
+            -->
             <select
               class="field row__ctl"
+              :class="{ 'row__ctl--locked': !!settings.activeTrip }"
               :value="settings.inputCurrency"
+              :disabled="!!settings.activeTrip"
               @change="settings.setInputCurrency(($event.target as HTMLSelectElement).value)"
             >
               <option v-for="c in CURRENCIES" :key="c.code" :value="c.code">
@@ -553,6 +558,27 @@ const activeWalletName = computed(() => settings.activeWallet.name)
           </select>
         </div>
       </div>
+    </section>
+
+    <!--
+      旅行模式（0.1.36）：獨立區塊。
+      使用者原話：「旅行模式的按鈕放在獨立的區塊中」——0.1.35 是掛在「幣別與匯率」
+      標題列最右，現在整個搬出來自成一個 section（整列可點，打開 TravelSheet 子頁面）。
+      進行中會亮成琥珀色並顯示旅行名。
+    -->
+    <section class="card sec travel-sec">
+      <button class="travel-cell" type="button" @click="travelOpen = true">
+        <span class="travel-cell__ic" :class="{ 'is-on': !!settings.activeTrip }" aria-hidden="true">
+          <CategoryIcon name="luggage" :size="19" :stroke="1.9" />
+        </span>
+        <span class="travel-cell__txt">
+          <b>旅行模式</b>
+          <em v-if="settings.activeTrip">旅行中 · {{ settings.activeTrip.name }}（點開查看或結束）</em>
+          <em v-else>出國旅行時用：記錄歸進旅行、自動換幣別</em>
+        </span>
+        <span v-if="settings.activeTrip" class="travel-cell__tag">旅行中</span>
+        <span class="travel-cell__arrow" aria-hidden="true">›</span>
+      </button>
     </section>
 
     <!-- 收據辨識 -->
@@ -1505,19 +1531,81 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   margin-left: auto;
   align-self: center;
 }
-/* 旅行模式入口（0.1.35）：一樣貼在標題列最右；進行中亮成琥珀（旅行的主題色） */
-.travel__btn {
-  margin-left: auto;
-  align-self: center;
-  max-width: 46vw;
+/* 旅行模式（0.1.36）：獨立區塊——整列可點的 cell（icon ＋ 標題 ＋ 現況 ＋ 進行中標籤） */
+.travel-cell {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 2px;
+  text-align: left;
+}
+.travel-cell__ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  color: var(--text-2);
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+.travel-cell__ic.is-on {
+  background: var(--amber-soft);
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.travel-cell__txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.travel-cell__txt b {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.travel-cell__txt em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.travel__btn.is-on {
+.travel-cell__tag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
   background: var(--amber-soft);
-  border-color: var(--amber);
+  border: 1px solid var(--amber);
   color: var(--amber);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.travel-cell__arrow {
+  flex: none;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-3);
+}
+/* 旅行進行中，「目前記帳幣別」的 select 停用（使用者：變成灰色、不會生效） */
+.row__ctl--locked,
+.row__ctl:disabled {
+  color: var(--text-3);
+  background: var(--surface-3);
+  border-color: var(--line);
+  opacity: 0.8;
 }
 
 /* ── 資料 ─────────────────────────────────────────────── */

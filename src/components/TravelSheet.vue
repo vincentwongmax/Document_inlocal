@@ -6,6 +6,7 @@ import { confirmDialog, notify } from '@/lib/alerts'
 import { CURRENCIES, fmtMoney } from '@/lib/currency'
 import { useScrollLock } from '@/composables/useScrollLock'
 import { usePullToClose } from '@/composables/usePullToClose'
+import type { TravelTrip } from '@/types'
 import DateField from './DateField.vue'
 import CategoryIcon from './CategoryIcon.vue'
 
@@ -24,7 +25,8 @@ import CategoryIcon from './CategoryIcon.vue'
  * 內容（全部是使用者拍板的設計）：
  * - 旅行名稱／出發日／回程日（日期純顯示）／旅行貨幣（旅行期間記帳幣別自動切、可手改）
  * - 模式一（記錄歸入旅行）與模式二（備注補後綴）兩個**獨立開關**，可同時開
- * - 「結束旅行」先彈確認（附筆數＋總支出），確認後記錄全部解除標記、幣別恢復
+ * - 「結束旅行」先彈確認（附筆數＋總支出）；0.1.36 起結束**不解除標記**——
+ *   記錄的旅行標籤保留、旅行本體移進 tripHistory（下面的「過去的旅行」列表）
  */
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -92,10 +94,28 @@ const rateLine = computed(() => {
   return `1 ${code} ≈ ${fmtMoney(settings.rate(code), settings.baseCurrency)}（記帳頁會自動用 ${code} 記錄）`
 })
 
-/** 進行中的即時小計（筆數／支出／收入；與記錄頁同一套即時換算） */
+/** 進行中的即時小計（筆數／支出／收入；與記錄頁同一套即時換算——旅行中＝旅行貨幣） */
 const summary = computed(() =>
   settings.activeTrip ? records.tripSummary(settings.activeTrip.id) : null,
 )
+
+/**
+ * 「過去的旅行」（0.1.36）：已結束的旅行清單（新的在上），附上即時摘要。
+ * 使用者原話：「增加按鈕，可以查看用戶之前增加過的旅行模式的細節等等
+ * （名稱，建立日期時間，等等）」。
+ */
+const history = computed(() =>
+  [...settings.tripHistory].reverse().map((t) => {
+    const s = records.tripSummary(t.id)
+    return { ...t, count: s.count, expense: s.expense, income: s.income }
+  }),
+)
+
+/** 「過去的旅行」每一列的時間說明：建立日 ～ 結束日（缺的就留白） */
+function histRange(h: TravelTrip): string {
+  const f = (iso?: string) => (iso ? iso.slice(0, 10).replace(/-/g, '/') : '?')
+  return `${f(h.createdAt)} ～ ${f(h.endedAt)}`
+}
 
 const title = computed(() => (settings.activeTrip ? '旅行模式 · 進行中' : '旅行模式'))
 
@@ -137,24 +157,28 @@ function toggleMode(which: 'mode1' | 'mode2') {
   settings.updateActiveTrip({ [which]: draft.value[which] })
 }
 
-/** 結束前先確認（附筆數與總支出——使用者拍板：要確認＋花費摘要） */
+/**
+ * 結束前先確認（附筆數與總支出——使用者拍板：要確認＋花費摘要）。
+ * 0.1.36：結束**不解除標記**——記錄照樣歸在這個旅行名下（使用者：
+ * 「結束後也要保留旅行時的標籤，不要回歸一般記錄，因為這樣沒有意義」）；
+ * 旅行本體移進 tripHistory（「過去的旅行」），幣別恢復。
+ */
 async function askEnd() {
   const t = settings.activeTrip
   if (!t) return
   const s = records.tripSummary(t.id)
   const answer = await confirmDialog({
     title: `結束「${t.name}」？`,
-    message: `這趟共 ${s.count} 筆記錄、支出 ${fmtMoney(s.expense, settings.baseCurrency)}${
-      s.income > 0 ? `、收入 ${fmtMoney(s.income, settings.baseCurrency)}` : ''
-    }。結束後這些記錄會解除旅行標記（回歸一般記錄），備注已加的「_${t.name}」保留不動。`,
+    message: `這趟共 ${s.count} 筆記錄、支出 ${fmtMoney(s.expense, settings.displayCurrency)}${
+      s.income > 0 ? `、收入 ${fmtMoney(s.income, settings.displayCurrency)}` : ''
+    }。結束後記錄會保留「${t.name}」的旅行標記（不回歸一般記錄），幣別恢復原本的設定；之後可以在「過去的旅行」查看這一趟。`,
     confirmText: '結束旅行',
     danger: true,
   })
   if (answer !== 'confirm' || settings.activeTrip?.id !== t.id) return
-  const n = records.untagTrip(t.id)
   settings.finishTrip()
   syncFromTrip()
-  notify(`已結束旅行，${n} 筆記錄解除標記`, 'ok')
+  notify(`已結束旅行「${t.name}」，記錄標記保留`, 'ok')
 }
 </script>
 
@@ -202,7 +226,7 @@ async function askEnd() {
             <span class="status__txt">
               <b>{{ trip.name }}</b>
               <em v-if="summary">
-                {{ summary.count }} 筆 · 支出 {{ fmtMoney(summary.expense, settings.baseCurrency) }}
+                {{ summary.count }} 筆 · 支出 {{ fmtMoney(summary.expense, settings.displayCurrency) }}
               </em>
             </span>
             <span class="status__tag">旅行中</span>
@@ -278,6 +302,22 @@ async function askEnd() {
               </span>
               <span class="mode__sw" aria-hidden="true">{{ draft.mode2 ? '開' : '關' }}</span>
             </button>
+          </div>
+
+          <!-- 過去的旅行（0.1.36）：結束過的旅行照樣看得到細節（名稱／時間／筆數／支出） -->
+          <div v-if="history.length" class="hist">
+            <span class="hist__hd">過去的旅行</span>
+            <div v-for="h in history" :key="h.id" class="hist__row">
+              <span class="hist__ic" aria-hidden="true">
+                <CategoryIcon name="luggage" :size="15" :stroke="1.9" />
+              </span>
+              <span class="hist__txt">
+                <b>{{ h.name }}</b>
+                <em>{{ histRange(h) }} · {{ h.count }} 筆</em>
+              </span>
+              <span v-if="h.expense > 0" class="hist__amt num">−{{ fmtMoney(h.expense, settings.displayCurrency) }}</span>
+            </div>
+            <p class="tiny muted hist__hint">記錄的旅行標記會一直保留，記錄頁／統計頁照樣歸組。</p>
           </div>
 
           <div class="acts">
@@ -505,6 +545,68 @@ async function askEnd() {
   border-color: var(--amber);
   background: var(--surface);
   color: var(--amber);
+}
+
+/* 過去的旅行（0.1.36）：每列＝行李箱 icon ＋ 名稱＋時間筆數 ＋ 支出（琥珀主題） */
+.hist {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.hist__hd {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-2);
+}
+.hist__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.hist__ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: var(--amber-soft);
+  border: 1px solid var(--amber-line);
+  color: var(--amber);
+}
+.hist__txt {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.hist__txt b {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hist__txt em {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.hist__amt {
+  flex: none;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--expense);
+}
+.hist__hint {
+  margin: 0;
 }
 
 /* 底部動作列 */

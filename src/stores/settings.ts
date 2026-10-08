@@ -42,6 +42,9 @@ function normTrip(v: unknown): TravelTrip | null {
     prevCurrency: typeof o.prevCurrency === 'string' ? o.prevCurrency : '',
     mode1: o.mode1 === true,
     mode2: o.mode2 === true,
+    // 0.1.36：建立／結束時間（舊資料沒有，留空＝不知道）
+    ...(typeof o.createdAt === 'string' && o.createdAt ? { createdAt: o.createdAt } : {}),
+    ...(typeof o.endedAt === 'string' && o.endedAt ? { endedAt: o.endedAt } : {}),
   }
 }
 
@@ -77,6 +80,10 @@ function merge(base: Settings, saved: Partial<Settings>): Settings {
       : base.quickPresets,
     // 旅行模式（0.1.35）：舊資料沒有這個欄位 → null＝沒有旅行；形狀不對也當沒有
     activeTrip: normTrip(saved.activeTrip),
+    // 旅行模式（0.1.36）：已結束的旅行。每一筆照樣過一次 normTrip（形狀不對的丟掉）
+    tripHistory: Array.isArray(saved.tripHistory)
+      ? saved.tripHistory.map(normTrip).filter((t): t is TravelTrip => t !== null)
+      : base.tripHistory,
   }
 }
 
@@ -361,6 +368,30 @@ export const useSettingsStore = defineStore('settings', () => {
     return Number.isFinite(v) ? v : 0
   }
 
+  /**
+   * 「顯示幣別」（0.1.36）：旅行進行中＝**旅行貨幣**；沒有旅行＝主幣別。
+   *
+   * 使用者原話（0.1.36）：「用戶打開旅行模式時，記帳頁面和統計頁面以旅行中的貨幣顯示」。
+   * 記錄頁／統計頁／記帳通知的所有金額顯示都改用這裡（`toDisplay` + 這個 computed）。
+   */
+  const displayCurrency = computed(() => state.value.activeTrip?.currency || state.value.baseCurrency)
+
+  /**
+   * 把「某幣別的金額」換算成「**目前**的顯示幣別」（0.1.36）。
+   *
+   * - 沒有旅行時＝`toBase`（完全等值，零行為變化——主幣別顯示的舊約定照舊）。
+   * - 旅行中：先換成主幣、再換成旅行貨幣（`amount × rate(code) ÷ rate(旅行貨幣)`）。
+   *
+   * ⚠ 一樣**只換顯示，不改任何存的資料**；`RecordSheet` 的「詳細資訊」與匯出檔
+   *   維持記帳當下的歷史事實（`baseAmount`／`baseCurrency`），刻意不換。
+   */
+  function toDisplay(amount: number, code: string): number {
+    const dc = state.value.activeTrip?.currency
+    if (!dc || dc === state.value.baseCurrency) return toBase(amount, code)
+    const v = toBase(amount, code) / rate(dc)
+    return Number.isFinite(v) ? v : 0
+  }
+
   async function setBaseCurrency(code: string) {
     state.value.baseCurrency = code
     state.value.rates = defaultRates(code)
@@ -612,6 +643,8 @@ export const useSettingsStore = defineStore('settings', () => {
       prevCurrency: currency ? state.value.inputCurrency : '',
       mode1: input.mode1 === true,
       mode2: input.mode2 === true,
+      // 0.1.36：記下建立時間（「過去的旅行」列表要用）
+      createdAt: new Date().toISOString(),
     }
     state.value.activeTrip = trip
     if (currency) state.value.inputCurrency = currency
@@ -638,15 +671,33 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   /**
-   * 結束旅行：清掉旅行本體、把記帳幣別恢復成開始前的快照。
-   * ⚠ 記錄的解除標記由呼叫端先做（records.untagTrip）——這裡只管設定。
+   * 結束旅行（0.1.36 改）：
+   * - 旅行本體從 `activeTrip` 移進 `tripHistory`（蓋上 endedAt）——「過去的旅行」的來源
+   * - 記帳幣別恢復成開始前的快照
+   * - ⚠ **不解除記錄的標記**（使用者拍板：結束後標籤保留，回歸一般記錄沒有意義）。
+   *   記錄歸組／統計節點靠 `tripById()` 查名，結束過的旅行照樣顯示。
    */
   function finishTrip(): TravelTrip | null {
     const t = state.value.activeTrip
     if (!t) return null
     if (t.prevCurrency) state.value.inputCurrency = t.prevCurrency
+    state.value.tripHistory.push({ ...t, endedAt: new Date().toISOString() })
     state.value.activeTrip = null
     return t
+  }
+
+  /**
+   * 查旅行（0.1.36）：先查進行中的，再查已結束的。
+   * 記錄頁歸組組名、統計頁節點名、搜索比對都靠它——
+   * 這樣結束過的旅行也查得到名字（標記保留後這是唯一的名稱來源）。
+   */
+  function tripById(id: string): TravelTrip | undefined {
+    if (!id) return undefined
+    return (
+      state.value.activeTrip?.id === id
+        ? state.value.activeTrip
+        : state.value.tripHistory.find((t) => t.id === id)
+    )
   }
 
   function restoreDefaults() {
@@ -682,6 +733,8 @@ export const useSettingsStore = defineStore('settings', () => {
     canRemove,
     rate,
     toBase,
+    displayCurrency,
+    toDisplay,
     preferredCurrency,
     setPreferredCurrency,
     setBaseCurrency,
@@ -710,6 +763,8 @@ export const useSettingsStore = defineStore('settings', () => {
     removeQuickPreset,
     /* ── 旅行模式 ── */
     activeTrip,
+    tripHistory: computed(() => state.value.tripHistory),
+    tripById,
     startTrip,
     updateActiveTrip,
     finishTrip,
