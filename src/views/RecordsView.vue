@@ -363,16 +363,10 @@ function removeEditing(id: string) {
               </svg>
               分類
             </button>
-            <!--
-              時間基準：切到「最近」＝用新增時間查詢（補登舊帳時用交易時間找不到）
-              ⚠ 0.1.29：這顆推到整列**最右邊**（`margin-left: auto`），外框一律是黃色
-                （使用者：「把依時間新增的按鈕放在檢視中最近按鈕的最右手邊，外框加上黃色」）。
-                黃框是常駐的（不管有沒有開啟），開啟時才補上黃底＋深黃字，
-                這樣「哪一顆是時間基準切換」在未開啟時也一眼看得出來。
-            -->
+            <!-- 時間基準：切到「最近」＝用新增時間查詢（補登舊帳時用交易時間找不到） -->
             <button
               type="button"
-              class="bycat bycat--recent"
+              class="bycat"
               :class="{ 'is-on': recent }"
               :aria-pressed="recent"
               :title="recent ? '改回依交易時間查詢' : '改為依新增時間查詢（不是交易時間）'"
@@ -523,7 +517,7 @@ function removeEditing(id: string) {
               :record="r"
               :show-time="true"
               :highlight="kw"
-              :time-recent="recent"
+              :time-prefix="recent ? '交易' : ''"
               @edit="editingId = $event"
               @remove="removeEditing($event)"
             />
@@ -674,28 +668,6 @@ function removeEditing(id: string) {
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent);
-}
-/*
- * 0.1.29：「最近（依時間新增）」推到整列最右＋黃色外框。
- * - `margin-left: auto`：那一列是 flex，這樣它會黏在最右邊（「分類」留在左邊）
- * - 黃框**常駐**（不管有沒有開啟），開啟時才補黃底＋深黃字
- * ⚠ 一定要自己寫一份 `:hover`：`.bycat:hover`（0,2,0）會蓋掉這裡的（0,1,0），
- *   不然滑過去黃框就變墨綠框了。
- */
-.bycat--recent {
-  margin-left: auto;
-  border-color: var(--amber);
-}
-.bycat--recent:hover {
-  border-color: var(--amber);
-  color: var(--text);
-  background: var(--surface-3);
-}
-.bycat--recent.is-on,
-.bycat--recent.is-on:hover {
-  background: var(--amber-soft);
-  border-color: var(--amber);
-  color: var(--warn);
 }
 .bycat__ic {
   width: 15px;

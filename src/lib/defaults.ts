@@ -35,17 +35,5 @@ export function defaultSettings(base = 'MOP'): Settings {
     rateCurrencies: ['MOP', 'CNY', 'HKD'],
     // 只是給個起手式（打開就有東西可按），使用者可以在設定頁改掉或刪光
     quickNotes: ['M記', '麵'],
-    /*
-     * 快速金額預設（0.1.29）：先給三顆當起手式，數量與內容都可以在設定頁改。
-     * ⚠ 刻意**不預填**分類與備註：內建分類裡沒有「午餐」這種子分類，
-     *   硬塞一個使用者自己沒建立的分類 id，只會讓按鈕按下去沒反應。
-     *   金額帶入後分類維持記帳頁目前的選擇，要用「25 → 午餐／公司3餸飯」這種
-     *   完整版請到設定頁自己填（那才會存到使用者自己的分類 id）。
-     */
-    quickPresets: [
-      { id: 'qp_1', amount: 1, type: 'expense', categoryId: '', note: '' },
-      { id: 'qp_25', amount: 25, type: 'expense', categoryId: '', note: '' },
-      { id: 'qp_35', amount: 35, type: 'expense', categoryId: '', note: '' },
-    ],
   }
 }

@@ -187,7 +187,7 @@ watch(
               :record="r"
               :show-time="showTime"
               :highlight="highlight"
-              :time-recent="dateBasis === 'created'"
+              :time-prefix="dateBasis === 'created' ? '交易' : ''"
               @edit="emit('edit', $event)"
               @remove="emit('remove', $event)"
             />

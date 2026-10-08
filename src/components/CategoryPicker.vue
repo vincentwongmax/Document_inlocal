@@ -278,19 +278,13 @@ watch(
   flex-wrap: wrap;
   gap: 7px;
 }
-/*
- * 0.1.29（使用者：「分類的區塊底色改白色，選取的按鈕改成淺綠色，偏向方形圓角」）：
- *  ① 圓角 999px（膠囊）→ 10px（方形圓角），跟 `.bycat`／`.chip` 那類方鈕同一語言
- *  ② 已選中：粉紅 --pick 底＋白字 → **淺綠**（--accent-soft 底、墨綠框、墨綠字），
- *     跟設定頁「使用中」的 `.chip.is-on` 同一套配色
- */
 .cat {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   height: 34px;
   padding: 0 12px;
-  border-radius: 10px;
+  border-radius: 999px;
   border: 1px solid var(--line-strong);
   background: var(--surface);
   font-size: 13.5px;
@@ -305,9 +299,9 @@ watch(
   background: var(--surface-3);
 }
 .cat.is-on {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--pick);
+  border-color: var(--pick);
+  color: #fff;
 }
 .cat__ic {
   display: grid;
@@ -319,11 +313,9 @@ watch(
   background: var(--bg);
   flex: none;
 }
-/* 選中時圖示改成「白底＋原本的分類色」：淺綠底上再疊一層半透明白會髒掉，
-   直接保留分類本身的顏色反而更好認（以前是白底上反白，所以才用半透明白） */
 .cat.is-on .cat__ic {
-  background: var(--surface);
-  color: var(--c);
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
 }
 .cat-more {
   display: inline-flex;
@@ -332,7 +324,7 @@ watch(
   width: 34px;
   height: 34px;
   padding: 0;
-  border-radius: 10px;
+  border-radius: 999px;
   border: 1px solid var(--line-strong);
   background: var(--surface);
   color: var(--text-3);
