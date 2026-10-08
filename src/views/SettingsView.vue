@@ -763,7 +763,11 @@ const activeWalletName = computed(() => settings.activeWallet.name)
       </div>
     </section>
 
-    <!-- 快速金額（0.1.29；0.1.30 改版：編輯移到子頁面） -->
+    <!--
+      快速金額（0.1.29 → 0.1.31 精簡）：
+      本區**只留「記帳頁會長這樣」的即時預覽**（使用者：「按鈕內容的外框和以下文字移除」），
+      「詳細」按鈕移到**標題列最右邊**；新增／修改／刪除都在 QuickAmountSheet 子頁面裡。
+    -->
     <section id="sec-quickamt" class="card sec">
       <header class="sec__hd">
         <span class="sec__icon" aria-hidden="true">
@@ -779,38 +783,22 @@ const activeWalletName = computed(() => settings.activeWallet.name)
             記帳頁金額框裡的那排方鈕，點一下帶入金額／分類／備註（還是要自己按「記錄」）
           </p>
         </div>
-      </header>
-
-      <div class="panel">
-        <div class="panel__hd">
-          <span class="panel__label">按鈕內容</span>
-          <span class="tiny muted panel__meta">已設定 {{ settings.quickPresets.length }} 個</span>
-        </div>
-        <p class="tiny muted favs__hint">
-          按鈕上只顯示金額；分類與備註在點下去的時候一起帶入（留空＝維持記帳頁目前的選擇）。
-          要新增或修改，按下面的「詳細」。
-        </p>
-
-        <!-- 即時預覽：跟記帳頁金額框裡那排一模一樣（只有數字、沒有 icon） -->
-        <div v-if="settings.quickPresets.length" class="qprev">
-          <span class="qprev__lb">記帳頁會長這樣</span>
-          <div class="qprev__row">
-            <span v-for="v in presetViews" :key="v.preset.id" class="qprev__b" :title="v.summary">
-              <span class="qprev__n num">{{ v.label }}</span>
-            </span>
-          </div>
-        </div>
-        <p v-else class="tiny muted qn__none">還沒有任何快速金額，按「詳細」進去加第一顆。</p>
-
-        <!--
-          0.1.30：編輯整個搬進子頁面（QuickAmountSheet，格局照「管理分類」）。
-          使用者原話：「新增一個詳細按鈕，修改的內容放到一個子頁面裡，
-          用戶要新增或修改，就到這個頁面」。
-        -->
+        <!-- 0.1.31：從 panel 底下移上來，貼在標題列最右 -->
         <button class="btn btn--ghost btn--sm qa__detail" type="button" @click="quickAmtOpen = true">
           詳細
         </button>
+      </header>
+
+      <!-- 即時預覽：跟記帳頁金額框裡那排一模一樣（只有數字、沒有 icon） -->
+      <div v-if="settings.quickPresets.length" class="qprev">
+        <span class="qprev__lb">記帳頁會長這樣</span>
+        <div class="qprev__row">
+          <span v-for="v in presetViews" :key="v.preset.id" class="qprev__b" :title="v.summary">
+            <span class="qprev__n num">{{ v.label }}</span>
+          </span>
+        </div>
       </div>
+      <p v-else class="tiny muted qn__none">還沒有任何快速金額，按右上角的「詳細」加第一顆。</p>
     </section>
 
     <!-- 資料 -->
@@ -1491,9 +1479,10 @@ const activeWalletName = computed(() => settings.activeWallet.name)
 .qprev__n {
   line-height: 1;
 }
-/* 「詳細」按鈕 */
+/* 「詳細」按鈕（0.1.31：移到「快速金額」標題列的最右邊） */
 .qa__detail {
-  align-self: flex-start;
+  margin-left: auto;
+  align-self: center;
 }
 
 /* ── 資料 ─────────────────────────────────────────────── */

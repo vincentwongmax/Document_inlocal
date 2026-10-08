@@ -171,7 +171,25 @@ async function askRemove() {
         <div class="bsheet__grab" aria-hidden="true"></div>
 
         <div ref="boxEl" class="box bsheet__body">
-          <h3>{{ title }}</h3>
+          <!--
+            0.1.31：右上角加一顆「關閉」（使用者要求）。
+            跟計算機子頁面右上角的「完成」同一個位置同一個語意——
+            按 it 直接關掉整個子頁面（編到一半的草稿照慣例不落地）。
+          -->
+          <header class="hd">
+            <h3>{{ title }}</h3>
+            <button
+              class="closebtn"
+              type="button"
+              title="關閉"
+              aria-label="關閉"
+              @click="emit('close')"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7.8 7.8 16.2 16.2M16.2 7.8 7.8 16.2" />
+              </svg>
+            </button>
+          </header>
 
           <!-- ══ 清單態：列出每一顆，點一下進去改 ══ -->
           <template v-if="!editing">
@@ -286,6 +304,44 @@ async function askRemove() {
 }
 .box h3 {
   font-size: 16px;
+}
+/* 標題列：標題在左、「關閉」在最右（0.1.31） */
+.hd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.hd h3 {
+  flex: 1;
+  min-width: 0;
+}
+.closebtn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-3);
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+.closebtn:hover {
+  border-color: var(--expense);
+  background: var(--expense-soft);
+  color: var(--expense);
+}
+.closebtn svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
 }
 .hint,
 .none {
