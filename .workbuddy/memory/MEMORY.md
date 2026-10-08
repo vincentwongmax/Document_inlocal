@@ -9,7 +9,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 
 ## 版本號
 
-- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.28`
+- `X.Y.Z`：**預設只加 Z**；使用者明說「升級 X／Y」才動 major／minor。目前 `0.1.29`
 - 單一來源＝`package.json` 的 `version` → `vite.config.ts` `define` 注入 `__APP_VERSION__`
   （型別在 `env.d.ts`）→ `src/lib/version.ts` → 設定頁「離線與版本」膠囊
 - 每次更新要改 `package.json` ＋ 補一筆 `CHANGELOG.md`
@@ -22,7 +22,7 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 - 流程：`npx vue-tsc --noEmit` → `npm run build` → `.smoke/vNN.mjs` → 截圖 → CHANGELOG → memory → commit
 - 跑測試：`bash .smoke/run-regress.sh`（全部）或 `bash .smoke/run-regress.sh v104`（指定幾支）。
   ⚠ **判準以 exit code 為主**，摘要行格式各支不一（`pass=N fail=N` vs `N 通過 / N 失敗`）
-- **維護中的回歸集＝v70～v107**；`v45/v46/v56/v57` 早已失效，別當基準
+- **維護中的回歸集＝v70～v108**；`v45/v46/v56/v57` 早已失效，別當基準
 - Chrome `C:/Program Files/Google/Chrome/Application/chrome.exe`；puppeteer-core 在
   `C:\Users\user\.workbuddy\binaries\node\workspace\`；`node` 已在 PATH
   （⚠ 版本目錄會變，用過 `22.22.2-3`／`22.22.2-6`，找不到先 `ls ~/.workbuddy/binaries/node/versions/`）
@@ -44,21 +44,32 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 | **雙擊**空白處／統計摘要卡／子頁面彈層／收據 BETA／金額點擊 | **v105** |
 | 摘要卡箭頭／記帳頁標題／彈層避開 home indicator／區間記錄精選／分類轉場 | **v106** |
 | 彈層 safe-area 被 scoped padding 蓋掉／記帳頁副標／主幣別換算顯示／淺綠外框 | **v107** |
+| 檢視列「最近」按鈕右移＋醒目／圖表 tooltip 透明化 | **v108** |
 
 - v102（30 項）＝「連點空白頁面不能動」。**用 390×667 跑**（記帳頁在 844 會剛好塞滿）
 - v100（42 項）＝日期輸入框 ＋ iOS 貼上 ＋ Toast「知道了」；v101（51 項）＝0.1.22 六需求
 - v103（84 項）＝0.1.24；v104（46 項）＝0.1.25；v105（44 項）＝0.1.26；
-  v106（39 項）＝0.1.27；v107（38 項）＝0.1.28
+  v106（39 項）＝0.1.27；v107（38 項）＝0.1.28；v108（12 項）＝0.1.29
 - （各版細節看該版的 CHANGELOG 與 CONVENTIONS，不重複在這裡）
+
+## Chart.js（useChart.ts）的約定
+
+- **tooltip 的 `opacity` fade 已關**（0.1.29）：`animations.opacity.duration = 0`。
+  ⚠⚠ 一定要改 **`animations`（複數）**——`Tooltip._resolveAnimations()` 讀的是
+  `options.animations`，寫成單數 `animation` runtime 完全不理。
+  ⚠ 只改 `opacity.duration`，不要整個物件換掉（會丟掉 `numbers` 那組）。
+  為什麼關：200ms 的 fade 在手機上會停在半路，tooltip 半透明 → 白字看不清。
+- `titleColor`／`bodyColor` 明寫白色（`Chart.defaults.color` 是灰綠，給座標軸用的）、
+  `displayColors: false`；甜甜圈的 tooltip 用 `position: 'nearest'`
+  （預設 `average` 會壓在中心的「總支出／總收入」上）
+- （測試驗法：v108 點扇形後 40ms 採樣 canvas 像素找 #1b1a18）
 
 ### ⚠⚠ 測試常見殺手（**完整清單在 `CONVENTIONS.md`**）
 
 - **`indexedDB.deleteDatabase` 只能在「App 重新載入後」呼叫** → 否則掛死。
   順序：`goto` → `localStorage.clear()` → `reload` → `deleteDatabase` → `reload` → 種資料
-- **`mop-ledger.wallets.v1` 是 `{ wallets, activeWalletId }`，不是裸陣列**；
-  **照抄 `isRealErr()` + `ENV_NOISE`**；**要等狀態、不要等時間**；
-  **空集合假通過要防**；**「不會動」要先讓它「能動」**；沙箱不能開子行程；
-  `npm install <pkg>` 會拔掉 `@esbuild/win32-x64` → 刪掉那行再裝回
+- **`mop-ledger.wallets.v1` 是 `{ wallets, activeWalletId }`**；**照抄 `isRealErr()`+`ENV_NOISE`**；
+  **要等狀態、不要等時間**；**空集合假通過要防**；沙箱不能開子行程
 
 ## Git / 部署
 
@@ -179,10 +190,8 @@ Repo：**`C:\Users\User\Desktop\AI`**（**本機沒有 E: 槽**，舊筆記的 `
 - **日**＝當天金額最大 10 筆；**月**＝以日分組、組間按「該日總額」、每天取前 2 筆、滿 10 筆；
   **年**＝以月分組（標題變「9月／2026」）、每月 2 筆；**自訂**＝最近 10 筆
 - 有「顯示更多（共 N 筆）／收起」；**換範圍會自動收回**
-- ⚠ 選誰由金額決定、**顯示順序仍是時間序**；組間排序用「該組**總額**」；
-  大小＝`Math.abs(baseAmount)`
-- ⚠ 分組標題的金額要用**完整清單**加總（`RecordList` 的 `totals-from`），
-  不能用精選後的子集合，否則標題看起來像「這個月只花了這樣」
+- ⚠ 選誰由金額決定、顯示順序仍是時間序；組間排序用「該組總額」；
+  ⚠ 標題金額用**完整清單**加總（`RecordList` 的 `totals-from`），不能用精選後的子集合
 
 ## 收據辨識記帳（BETA，0.1.26 起在設定頁）
 
