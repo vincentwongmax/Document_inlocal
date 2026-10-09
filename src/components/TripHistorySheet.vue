@@ -62,6 +62,27 @@ const history = computed(() =>
   }),
 )
 
+/**
+ * 0.1.41：隱藏的旅行（使用者原話：「在詳細的按鈕的頁面中，增加隱藏這個旅行的
+ * 按鈕，用戶打開這個按鈕後，在過去的旅行的頁面中的最下方顯示有XX筆記錄隱藏，
+ * 用戶點擊後才展開隱藏記錄」）。
+ * - 拍板：隱藏的是**旅行本體**（不是記錄），文案用「已隱藏 N 趟旅行」——
+ *   原話的「XX筆記錄」依清單內容解讀為「N 趟旅行」。
+ * - 列表只列沒隱藏的；底部一顆可按的收合列顯示數量，點了才展開隱藏清單。
+ * - hidden 存旅行本體（normTrip 會保留、updateTripHistory 可改），刷新後仍在。
+ */
+const visibleHistory = computed(() => history.value.filter((h) => !h.hidden))
+const hiddenList = computed(() => history.value.filter((h) => h.hidden === true))
+const showHidden = ref(false)
+
+function toggleHidden(t: TravelTrip) {
+  // ⚠ 先記住「翻轉前」的狀態再呼叫 updateTripHistory——t 是 reactive 物件的引用，
+  //   update 同步把 t.hidden 翻轉，之後才讀 t.hidden 會拿到新值、訊息說反（0.1.41 的教訓）
+  const wasHidden = t.hidden === true
+  settings.updateTripHistory(t.id, { hidden: !wasHidden })
+  notify(wasHidden ? `已取消隱藏「${t.name}」` : `已隱藏「${t.name}」，可在清單底部展開`, 'ok')
+}
+
 /** 每一列的時間說明：建立日 ～ 結束日（缺的就留問號） */
 function histRange(h: TravelTrip): string {
   const f = (iso?: string) => (iso ? iso.slice(0, 10).replace(/-/g, '/') : '?')
@@ -126,10 +147,17 @@ function saveEdit() {
   const id = detailId.value
   if (!id) return
   const name = editDraft.value.name.trim()
+  // 0.1.41：出發／回程先後驗證（跟 TravelSheet 同一套；兩者皆可空白）
+  const s = editDraft.value.startDate
+  const e = editDraft.value.endDate
+  if (s && e && e < s) {
+    notify('回程日不能早於出發日', 'warn')
+    return
+  }
   settings.updateTripHistory(id, {
     name: name || '旅行',
-    startDate: editDraft.value.startDate,
-    endDate: editDraft.value.endDate,
+    startDate: s,
+    endDate: e,
     currency: editDraft.value.currency,
   })
   editing.value = false
@@ -156,13 +184,14 @@ async function askDelete(t: TravelTrip) {
   notify(`已刪除旅行「${removed.name}」，${n} 筆記錄回歸一般記錄`, 'ok')
 }
 
-/* 整個子頁面關掉時把詳情／編輯狀態一起收掉，下次打開回到列表 */
+/* 整個子頁面關掉時把詳情／編輯／展開狀態一起收掉，下次打開回到列表 */
 watch(
   () => props.open,
   (v) => {
     if (!v) {
       detailId.value = null
       editing.value = false
+      showHidden.value = false
     }
   },
 )
@@ -217,10 +246,10 @@ watch(
               按「詳細」可修改、刪除，或查看這趟的所有記錄。
             </p>
 
-            <p v-if="!history.length" class="tiny muted empty">還沒有結束過的旅行。</p>
+            <p v-if="!visibleHistory.length && !hiddenList.length" class="tiny muted empty">還沒有結束過的旅行。</p>
 
             <div class="hist">
-              <div v-for="h in history" :key="h.id" class="hist__item">
+              <div v-for="h in visibleHistory" :key="h.id" class="hist__item">
                 <div class="hist__row">
                   <span class="hist__ic" aria-hidden="true">
                     <CategoryIcon name="luggage" :size="15" :stroke="1.9" />
@@ -234,6 +263,32 @@ watch(
                   </span>
                   <!-- 0.1.38：列表只剩「詳細」；原本的改／刪搬進詳情頁 -->
                   <span class="hist__ops">
+                    <button class="op op--detail" type="button" title="查看詳細" @click="openDetail(h)">詳細</button>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 0.1.41：隱藏的旅行——底部收合列，點了才展開 -->
+            <button v-if="hiddenList.length" class="hist__toggle" type="button" @click="showHidden = !showHidden">
+              <svg class="hist__toggle-ic" :class="{ 'is-open': showHidden }" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8.5 5.5 15 12l-6.5 6.5" />
+              </svg>
+              已隱藏 {{ hiddenList.length }} 趟旅行
+              <em>{{ showHidden ? '（點一下收起）' : '（點一下展開）' }}</em>
+            </button>
+            <div v-if="hiddenList.length && showHidden" class="hist">
+              <div v-for="h in hiddenList" :key="h.id" class="hist__item hist__item--hidden">
+                <div class="hist__row">
+                  <span class="hist__ic" aria-hidden="true">
+                    <CategoryIcon name="luggage" :size="15" :stroke="1.9" />
+                  </span>
+                  <span class="hist__txt">
+                    <b>{{ h.name }}</b>
+                    <em>{{ histRange(h) }} · {{ h.count }} 筆</em>
+                  </span>
+                  <span class="hist__ops">
+                    <button class="op" type="button" title="取消隱藏" @click="toggleHidden(h)">取消隱藏</button>
                     <button class="op op--detail" type="button" title="查看詳細" @click="openDetail(h)">詳細</button>
                   </span>
                 </div>
@@ -333,6 +388,11 @@ watch(
                   <span class="tiny num muted">0 筆</span>
                 </div>
               </section>
+
+              <!-- 0.1.41：隱藏這個旅行（詳情底部、刪除上方）——hidden 存旅行本體，刷新後仍在 -->
+              <button class="hidebtn" type="button" @click="toggleHidden(detail)">
+                {{ detail.hidden ? '取消隱藏這個旅行' : '隱藏這個旅行' }}
+              </button>
 
               <!-- 刪除旅行：原本列表列上的「刪」搬來這裡（一樣先確認） -->
               <button class="delbtn" type="button" @click="askDelete(detail)">刪除旅行</button>
@@ -443,6 +503,47 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+/* 0.1.41：隱藏的旅行列——半透明＋虛線，跟正常列一眼分開 */
+.hist__item--hidden .hist__row {
+  opacity: 0.68;
+  border-style: dashed;
+}
+/* 0.1.41：底部收合列（已隱藏 N 趟旅行）——整列可按的淡按鈕 */
+.hist__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: var(--r-md);
+  border: 1px dashed var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 650;
+  transition: background 0.12s;
+}
+.hist__toggle:hover {
+  background: var(--surface-3);
+}
+.hist__toggle em {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.hist__toggle-ic {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.15s;
+}
+.hist__toggle-ic.is-open {
+  transform: rotate(90deg);
 }
 .hist__row {
   display: flex;
@@ -588,6 +689,25 @@ watch(
 .meta__amt--inc {
   color: var(--income);
 }
+/* 0.1.41：隱藏這個旅行（詳情底部、刪除上方）——中性淡按鈕（危險紅留給刪除） */
+.hidebtn {
+  width: 100%;
+  height: 40px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 13.5px;
+  font-weight: 700;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s;
+}
+.hidebtn:hover {
+  background: var(--surface-3);
+}
+
 /* 刪除旅行（詳情底部，全寬） */
 .delbtn {
   width: 100%;

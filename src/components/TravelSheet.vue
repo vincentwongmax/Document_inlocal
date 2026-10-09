@@ -67,6 +67,9 @@ const draft = ref({
 
 const trip = computed(() => settings.activeTrip)
 
+/** 0.1.41：自訂色標記——⚠ 必須宣告在 syncFromTrip 之前（watch immediate 會跑它） */
+const customColor = ref(false)
+
 function syncFromTrip() {
   const t = settings.activeTrip
   if (t) {
@@ -90,6 +93,8 @@ function syncFromTrip() {
       color: DEFAULT_TRIP_COLOR,
     }
   }
+  // 0.1.41：自訂色標記＝目前顏色不在 8 個預設色裡（跟分類管理同一套判法）
+  customColor.value = !(TRIP_COLORS as readonly string[]).includes(draft.value.color)
 }
 
 watch(
@@ -117,19 +122,30 @@ const summary = computed(() =>
 const title = computed(() => (settings.activeTrip ? '旅行模式 · 進行中' : '旅行模式'))
 
 /**
- * 0.1.40：查看旅行記錄（使用者原話：「增加功能，就像，查看記錄時只查看旅行的資料
- * （就像點擊旅行期間記錄時一樣）（用戶可在旅行中隨時打開和關閉這個功能，而不影響任何的狀態）」）。
- * - 行為**完全同源**於 TripHistorySheet 詳情裡「旅行期間記錄 N 筆」那一列：
- *   關掉本頁 → 跳 `/records?trip=<id>`（tripId 精確過濾、不限日期）。
- * - 「隨時打開」＝旅行中每次打開本頁都有這顆按鈕；「關閉」＝記錄頁過濾 chip 的 ✕
- *   （`clearTripFilter`，0.1.38 就有），或直接跳去別頁。
- * - 「不影響任何的狀態」＝過濾只是 URL query 的檢視狀態，不動記錄、設定、旅行本體。
+ * 0.1.41：「查看旅行記錄」從 0.1.40 的跳轉式升級成**持久模式開關**
+ * （使用者原話：「打開後，用戶無論如何切換頁面，再回到記錄的頁面時，也要是
+ * （只查看當前旅行的資料的模式），直到用戶關閉這個模式或完成旅行，而不影響
+ * 任何的狀態」）。
+ * - 開＝`settings.setTripViewFilter(trip.id)`＋關掉本頁＋跳記錄頁（不帶 query——
+ *   過濾走 store，切頁也保持）；關＝`setTripViewFilter(null)`（留在原地不跳）。
+ * - 「不影響任何的狀態」＝純檢視過濾，不動記錄／設定／旅行本體；
+ *   結束旅行時 `finishTrip()` 會自動關閉（store 裡做）。
+ * - 0 筆記錄時**不能開**（過濾了只會看到空列表），但已開著就永遠可以關
+ *   （否則按鈕 disabled 會把人鎖在模式裡）。
  */
-function viewRecords() {
+const viewOn = computed(() => !!trip.value && settings.tripViewFilter === trip.value.id)
+
+function toggleViewFilter() {
   const t = settings.activeTrip
-  if (!t || !records.tripSummary(t.id).count) return
+  if (!t) return
+  if (viewOn.value) {
+    settings.setTripViewFilter(null)
+    return
+  }
+  if (!records.tripSummary(t.id).count) return
+  settings.setTripViewFilter(t.id)
   emit('close')
-  router.push({ path: '/records', query: { trip: t.id } })
+  router.push({ path: '/records' })
 }
 
 /* ── 0.1.39：旅行顏色 ─────────────────────────────────── */
@@ -152,7 +168,24 @@ const accentStyle = computed(() => {
 /** 點色板：還沒開始＝改草稿（開始時一起存）；進行中＝即時寫回 store */
 function pickColor(c: string) {
   draft.value.color = c
+  customColor.value = false
   if (settings.activeTrip) settings.updateActiveTrip({ color: c })
+}
+
+/**
+ * 0.1.41：自訂顏色（使用者原話：「旅行模式頁面中的旅行顏色，給用戶增加自訂的
+ * 顏色（像修改分類的頁面，的自訂調色盤一樣）」）——做法照 `CategoryManageModal`：
+ * 彩虹底的「＋」票包一顆原生 `<input type="color">`（0.1.39 不用原生面板的拍板
+ * 被 0.1.41 的新指示覆蓋：使用者點名要跟分類頁一樣）。
+ * 選中自訂色時那顆票直接顯示該色；存檔前仍過 `isHexColor` 防線（store 端）。
+ * （customColor 的 ref 宣告在 syncFromTrip 之前——watch immediate 會跑它。）
+ */
+function onPalette(e: Event) {
+  const v = (e.target as HTMLInputElement).value
+  if (!isHexColor(v)) return
+  draft.value.color = v
+  customColor.value = true
+  if (settings.activeTrip) settings.updateActiveTrip({ color: v })
 }
 
 /* ── 開始／修改／結束 ─────────────────────────────────── */
@@ -178,8 +211,29 @@ function applyName() {
   draft.value.name = settings.activeTrip.name
 }
 
+/**
+ * 0.1.41：出發／回程日的先後驗證（使用者原話：「回程日小過出發日，回程日不能
+ * 大過出發日，但是兩者都可以接受空白」——前後半句互相矛盾，依旅行常理拍板：
+ * **回程日不能早於出發日**（回程在出發之後），兩者皆可各自空白）。
+ * - 擋下時 toast 提示並**回退該欄位**到 store 裡的現值（打字過程不會誤存）。
+ * - ⚠ 回退要 bump `dateKey`（DateField 的 :key）——v-model 先寫了草稿、這裡又
+ *   回退，同一個 tick 內 prop 最終值沒變，DateField 的 watch 不會觸發、
+ *   輸入框會留著使用者打的錯誤日期；換 key 強制重掛載才會照 modelValue 重畫。
+ * - 只有一方有值（或都空）＝合法，照常套用。
+ * - 日期一律是 YYYY-MM-DD 字串（DateField 的格式）→ 字串比較即先後。
+ */
+const dateKey = ref(0)
+
 function applyDate(which: 'startDate' | 'endDate') {
   if (!settings.activeTrip) return
+  const s = draft.value.startDate
+  const e = draft.value.endDate
+  if (s && e && e < s) {
+    notify(which === 'endDate' ? '回程日不能早於出發日' : '出發日不能晚於回程日', 'warn')
+    draft.value[which] = settings.activeTrip[which]
+    dateKey.value++
+    return
+  }
   settings.updateActiveTrip({ [which]: draft.value[which] })
 }
 
@@ -269,23 +323,29 @@ async function askEnd() {
             <span class="status__tag">旅行中</span>
           </div>
 
-          <!-- 0.1.40：查看旅行記錄——只看這趟的資料（同「旅行期間記錄 N 筆」的跳轉過濾） -->
+          <!-- 0.1.41：查看旅行記錄＝持久模式開關（開了以後切頁也保持，直到關閉或結束旅行） -->
           <button
             v-if="trip"
             class="viewrec"
+            :class="{ 'is-on': viewOn }"
             type="button"
-            :disabled="!summary || summary.count === 0"
-            :title="summary && summary.count ? `查看這趟的 ${summary.count} 筆記錄` : '這趟還沒有記錄'"
-            @click="viewRecords"
+            :disabled="!viewOn && (!summary || summary.count === 0)"
+            :title="viewOn
+              ? '模式中：記錄頁目前只顯示這趟的記錄，按一下關閉'
+              : summary && summary.count
+                ? `打開後記錄頁只顯示這趟的 ${summary.count} 筆記錄（切換頁面也保持）`
+                : '這趟還沒有記錄'"
+            @click="toggleViewFilter"
           >
             <span class="viewrec__ic" aria-hidden="true">
               <CategoryIcon name="book" :size="16" :stroke="1.9" />
             </span>
             <span class="viewrec__txt">
               <b>查看旅行記錄</b>
-              <em>記錄頁只顯示這趟的 {{ summary ? summary.count : 0 }} 筆記錄（不限日期）</em>
+              <em v-if="viewOn">模式中：記錄頁只顯示這趟的記錄（切頁也保持）</em>
+              <em v-else>打開後記錄頁只顯示這趟的 {{ summary ? summary.count : 0 }} 筆記錄</em>
             </span>
-            <span class="viewrec__chev" aria-hidden="true">›</span>
+            <span class="viewrec__sw" aria-hidden="true">{{ viewOn ? '開' : '關' }}</span>
           </button>
           <p v-else class="tiny muted hint">
             設定這趟旅行的名稱、貨幣與模式，按「開始旅行」後生效。期間的記錄會照你選的模式歸進這個旅行。
@@ -306,15 +366,16 @@ async function askEnd() {
             />
           </label>
 
-          <!-- 日期（純顯示，不影響記錄歸屬——使用者拍板） -->
+          <!-- 日期（純顯示，不影響記錄歸屬——使用者拍板）；
+               :key＝擋下回退時強制重掛載重同步（見 applyDate 的註解） -->
           <div class="grid2">
             <label class="lb">
               <span>出發日</span>
-              <DateField v-model="draft.startDate" @update:model-value="applyDate('startDate')" />
+              <DateField :key="'s' + dateKey" v-model="draft.startDate" @update:model-value="applyDate('startDate')" />
             </label>
             <label class="lb">
               <span>回程日</span>
-              <DateField v-model="draft.endDate" @update:model-value="applyDate('endDate')" />
+              <DateField :key="'e' + dateKey" v-model="draft.endDate" @update:model-value="applyDate('endDate')" />
             </label>
           </div>
 
@@ -330,7 +391,7 @@ async function askEnd() {
             <span v-if="rateLine" class="tiny muted rateline num">{{ rateLine }}</span>
           </label>
 
-          <!-- 旅行顏色（0.1.39）：記錄的「旅」標籤與這個頁面的強調色都跟著它 -->
+          <!-- 旅行顏色（0.1.39；0.1.41 加自訂調色盤）：記錄的「旅」標籤與這個頁面的強調色都跟著它 -->
           <div class="lb">
             <span>
               旅行顏色
@@ -342,13 +403,23 @@ async function askEnd() {
                 :key="c"
                 type="button"
                 class="swatch"
-                :class="{ 'is-on': draft.color === c }"
+                :class="{ 'is-on': !customColor && draft.color === c }"
                 :style="{ background: c }"
                 :title="c"
-                :aria-pressed="draft.color === c"
+                :aria-pressed="!customColor && draft.color === c"
                 :aria-label="'旅行顏色 ' + c"
                 @click="pickColor(c)"
               ></button>
+              <!-- 自訂調色盤（0.1.41）：照 CategoryManageModal 的「＋」彩虹票 -->
+              <label
+                class="swatch swatch--palette"
+                :class="{ 'is-on': customColor }"
+                :style="customColor ? { background: draft.color } : undefined"
+                title="自訂顏色"
+              >
+                <input type="color" :value="draft.color" class="swatch__input" @input="onPalette" />
+                <span v-if="!customColor" class="swatch__plus">＋</span>
+              </label>
             </div>
           </div>
 
@@ -518,7 +589,7 @@ async function askEnd() {
   font-weight: 700;
 }
 
-/* 0.1.40：查看旅行記錄——整列可按，白底＋旅行色描邊與字色（強調色跟著 --trip-c） */
+/* 0.1.41：查看旅行記錄——持久模式開關。關＝白底描邊；開＝旅行色軟底＋「開」膠囊 */
 .viewrec {
   display: flex;
   align-items: center;
@@ -531,6 +602,9 @@ async function askEnd() {
   transition:
     background 0.12s,
     border-color 0.12s;
+}
+.viewrec.is-on {
+  background: var(--trip-c-soft, var(--amber-soft));
 }
 .viewrec:active {
   background: var(--trip-c-soft, var(--amber-soft));
@@ -569,11 +643,25 @@ async function askEnd() {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.viewrec__chev {
+/* 開／關膠囊（照 .mode__sw 的家族：34x26、圓票、開啟時白底旅行色字） */
+.viewrec__sw {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-3);
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 700;
+}
+.viewrec.is-on .viewrec__sw {
+  border-color: var(--trip-c, var(--amber));
+  background: var(--surface);
   color: var(--trip-c, var(--amber));
-  font-weight: 650;
-  font-size: 15px;
 }
 
 /* 旅行顏色色板（0.1.39）：圓形色票一排、選中的加一圈外框 */
@@ -593,9 +681,40 @@ async function askEnd() {
   transition: box-shadow 0.12s, transform 0.12s;
 }
 .swatch.is-on {
-  /* 選中：用自己那個色畫一圈外框（box-shadow 不佔版位，320px 也放得下 8 顆） */
+  /* 選中：用自己那個色畫一圈外框（box-shadow 不佔版位，320px 也放得下） */
   box-shadow: 0 0 0 2px var(--trip-c, var(--amber));
   transform: scale(1.08);
+}
+
+/* 自訂顏色票（0.1.41）：彩虹底「＋」，做法照 CategoryManageModal 的 .sw--palette */
+.swatch--palette {
+  background: conic-gradient(red, orange, yellow, green, cyan, blue, violet, red);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  position: relative;
+}
+.swatch--palette.is-on {
+  border-color: var(--text);
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--text);
+}
+.swatch__plus {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  line-height: 1;
+}
+.swatch__input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
 }
 
 /* 欄位 */

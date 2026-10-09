@@ -197,6 +197,11 @@ export interface TravelTrip {
    * （舊資料沒有這個欄位 → 顯示層一律回退琥珀 `DEFAULT_TRIP_COLOR`）。
    */
   color?: string
+  /**
+   * 在「過去的旅行」清單裡隱藏（0.1.41）：true＝列表收起來，
+   * 底部顯示「已隱藏 N 趟旅行」、點了才展開。舊資料沒有＝不隱藏。
+   */
+  hidden?: boolean
 }
 
 export interface Settings {
