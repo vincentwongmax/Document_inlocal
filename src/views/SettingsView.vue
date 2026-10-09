@@ -483,14 +483,14 @@ const activeWalletName = computed(() => settings.activeWallet.name)
           <label class="row">
             <span>
               目前記帳幣別
-              <small v-if="settings.activeTrip?.currency" class="tiny muted">
-                <!-- 0.1.38：移除括號內的幣別（使用者原話：「移除旅行模式進行中(XXXXX)中的括號中的文字(含括號)」）——
-                     select 本身顯示的就是旅行貨幣，括號是重複資訊 -->
-                旅行模式進行中，由旅行貨幣決定
-              </small>
-              <small v-else-if="settings.activeTrip" class="tiny muted">
-                旅行模式進行中（這趟沒有設旅行貨幣）
-              </small>
+              <!--
+                0.1.39：旅行中只顯示「由旅行貨幣決定」（使用者原話：「移除"這趟沒有設旅行貨幣"
+                的文字 和 "旅行模式進行中"的文字，只保留"由旅行貨幣決定"」）。
+                ⚠ 原本的 v-else-if「（這趟沒有設旅行貨幣）」防呆分支一併移除——
+                  不管這趟有沒有設旅行貨幣，提示都是同一句（畫面更乾淨）。
+                0.1.38：已移除括號內的幣別（select 本身顯示的就是旅行貨幣）。
+              -->
+              <small v-if="settings.activeTrip" class="tiny muted">由旅行貨幣決定</small>
               <small v-else class="tiny muted">出國時改成當地幣別</small>
             </span>
             <!--

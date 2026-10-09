@@ -10,6 +10,8 @@ import ClearableInput from '@/components/ClearableInput.vue'
 import QuickNotePicker from '@/components/QuickNotePicker.vue'
 import DateTimeField from '@/components/DateTimeField.vue'
 import ReceiptImages from '@/components/ReceiptImages.vue'
+import CategoryIcon from '@/components/CategoryIcon.vue'
+import { withAlpha, DEFAULT_TRIP_COLOR } from '@/lib/color'
 import {
   displayMain,
   displaySub,
@@ -58,6 +60,9 @@ const imgEl = ref<InstanceType<typeof ReceiptImages> | null>(null)
 const displayLong = computed(() => isLongDisplay(display.value))
 /** 還沒按 = 之前不顯示換算預覽，答案要按了等於才出現 */
 const converted = computed(() => calc.value.done && curCode.value !== settings.baseCurrency)
+
+/** 0.1.39：標題「旅行模式中」標籤的顏色＝進行中旅行的 color（舊資料沒有＝琥珀回退） */
+const tripColor = computed(() => settings.activeTrip?.color ?? DEFAULT_TRIP_COLOR)
 
 /** 記帳幣別選單：設定頁可挑選要顯示哪幾個（沒選 = 全部），目前選用的幣別一律保留 */
 const currencyOptions = computed(() => {
@@ -318,6 +323,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <div class="page-head__txt">
         <h1 class="page-title">記帳</h1>
       </div>
+      <!--
+        0.1.39：旅行進行中時，標題最右側掛「旅行模式中」小標籤（行李箱 icon＋文字）。
+        - 顏色跟 activeTrip 的旅行顏色（0.1.39 色板），沒設＝琥珀回退。
+        - .page-head 是 baseline 對齊，膠囊自己 align-self: center 才不會沉底。
+      -->
+      <span
+        v-if="settings.activeTrip"
+        class="tripmode"
+        :style="{
+          color: tripColor,
+          borderColor: withAlpha(tripColor, 0.35),
+          background: withAlpha(tripColor, 0.12),
+        }"
+      >
+        <CategoryIcon name="luggage" :size="13" :stroke="2" />
+        <b>旅行模式中</b>
+      </span>
     </div>
 
     <div class="home__grid">
@@ -478,6 +500,27 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 .home {
   padding-top: 12px;
+}
+/*
+ * 0.1.39：標題最右的「旅行模式中」標籤（行李箱 icon＋文字膠囊）。
+ * 顏色（字／框／底）由 inline style 綁旅行顏色，這裡只管形狀與排版；
+ * .page-head 是 baseline 對齊，膠囊 align-self: center 才不會沉到標題底線。
+ */
+.tripmode {
+  align-self: center;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--amber-line);
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 .pad {
   padding: 16px;
