@@ -212,7 +212,23 @@ export const useRecordsStore = defineStore('records', () => {
       if (r.type === 'expense') expense += v
       else income += v
     }
-    return { count, expense: Number(expense.toFixed(2)), income: Number(income.toFixed(2)) }
+    return { count: count, expense: Number(expense.toFixed(2)), income: Number(income.toFixed(2)) }
+  }
+
+  /**
+   * 清掉某個旅行的**所有**標記（0.1.37：「過去的旅行」刪除旅行時用）。
+   * ⚠ 動的是 `all`（deep watch 會自動寫回 localStorage）；**備注的後綴不動**——
+   * 那是記帳當下的歷史事實，旅行刪了字還在。全部錢包一起清（tripId 全域唯一）。
+   * @returns 清掉的筆數（確認視窗顯示「N 筆記錄回歸一般記錄」用）
+   */
+  function clearTripTag(tripId: string): number {
+    let n = 0
+    for (const r of all.value) {
+      if (r.tripId !== tripId) continue
+      delete r.tripId
+      n++
+    }
+    return n
   }
 
   /* ── 查詢（一律只涵蓋當前錢包） ─────────────────────── */
@@ -247,6 +263,7 @@ export const useRecordsStore = defineStore('records', () => {
     replaceAll,
     /* ── 旅行模式 ── */
     tripSummary,
+    clearTripTag,
     byNewest,
     byOccurred,
     totalExpense,

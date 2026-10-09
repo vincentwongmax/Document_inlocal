@@ -6,7 +6,6 @@ import { confirmDialog, notify } from '@/lib/alerts'
 import { CURRENCIES, fmtMoney } from '@/lib/currency'
 import { useScrollLock } from '@/composables/useScrollLock'
 import { usePullToClose } from '@/composables/usePullToClose'
-import type { TravelTrip } from '@/types'
 import DateField from './DateField.vue'
 import CategoryIcon from './CategoryIcon.vue'
 
@@ -98,24 +97,6 @@ const rateLine = computed(() => {
 const summary = computed(() =>
   settings.activeTrip ? records.tripSummary(settings.activeTrip.id) : null,
 )
-
-/**
- * 「過去的旅行」（0.1.36）：已結束的旅行清單（新的在上），附上即時摘要。
- * 使用者原話：「增加按鈕，可以查看用戶之前增加過的旅行模式的細節等等
- * （名稱，建立日期時間，等等）」。
- */
-const history = computed(() =>
-  [...settings.tripHistory].reverse().map((t) => {
-    const s = records.tripSummary(t.id)
-    return { ...t, count: s.count, expense: s.expense, income: s.income }
-  }),
-)
-
-/** 「過去的旅行」每一列的時間說明：建立日 ～ 結束日（缺的就留白） */
-function histRange(h: TravelTrip): string {
-  const f = (iso?: string) => (iso ? iso.slice(0, 10).replace(/-/g, '/') : '?')
-  return `${f(h.createdAt)} ～ ${f(h.endedAt)}`
-}
 
 const title = computed(() => (settings.activeTrip ? '旅行模式 · 進行中' : '旅行模式'))
 
@@ -304,21 +285,7 @@ async function askEnd() {
             </button>
           </div>
 
-          <!-- 過去的旅行（0.1.36）：結束過的旅行照樣看得到細節（名稱／時間／筆數／支出） -->
-          <div v-if="history.length" class="hist">
-            <span class="hist__hd">過去的旅行</span>
-            <div v-for="h in history" :key="h.id" class="hist__row">
-              <span class="hist__ic" aria-hidden="true">
-                <CategoryIcon name="luggage" :size="15" :stroke="1.9" />
-              </span>
-              <span class="hist__txt">
-                <b>{{ h.name }}</b>
-                <em>{{ histRange(h) }} · {{ h.count }} 筆</em>
-              </span>
-              <span v-if="h.expense > 0" class="hist__amt num">−{{ fmtMoney(h.expense, settings.displayCurrency) }}</span>
-            </div>
-            <p class="tiny muted hist__hint">記錄的旅行標記會一直保留，記錄頁／統計頁照樣歸組。</p>
-          </div>
+          <!-- 過去的旅行（0.1.37 起）搬到獨立子頁面 TripHistorySheet——設定頁主 cell 右側的時鐘小鈕 -->
 
           <div class="acts">
             <template v-if="trip">
@@ -547,67 +514,7 @@ async function askEnd() {
   color: var(--amber);
 }
 
-/* 過去的旅行（0.1.36）：每列＝行李箱 icon ＋ 名稱＋時間筆數 ＋ 支出（琥珀主題） */
-.hist {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.hist__hd {
-  font-size: 13px;
-  font-weight: 650;
-  color: var(--text-2);
-}
-.hist__row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 11px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--line);
-  background: var(--surface);
-}
-.hist__ic {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 9px;
-  background: var(--amber-soft);
-  border: 1px solid var(--amber-line);
-  color: var(--amber);
-}
-.hist__txt {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-  flex: 1;
-}
-.hist__txt b {
-  font-size: 13.5px;
-  font-weight: 700;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.hist__txt em {
-  font-style: normal;
-  font-size: 11.5px;
-  color: var(--text-2);
-  font-variant-numeric: tabular-nums;
-}
-.hist__amt {
-  flex: none;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--expense);
-}
-.hist__hint {
-  margin: 0;
-}
+/* 過去的旅行（0.1.37 起）搬到 TripHistorySheet 子頁面，這裡不再有清單 */
 
 /* 底部動作列 */
 .acts {

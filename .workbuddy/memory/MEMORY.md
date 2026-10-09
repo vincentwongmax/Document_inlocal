@@ -4,7 +4,7 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 完整約定／踩坑／測試殺手 → **同目錄 `CONVENTIONS.md`**（要用再讀）。
 
 ## 版本
-- 只加 Z（目前 0.1.36＝旅行六需求）。package.json → `__APP_VERSION__` → 設定頁膠囊
+- 只加 Z（目前 0.1.37＝旅行三需求）。package.json → `__APP_VERSION__` → 設定頁膠囊
 - 每次更新：package.json ＋ CHANGELOG（新筆插 0.1.19 精選區之後，最新遞減）
 
 ## 開發/驗證
@@ -14,7 +14,7 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - ⚠ 升版後必先 build 再跑測試（`__APP_VERSION__` 編譯期注入）；斷言「與某來源一致」要讀來源
 - puppeteer-core 在 `~/.workbuddy/binaries/node/workspace/`（node 版本目錄會變）
 - RecordSheet 骨架＝`.mask > .sheet.card`（關閉 `.sheet__close`）；子頁面才是 `.bsheet`；記錄列點 `.row__main` 才開明細
-- 新守門員：v104 字級/下拉｜v105 雙擊/彈層｜v106 safe-area｜v107 主幣換算｜v109 快速金額｜v110 旅行基礎｜v111 六需求（獨立區塊/鎖定幣別/旅行名搜索/歷史旅行組）。⚠ `.smoke/` gitignored，回退手動改 ALL
+- 新守門員：v104 字級/下拉｜v105 雙擊/彈層｜v106 safe-area｜v107 主幣換算｜v109 快速金額｜v110 旅行基礎｜v111 六需求｜v112 三小鈕/過去旅行改刪/匯率兩位/旅標籤。⚠ `.smoke/` gitignored，回退手動改 ALL
 - ⚠ v111 三課：JS dispatchEvent 繞過 disabled（別測「塞值不生效」）；fmtMoney 負數＝符號後帶 -（"JP¥-4,000.00"）；統計頁 MOP regex 要排除 .row 的原幣換算說明（刻意設計）
 
 ## Git/部署

@@ -7,6 +7,7 @@ import { notify, confirmDialog } from '@/lib/alerts'
 import CategoryManageModal from '@/components/CategoryManageModal.vue'
 import QuickAmountSheet from '@/components/QuickAmountSheet.vue'
 import TravelSheet from '@/components/TravelSheet.vue'
+import TripHistorySheet from '@/components/TripHistorySheet.vue'
 import CategoryIcon from '@/components/CategoryIcon.vue'
 import { iconForCategory } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
@@ -94,8 +95,36 @@ const presetViews = computed(() =>
 /** 「詳細」子頁面開關（新增／修改／刪除都在 QuickAmountSheet 裡做） */
 const quickAmtOpen = ref(false)
 
-/** 「旅行模式」子頁面開關（0.1.35；入口在「幣別與匯率」區塊的標題列） */
+/** 「旅行模式」子頁面開關（0.1.35；0.1.37 起主 cell 右側多三顆小鈕） */
 const travelOpen = ref(false)
+
+/** 「過去的旅行」子頁面開關（0.1.37；清單從 TravelSheet 搬出來，可修改／可刪除） */
+const histOpen = ref(false)
+
+/**
+ * 切換鈕（0.1.37）：沒旅行＝打開 TravelSheet 開始表單（那裡就是開始介面）；
+ * 旅行中＝**直接走結束確認**（不用先開子頁面再按結束）。
+ * 確認文案與 TravelSheet.askEnd 同一套（筆數＋支出＋標記保留說明）。
+ */
+async function onToggleTrip() {
+  const t = settings.activeTrip
+  if (!t) {
+    travelOpen.value = true
+    return
+  }
+  const s = records.tripSummary(t.id)
+  const answer = await confirmDialog({
+    title: `結束「${t.name}」？`,
+    message: `這趟共 ${s.count} 筆記錄、支出 ${fmtMoney(s.expense, settings.displayCurrency)}${
+      s.income > 0 ? `、收入 ${fmtMoney(s.income, settings.displayCurrency)}` : ''
+    }。結束後記錄會保留「${t.name}」的旅行標記（不回歸一般記錄），幣別恢復原本的設定；之後可以在「過去的旅行」查看這一趟。`,
+    confirmText: '結束旅行',
+    danger: true,
+  })
+  if (answer !== 'confirm' || settings.activeTrip?.id !== t.id) return
+  settings.finishTrip()
+  notify(`已結束旅行「${t.name}」，記錄標記保留`, 'ok')
+}
 
 /**
  * 從備註欄的「管理快速備註」跳過來時（?sec=quicknotes）直接捲到那一段。
@@ -567,18 +596,57 @@ const activeWalletName = computed(() => settings.activeWallet.name)
       進行中會亮成琥珀色並顯示旅行名。
     -->
     <section class="card sec travel-sec">
-      <button class="travel-cell" type="button" @click="travelOpen = true">
-        <span class="travel-cell__ic" :class="{ 'is-on': !!settings.activeTrip }" aria-hidden="true">
-          <CategoryIcon name="luggage" :size="19" :stroke="1.9" />
+      <!--
+        0.1.37：主 cell 右側加三顆小按鈕（使用者原話：「旅行模式增加3個小型按鈕，
+        開始旅行和結束旅行的切換按鈕，詳細按鈕，過去的旅行按鈕(新增子頁面, 可修改，可刪除)」）。
+        ⚠ button 不能嵌 button → 外面包 .travel-row：主 cell（＝詳細）＋右側三顆獨立小鈕。
+      -->
+      <div class="travel-row">
+        <button class="travel-cell" type="button" @click="travelOpen = true">
+          <span class="travel-cell__ic" :class="{ 'is-on': !!settings.activeTrip }" aria-hidden="true">
+            <CategoryIcon name="luggage" :size="19" :stroke="1.9" />
+          </span>
+          <span class="travel-cell__txt">
+            <b>旅行模式</b>
+            <em v-if="settings.activeTrip">旅行中 · {{ settings.activeTrip.name }}（點開查看或結束）</em>
+            <em v-else>出國旅行時用：記錄歸進旅行、自動換幣別</em>
+          </span>
+          <span v-if="settings.activeTrip" class="travel-cell__tag">旅行中</span>
+        </button>
+        <span class="travel-cell__minis">
+          <!-- 切換鈕：沒旅行＝開始（打開 TravelSheet 表單）；旅行中＝結束（直接走確認） -->
+          <button
+            class="travel-mini"
+            :class="settings.activeTrip ? 'is-end' : 'is-start'"
+            type="button"
+            :title="settings.activeTrip ? '結束旅行' : '開始旅行'"
+            :aria-label="settings.activeTrip ? '結束旅行' : '開始旅行'"
+            @click="onToggleTrip"
+          >
+            <svg v-if="settings.activeTrip" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="7.5" y="7.5" width="9" height="9" rx="1.2" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8.5 6.2v11.6L18 12z" />
+            </svg>
+          </button>
+          <!-- 詳細鈕：打開 TravelSheet（跟點主 cell 同一個子頁面） -->
+          <button class="travel-mini" type="button" title="旅行詳細" aria-label="旅行詳細" @click="travelOpen = true">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="8.6" />
+              <path d="M12 11v5" />
+              <path d="M12 7.6v.2" />
+            </svg>
+          </button>
+          <!-- 過去的旅行：獨立子頁面（可修改／可刪除，0.1.37 新增） -->
+          <button class="travel-mini" type="button" title="過去的旅行" aria-label="過去的旅行" @click="histOpen = true">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="8.6" />
+              <path d="M12 7.6V12l3.1 1.9" />
+            </svg>
+          </button>
         </span>
-        <span class="travel-cell__txt">
-          <b>旅行模式</b>
-          <em v-if="settings.activeTrip">旅行中 · {{ settings.activeTrip.name }}（點開查看或結束）</em>
-          <em v-else>出國旅行時用：記錄歸進旅行、自動換幣別</em>
-        </span>
-        <span v-if="settings.activeTrip" class="travel-cell__tag">旅行中</span>
-        <span class="travel-cell__arrow" aria-hidden="true">›</span>
-      </button>
+      </div>
     </section>
 
     <!-- 收據辨識 -->
@@ -1011,6 +1079,7 @@ const activeWalletName = computed(() => settings.activeWallet.name)
 
     <!-- 旅行模式子頁面（0.1.35；骨架與其他子頁面同一套） -->
     <TravelSheet :open="travelOpen" @close="travelOpen = false" />
+    <TripHistorySheet :open="histOpen" @close="histOpen = false" />
 
     <ExportModal :open="exportOpen" @close="exportOpen = false" />
 
@@ -1531,9 +1600,16 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   margin-left: auto;
   align-self: center;
 }
-/* 旅行模式（0.1.36）：獨立區塊——整列可點的 cell（icon ＋ 標題 ＋ 現況 ＋ 進行中標籤） */
+/* 旅行模式（0.1.36 獨立區塊；0.1.37 主 cell 右側加三顆小按鈕）
+   ⚠ button 不能嵌 button → .travel-row 包「主 cell（＝詳細）＋三顆獨立小鈕」 */
+.travel-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 .travel-cell {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1593,11 +1669,50 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   font-size: 11.5px;
   font-weight: 700;
 }
-.travel-cell__arrow {
+/* 三顆小按鈕（0.1.37）：切換（開始/結束）／詳細／過去的旅行——34px 方型圓角 */
+.travel-cell__minis {
   flex: none;
-  font-size: 20px;
-  line-height: 1;
-  color: var(--text-3);
+  display: flex;
+  gap: 7px;
+}
+.travel-mini {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text-2);
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+.travel-mini svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.travel-mini:hover {
+  border-color: var(--amber);
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+/* 開始（▶）＝琥珀（旅行主題）；結束（■）＝紅調（危險動作） */
+.travel-mini.is-start {
+  border-color: var(--amber-line);
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+.travel-mini.is-end {
+  border-color: var(--expense);
+  background: var(--expense-soft);
+  color: var(--expense);
 }
 /* 旅行進行中，「目前記帳幣別」的 select 停用（使用者：變成灰色、不會生效） */
 .row__ctl--locked,

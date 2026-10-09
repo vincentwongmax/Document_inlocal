@@ -700,6 +700,35 @@ export const useSettingsStore = defineStore('settings', () => {
     )
   }
 
+  /**
+   * 修改「過去的旅行」（0.1.37）：只動 tripHistory 裡的那一筆。
+   * 名稱是記錄頁組名／統計節點名／搜索比對的來源（畫面一律經 `tripById()` 即時查），
+   * 所以改名後那些地方會跟著變——記錄本體不用動。
+   * ⚠ 只收歷史旅行；進行中的旅行照舊走 `updateActiveTrip()`（TravelSheet）。
+   */
+  function updateTripHistory(
+    id: string,
+    patch: Partial<Pick<TravelTrip, 'name' | 'startDate' | 'endDate' | 'currency'>>,
+  ) {
+    const t = state.value.tripHistory.find((x) => x.id === id)
+    if (!t) return
+    if (patch.name !== undefined && patch.name.trim()) t.name = patch.name.trim()
+    if (patch.startDate !== undefined) t.startDate = patch.startDate
+    if (patch.endDate !== undefined) t.endDate = patch.endDate
+    if (patch.currency !== undefined) t.currency = patch.currency
+  }
+
+  /**
+   * 刪除「過去的旅行」（0.1.37）：從 tripHistory 移除並回傳被刪的那筆。
+   * ⚠ 只刪旅行本體；**記錄的 tripId 由呼叫端負責清**（TripHistorySheet 會接著叫
+   * `records.clearTripTag()`）——維持 records→settings 的單向依賴，settings 不回頭改記錄。
+   */
+  function deleteTripHistory(id: string): TravelTrip | null {
+    const i = state.value.tripHistory.findIndex((x) => x.id === id)
+    if (i < 0) return null
+    return state.value.tripHistory.splice(i, 1)[0] ?? null
+  }
+
   function restoreDefaults() {
     state.value.categories = JSON.parse(JSON.stringify(defaultSettings().categories))
   }
@@ -765,6 +794,8 @@ export const useSettingsStore = defineStore('settings', () => {
     activeTrip,
     tripHistory: computed(() => state.value.tripHistory),
     tripById,
+    updateTripHistory,
+    deleteTripHistory,
     startTrip,
     updateActiveTrip,
     finishTrip,

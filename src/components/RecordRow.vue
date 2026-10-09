@@ -68,6 +68,14 @@ const shownRate = computed(() => {
   const dc = settings.displayCurrency
   return dc === settings.baseCurrency ? r : r / settings.rate(dc)
 })
+/**
+ * 換算說明的匯率只顯示到兩位小數（0.1.37）。
+ * 使用者原話：「在記錄的頁面和統計的頁面的記錄中，匯率只顯示兩位數，
+ * 例: HKD 1.030004 --> 1.03，但在記錄明細的頁面就要保持完整位數」。
+ * `Number(toFixed(2))` 順便去尾零：20 → "20"、1.030004 → "1.03"。
+ * ⚠ `RecordSheet` 的「詳細資訊」（`1 X = record.rate Y`）維持**完整位數**——那是記帳當下的歷史事實。
+ */
+const displayRate = computed(() => Number(shownRate.value.toFixed(2)))
 /** 舊資料可能沒有 images 欄位 */
 const imgCount = computed(() => props.record.images?.length ?? 0)
 </script>
@@ -79,6 +87,8 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
     </span>
     <button class="row__main" type="button" @click="emit('edit', record.id)">
       <span class="row__top">
+        <!-- 旅行標籤（0.1.37）：這筆歸在某個旅行名下（進行中或已結束都算；琥珀主題） -->
+        <span v-if="record.tripId" class="ttrip" title="旅行記錄">旅</span>
         <span class="row__cat">
           <HighlightText :text="catName" :query="highlight" />
         </span>
@@ -135,7 +145,7 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
         {{ isExpense ? '−' : '+' }}{{ fmtMoney(shownAmount, settings.displayCurrency) }}
       </strong>
       <span v-if="converted" class="tiny muted num">
-        {{ fmtMoney(record.amount, record.currency) }} × {{ shownRate }}
+        {{ fmtMoney(record.amount, record.currency) }} × {{ displayRate }}
       </span>
     </button>
   </div>
@@ -273,6 +283,25 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
  */
 .ttag--recent {
   border-color: var(--amber-line);
+}
+/*
+ * 0.1.37：旅行標籤「旅」——這筆記錄歸在某個旅行名下（記錄頁＋統計頁的區間記錄都會出現，
+ * 同一個元件）。琥珀主題（跟旅行組／統計旅行節點同一族）；單字放得下，PWA 窄屏也不擠。
+ */
+.ttrip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 19px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid var(--amber-line);
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 .imtag__ic {
   stroke: var(--accent);
