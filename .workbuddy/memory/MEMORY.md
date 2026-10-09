@@ -17,8 +17,7 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - puppeteer-core 在 `~/.workbuddy/binaries/node/workspace/`
 - RecordSheet＝`.mask > .sheet.card`；子頁面＝`.bsheet`；列點 `.row__main` 開明細
 - 守門員：v104 字級｜v105 雙擊｜v106 safe-area｜v107 換算｜v109 快速金額｜v110~v115 旅行系｜v116 持久過濾/自訂色/隱藏/不預選/日驗證。⚠ `.smoke/` gitignored，回退手動改 ALL
-- ⚠ 斷言課：`.meta__row` 兩 span 相鄰**沒空格**（`replace(/\s+/g,'')` 連空格也吃）→ 預期寫無空格版
-- ⚠ mobile 模擬 mouse.down 不標記 :active → 按下態驗 **CSSOM**；Vue scoped 把 [data-v] 插在最後簡單選擇器**中間**（字串匹配分開撈）
+- ⚠ 斷言課：`.meta__row` 兩 span 相鄰**沒空格**→ 預期寫無空格版；mobile 模擬按下態驗 **CSSOM**
 
 ## Git/部署
 - Pages＝gh-pages（legacy build）；線上 `vincentwongmax.github.io/Document_inlocal/`
@@ -37,8 +36,7 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 ## 旅行模式（0.1.35 起）
 - 一次一個 `activeTrip`（每錢包一份）；記錄蓋 `tripId?`；結束**保留**標籤（推 `tripHistory`）；顯示層 `toDisplay`
 - 0.1.38：TripHistorySheet 列表↔詳情＋「N 筆」`?trip=` 精確過濾＋`is-stacked` 黏性標籤
-- 0.1.39：旅行**顏色**（`TravelTrip.color`＋8 色板每趟各自；`--trip-c` 三變數）
-- 0.1.40：設定頁旅行區塊 icon/標籤/按下態跟旅行色（**切換鈕排除**；沒旅行 fallback 琥珀）；詳情修改區白底
+- 0.1.39：旅行**顏色**（每趟各自色板；`--trip-c` 三變數）；0.1.40：設定頁區塊 icon/標籤跟旅行色（切換鈕排除）
 - 0.1.41：**tripViewFilter**＝持久「查看旅行記錄」（**module-level ref 不進 state**→切頁保持、刷新重置；URL `?trip=` 優先、✕ 清兩源、finishTrip 自動清）｜自訂色＝彩虹票包 input color（⚠ customColor 宣告在 syncFromTrip **前**防 TDZ）｜`TravelTrip.hidden` 隱藏旅行（收合列「已隱藏 N 趟」）｜分類**不預選**（不讀 draft，唯「記帳預設」）｜日期驗證＝回程不早於出發（原話矛盾拍板）；回退要 bump `:key` 重掛 DateField（同 tick prop 無變化 watch 不觸發）
 - 0.1.42：明細旅行下拉**不顯示 hidden 旅行**（`tripOptions` history 迴圈 skip，`h.id !== tripId.value`）；**例外＝記錄已歸屬那趟仍顯示**（否則歸屬憑空消失）；過濾光且無歸屬→整列隱藏（v117 守門員 14 項）
 
