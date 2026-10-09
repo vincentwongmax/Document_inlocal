@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
 import { notify } from '@/lib/alerts'
@@ -30,6 +31,8 @@ import {
 
 const records = useRecordsStore()
 const settings = useSettingsStore()
+const route = useRoute()
+const router = useRouter()
 
 const mode = ref<'unit' | 'custom'>('unit')
 const unit = ref<RangeUnit>('day')
@@ -46,6 +49,26 @@ const typeFilter = ref<'all' | 'expense' | 'income'>('all')
  * 切成新增時間才看得到「我最近才輸入的那些」。
  */
 const recent = ref(false)
+
+/* ── 旅行過濾（0.1.38）：從「過去的旅行」詳情頁點「旅行期間記錄 N 筆」跳過來 ──
+ * URL 長這樣：`#/records?trip=<id>`。
+ * ⚠ 用 **tripId 精確比對**（`r.tripId === tripFilter`），不是文字搜索——
+ *   使用者特別交代「不要搜到不相關的記錄，例如請考慮旅行名字同名之類」；
+ *   帶 id 過濾之後，同名旅行、備注裡剛好提到旅行名的記錄都不會誤中。
+ * ⚠ 過濾生效時**不看日期區間**——詳情頁要的是「這趟的全部 N 筆」
+ *   （區間預設是今天，不繞過的話只會看到今天那幾筆）。
+ *   收支篩選與關鍵字照舊作用（跳轉進來時都是預設值＝不影響）。
+ * 頂部會出現一顆琥珀 chip（見模板），按 ✕ 解除過濾。 */
+const tripFilter = computed(() => {
+  const v = route.query.trip
+  return typeof v === 'string' && v ? v : ''
+})
+const tripFilterName = computed(() => settings.tripById(tripFilter.value)?.name ?? '旅行')
+
+/** 解除旅行過濾：把 query 整個拿掉，回到一般的區間查詢 */
+function clearTripFilter() {
+  router.push({ path: '/records' })
+}
 
 /** 這個範圍／排序要用哪個時間戳；整頁（含列表分組）都靠它，才不會互相打架 */
 function timeOf(r: TxRecord): string {
@@ -112,8 +135,13 @@ const rangeTags = computed(() => [rangeText.value, `${rows.value.length} 筆`])
 const rows = computed(() =>
   records.records
     .filter((r) => {
-      const k = dayKey(timeOf(r))
-      if (k < range.value.start || k > range.value.end) return false
+      // 旅行過濾（0.1.38）：tripId 精確比對、日期區間不參與（見 tripFilter 的註解）
+      if (tripFilter.value) {
+        if (r.tripId !== tripFilter.value) return false
+      } else {
+        const k = dayKey(timeOf(r))
+        if (k < range.value.start || k > range.value.end) return false
+      }
       if (typeFilter.value !== 'all' && r.type !== typeFilter.value) return false
       if (!kw.value) return true
       const note = r.note ?? ''
@@ -129,6 +157,7 @@ const rows = computed(() =>
 /** 有在搜尋時，空列表的文案要帶出關鍵字，否則看不出是「找不到」還是「這個範圍本來就沒有」 */
 const emptyText = computed(() => {
   if (kw.value) return `找不到符合「${q.value.trim()}」的記錄`
+  if (tripFilter.value) return '這趟旅行沒有記錄'
   return recent.value ? '這段時間沒有新增的記錄' : '這個範圍沒有記錄'
 })
 
@@ -242,8 +271,8 @@ function visibleCat(row: CatGroup): TxRecord[] {
   return catOpen(row.id) ? row.list : row.list.slice(0, CAT_PREVIEW)
 }
 
-// 換範圍／篩選／關鍵字／時間基準時把展開狀態清掉，免得殘留不相關的分類
-watch([range, typeFilter, kw, recent], () => {
+// 換範圍／篩選／關鍵字／時間基準／旅行過濾時把展開狀態清掉，免得殘留不相關的分類
+watch([range, typeFilter, kw, recent, tripFilter], () => {
   byCatOpen.value.clear()
 })
 
@@ -345,6 +374,35 @@ function removeEditing(id: string) {
         </svg>
         <ClearableInput v-model="q" placeholder="搜尋備註或旅行" :maxlength="40" />
       </div>
+    </div>
+
+    <!--
+      0.1.38：旅行過濾生效時的提示 chip（琥珀主題，跟「旅」標籤同一族）。
+      從「過去的旅行」詳情頁跳過來時，下面這顆 chip 說明「現在顯示的是這趟的
+      全部記錄（不限日期）」，按 ✕ 解除、回到一般的區間查詢。
+    -->
+    <div v-if="tripFilter" class="tripfilter">
+      <span class="tripfilter__chip">
+        <svg class="tripfilter__ic" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3.4" y="7.4" width="17.2" height="12.2" rx="2.6" />
+          <path d="M9 7.4V5.8A1.8 1.8 0 0 1 10.8 4h2.4A1.8 1.8 0 0 1 15 5.8v1.6" />
+          <path d="M3.4 12.4h17.2" />
+        </svg>
+        <span class="tripfilter__t">旅行：</span>
+        <span class="tripfilter__name">{{ tripFilterName }}</span>
+        <button
+          class="tripfilter__x"
+          type="button"
+          title="取消旅行過濾"
+          aria-label="取消旅行過濾"
+          @click="clearTripFilter"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 7l10 10M17 7 7 17" />
+          </svg>
+        </button>
+      </span>
+      <span class="tripfilter__hint tiny muted">這趟的全部記錄（不限日期）</span>
     </div>
 
     <!-- 區間總覽 -->
@@ -596,6 +654,75 @@ function removeEditing(id: string) {
 </template>
 
 <style scoped>
+/* ── 旅行過濾 chip（0.1.38）：琥珀主題，跟「旅」標籤／旅行組同一族 ── */
+.tripfilter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  min-width: 0;
+}
+.tripfilter__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 6px 0 11px;
+  border-radius: 999px;
+  border: 1px solid var(--amber-line);
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 12.5px;
+  font-weight: 700;
+  min-width: 0;
+}
+.tripfilter__ic {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tripfilter__t {
+  flex: none;
+}
+.tripfilter__name {
+  min-width: 0;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tripfilter__x {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.tripfilter__x:hover {
+  background: var(--surface-3);
+}
+.tripfilter__x svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.tripfilter__hint {
+  min-width: 0;
+}
+
 .sum {
   position: relative;
   overflow: hidden;
