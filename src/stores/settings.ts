@@ -48,6 +48,8 @@ function normTrip(v: unknown): TravelTrip | null {
     ...(typeof o.endedAt === 'string' && o.endedAt ? { endedAt: o.endedAt } : {}),
     // 0.1.39：旅行顏色（舊資料沒有 → 省略；顯示層回退 DEFAULT_TRIP_COLOR）
     ...(isHexColor(o.color) ? { color: o.color.trim() } : {}),
+    // 0.1.41：隱藏的過去旅行（「過去的旅行」列表收起來，點底部才展開；預設不隱藏）
+    ...(o.hidden === true ? { hidden: true } : {}),
   }
 }
 
@@ -624,6 +626,23 @@ export const useSettingsStore = defineStore('settings', () => {
   const activeTrip = computed(() => state.value.activeTrip)
 
   /**
+   * 0.1.41：「查看旅行記錄」的**持久過濾模式**（使用者原話：「打開後，用戶無論如何
+   * 切換頁面，再回到記錄的頁面時，也要是（只查看當前旅行的資料的模式），直到用戶
+   * 關閉這個模式或完成旅行」）。
+   * - 存的是**旅行 id**；null＝模式關閉（記錄頁回到一般區間查詢）。
+   * - ⚠ 刻意**不放进 state**（不持久化到 localStorage）：SPA 內切頁保持（Pinia store
+   *   不因路由切換銷毀），刷新／重開 App 就重置——檢視模式不該跨 session 殘留。
+   * - 清除時機：記錄頁 chip 的 ✕、TravelSheet 的關、`finishTrip()`（結束旅行自動關）。
+   * - 與 URL `?trip=`（0.1.38，一次性查看）並存：記錄頁 URL 優先、store 為後備。
+   */
+  const tripViewFilter = ref<string | null>(null)
+
+  /** 開／關「只看這趟旅行」模式（傳 null＝關） */
+  function setTripViewFilter(id: string | null) {
+    tripViewFilter.value = typeof id === 'string' && id ? id : null
+  }
+
+  /**
    * 開始旅行：把旅行本體存進當前錢包的設定。
    * 設了旅行貨幣時，同時把記帳幣別切過去，並把**原幣別**快照在 `prevCurrency`
    * （結束旅行時恢復用）——快照只發生在開始時，中途改旅行貨幣不會蓋掉它。
@@ -692,6 +711,9 @@ export const useSettingsStore = defineStore('settings', () => {
     if (t.prevCurrency) state.value.inputCurrency = t.prevCurrency
     state.value.tripHistory.push({ ...t, endedAt: new Date().toISOString() })
     state.value.activeTrip = null
+    // 0.1.41：「查看旅行記錄」的持久過濾隨結束旅行自動關閉（使用者：
+    // 「直到用戶關閉這個模式或完成旅行」）——不管從哪裡結束都會走到這裡
+    tripViewFilter.value = null
     return t
   }
 
@@ -717,7 +739,7 @@ export const useSettingsStore = defineStore('settings', () => {
    */
   function updateTripHistory(
     id: string,
-    patch: Partial<Pick<TravelTrip, 'name' | 'startDate' | 'endDate' | 'currency'>>,
+    patch: Partial<Pick<TravelTrip, 'name' | 'startDate' | 'endDate' | 'currency' | 'hidden'>>,
   ) {
     const t = state.value.tripHistory.find((x) => x.id === id)
     if (!t) return
@@ -725,6 +747,8 @@ export const useSettingsStore = defineStore('settings', () => {
     if (patch.startDate !== undefined) t.startDate = patch.startDate
     if (patch.endDate !== undefined) t.endDate = patch.endDate
     if (patch.currency !== undefined) t.currency = patch.currency
+    // 0.1.41：隱藏／取消隱藏（TripHistorySheet 詳情裡的按鈕）
+    if (patch.hidden !== undefined) t.hidden = patch.hidden === true
   }
 
   /**
@@ -803,6 +827,8 @@ export const useSettingsStore = defineStore('settings', () => {
     activeTrip,
     tripHistory: computed(() => state.value.tripHistory),
     tripById,
+    tripViewFilter,
+    setTripViewFilter,
     updateTripHistory,
     deleteTripHistory,
     startTrip,

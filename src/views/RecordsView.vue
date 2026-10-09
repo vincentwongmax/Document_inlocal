@@ -63,11 +63,20 @@ const tripFilter = computed(() => {
   const v = route.query.trip
   return typeof v === 'string' && v ? v : ''
 })
-const tripFilterName = computed(() => settings.tripById(tripFilter.value)?.name ?? '旅行')
 
-/** 解除旅行過濾：把 query 整個拿掉，回到一般的區間查詢 */
+/**
+ * 0.1.41：實際生效的旅行過濾＝URL（0.1.38，一次性跳轉）**優先**，
+ * 其次是「查看旅行記錄」的持久模式（settings.tripViewFilter——TravelSheet 開啟後
+ * 切頁也保持，直到關閉或結束旅行）。
+ * ⚠ 兩者都是 tripId 精確比對、都不看日期區間。
+ */
+const viewFilter = computed(() => tripFilter.value || settings.tripViewFilter || '')
+const tripFilterName = computed(() => settings.tripById(viewFilter.value)?.name ?? '旅行')
+
+/** 解除旅行過濾：把 query 拿掉＋關掉持久模式（一顆 ✕ 同時清兩種來源） */
 function clearTripFilter() {
   router.push({ path: '/records' })
+  settings.setTripViewFilter(null)
 }
 
 /** 這個範圍／排序要用哪個時間戳；整頁（含列表分組）都靠它，才不會互相打架 */
@@ -136,8 +145,8 @@ const rows = computed(() =>
   records.records
     .filter((r) => {
       // 旅行過濾（0.1.38）：tripId 精確比對、日期區間不參與（見 tripFilter 的註解）
-      if (tripFilter.value) {
-        if (r.tripId !== tripFilter.value) return false
+      if (viewFilter.value) {
+        if (r.tripId !== viewFilter.value) return false
       } else {
         const k = dayKey(timeOf(r))
         if (k < range.value.start || k > range.value.end) return false
@@ -157,7 +166,7 @@ const rows = computed(() =>
 /** 有在搜尋時，空列表的文案要帶出關鍵字，否則看不出是「找不到」還是「這個範圍本來就沒有」 */
 const emptyText = computed(() => {
   if (kw.value) return `找不到符合「${q.value.trim()}」的記錄`
-  if (tripFilter.value) return '這趟旅行沒有記錄'
+  if (viewFilter.value) return '這趟旅行沒有記錄'
   return recent.value ? '這段時間沒有新增的記錄' : '這個範圍沒有記錄'
 })
 
@@ -272,7 +281,7 @@ function visibleCat(row: CatGroup): TxRecord[] {
 }
 
 // 換範圍／篩選／關鍵字／時間基準／旅行過濾時把展開狀態清掉，免得殘留不相關的分類
-watch([range, typeFilter, kw, recent, tripFilter], () => {
+watch([range, typeFilter, kw, recent, viewFilter], () => {
   byCatOpen.value.clear()
 })
 
@@ -381,7 +390,7 @@ function removeEditing(id: string) {
       從「過去的旅行」詳情頁跳過來時，下面這顆 chip 說明「現在顯示的是這趟的
       全部記錄（不限日期）」，按 ✕ 解除、回到一般的區間查詢。
     -->
-    <div v-if="tripFilter" class="tripfilter">
+    <div v-if="viewFilter" class="tripfilter">
       <span class="tripfilter__chip">
         <svg class="tripfilter__ic" viewBox="0 0 24 24" aria-hidden="true">
           <rect x="3.4" y="7.4" width="17.2" height="12.2" rx="2.6" />

@@ -26,7 +26,7 @@ import {
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { fromLocalInput, nowLocalInput } from '@/lib/date'
 import type { ImageRef, QuickPreset, TxType } from '@/types'
-import { readJSON, writeJSON } from '@/lib/storage'
+import { writeJSON } from '@/lib/storage'
 
 const records = useRecordsStore()
 const settings = useSettingsStore()
@@ -46,8 +46,11 @@ const type = ref<TxType>('expense')
 const note = ref('')
 const occurredAt = ref(nowLocalInput())
 
-const saved = readJSON<{ type: TxType; categoryId: string }>('mop-ledger.draft.v1')
-const categoryId = ref<string>(saved?.categoryId ?? '')
+// 0.1.41：分類**永不預選**（使用者原話：「分類的按鈕永遠不要預選（用戶設定預設的
+// 分類除外），只要用戶切換其他頁面再回來，就一定要清空用戶之前已選的分類，這樣
+// 用戶在記錄時就不會出錯」）——初始一律空字串，只有「設定的預設分類」能自動帶入
+// （見 pickInitialCategory）。⚠ 不再讀 draft 裡的上次分類（那是「預選」的來源）。
+const categoryId = ref<string>('')
 const curCode = ref<string>(settings.inputCurrency)
 
 const amount = computed(() => Number(calcValue(calc.value).toFixed(2)))
@@ -118,10 +121,10 @@ function applyPreset(p: QuickPreset) {
 }
 
 /**
- * 分類預設的優先順序：
+ * 分類預設的優先順序（0.1.41 改）：
  *   1. **設定的「預設分類」**（使用者在分類管理裡按了「設為預設」）—— 類型要對得上
- *   2. 上次用過的那一個（存在 draft 裡）
- *   3. 該類型的第一個
+ *   2. 沒有就**空著**（使用者自己選）——原本的「上次用過的」「該類型第一個」兩級
+ *      都拿掉：那是「預選」的來源，使用者明確要求不要（記錄時不會帶錯分類）。
  *
  * ⚠ 「預設分類」是 0.1.22 的新功能，跟主頁的**常用分類按鈕**完全無關：
  *   常用分類決定主頁顯示哪幾顆，這裡決定的是「預先選中誰」。
@@ -131,8 +134,7 @@ function pickInitialCategory() {
   const def = settings.defaultCategory
   // 預設分類的收支類型要跟目前的分頁一致，否則會選到一個這頁看不到的分類
   if (def && def.type === type.value && list.some((c) => c.id === def.id)) return def.id
-  if (list.some((c) => c.id === categoryId.value)) return categoryId.value
-  return list[0]?.id ?? ''
+  return ''
 }
 
 /** 每次記錄完成後，記帳頁要回到哪一個分類（有設預設就一律回到它） */
@@ -142,7 +144,9 @@ function resetCategory() {
     categoryId.value = def.id
     return
   }
-  // 沒設預設：維持舊行為（保留剛剛用的那一個，方便連續記帳）
+  // 0.1.41：沒設預設＝清空（原本保留剛剛用的那一個）——連續記帳時下一筆
+  // 常常是別的分類，留著上一次的選擇反而容易記錯（使用者的原話精神）
+  categoryId.value = ''
 }
 
 watch(
