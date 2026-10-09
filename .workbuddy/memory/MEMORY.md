@@ -38,14 +38,14 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - 0.1.38：TripHistorySheet 列表↔詳情＋「N 筆」`?trip=` 精確過濾＋`is-stacked` 黏性標籤
 - 0.1.39：旅行**顏色**（每趟各自色板；`--trip-c` 三變數）；0.1.40：設定頁區塊 icon/標籤跟旅行色（切換鈕排除）
 - 0.1.41：**tripViewFilter**＝持久「查看旅行記錄」（**module-level ref 不進 state**→切頁保持、刷新重置；URL `?trip=` 優先、✕ 清兩源、finishTrip 自動清）｜自訂色＝彩虹票包 input color（⚠ customColor 宣告在 syncFromTrip **前**防 TDZ）｜`TravelTrip.hidden` 隱藏旅行（收合列「已隱藏 N 趟」）｜分類**不預選**（不讀 draft，唯「記帳預設」）｜日期驗證＝回程不早於出發（原話矛盾拍板）；回退要 bump `:key` 重掛 DateField（同 tick prop 無變化 watch 不觸發）
-- 0.1.42：明細旅行下拉**不顯示 hidden 旅行**（`tripOptions` history 迴圈 skip，`h.id !== tripId.value`）；**例外＝記錄已歸屬那趟仍顯示**（否則歸屬憑空消失）；過濾光且無歸屬→整列隱藏（v117 守門員 14 項）
+- 0.1.42：明細旅行下拉**不顯示 hidden 旅行**（`tripOptions` 迴圈 skip）；**例外＝記錄已歸屬那趟仍顯示**；過濾光且無歸屬→整列隱藏
 
 ## 全站約定（細節在 CONVENTIONS.md，勿回退）
 1~5. body `min-height:100%`｜日期一律 DateField/DateTimeField（禁 type=date）｜彈層開著背景不能滑｜可編輯元素 16px（不含 select）｜點/雙擊空白不能動（**按鈕連點合法勿擋**）
 6~10. 子頁面＝底部彈層（幾何只在 style.css `.bsheet*`；onClose 必 emit('close')）｜一列記錄＝一個點擊目標｜連點防護別拆｜彈層避 home indicator（三連類別刻意）｜`<Transition>` wrapper 自補 flex+gap
 11. 金額顯示用即時換算（**勿用 record.baseAmount**）；只換顯示不改資料
 12. 快速金額只帶入不送出；13. 「檢視」列只在記錄頁，「依新增時間」＝最右黃框（**不是「最近」**）；14. 統計組標題金額用完整清單加總
-15. 測試殺手：deleteDatabase 只能在 reload 後；isRealErr()+ENV_NOISE 照抄；等狀態不等時間；防空集合假通過；hasTouch:true；npm install 拔 @esbuild/win32-x64 要裝回
+15. 測試殺手：deleteDatabase 只能在 reload 後；isRealErr()+ENV_NOISE 照抄；等狀態不等時間；防空集合假通過；npm install 拔 @esbuild 要裝回
 
 ## 視覺
 米白紙感；收入墨綠 #2c6e5b、支出 #bf563c；琥珀 #d9a326＝旅行主題
