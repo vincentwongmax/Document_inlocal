@@ -191,6 +191,12 @@ export interface TravelTrip {
   createdAt?: string
   /** 結束旅行的時間 ISO（0.1.36；只在 tripHistory 裡的旅行才有） */
   endedAt?: string
+  /**
+   * 旅行顏色（0.1.39）：#rrggbb。記錄列的「旅」標籤、旅行頁面的強調色都跟著它。
+   * ⚠ 每趟旅行**各自**存一個——之後新旅行選別的顏色，不會影響到以前旅行的標籤
+   * （舊資料沒有這個欄位 → 顯示層一律回退琥珀 `DEFAULT_TRIP_COLOR`）。
+   */
+  color?: string
 }
 
 export interface Settings {

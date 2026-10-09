@@ -6,6 +6,7 @@ import { defaultSettings } from '@/lib/defaults'
 import { fetchRates, defaultRates } from '@/lib/currency'
 import { iconForCategory } from '@/lib/icons'
 import { uid } from '@/lib/id'
+import { isHexColor } from '@/lib/color'
 import {
   cleanWalletName,
   defaultWallet,
@@ -45,6 +46,8 @@ function normTrip(v: unknown): TravelTrip | null {
     // 0.1.36：建立／結束時間（舊資料沒有，留空＝不知道）
     ...(typeof o.createdAt === 'string' && o.createdAt ? { createdAt: o.createdAt } : {}),
     ...(typeof o.endedAt === 'string' && o.endedAt ? { endedAt: o.endedAt } : {}),
+    // 0.1.39：旅行顏色（舊資料沒有 → 省略；顯示層回退 DEFAULT_TRIP_COLOR）
+    ...(isHexColor(o.color) ? { color: o.color.trim() } : {}),
   }
 }
 
@@ -632,6 +635,8 @@ export const useSettingsStore = defineStore('settings', () => {
     currency: string
     mode1: boolean
     mode2: boolean
+    /** 旅行顏色（0.1.39）；空字串／怪值＝不存（顯示回退琥珀） */
+    color?: string
   }): TravelTrip {
     const currency = input.currency || ''
     const trip: TravelTrip = {
@@ -645,6 +650,8 @@ export const useSettingsStore = defineStore('settings', () => {
       mode2: input.mode2 === true,
       // 0.1.36：記下建立時間（「過去的旅行」列表要用）
       createdAt: new Date().toISOString(),
+      // 0.1.39：旅行顏色（TravelSheet 的色板一定會帶一個；這裡只做最後防線）
+      ...(isHexColor(input.color) ? { color: input.color.trim() } : {}),
     }
     state.value.activeTrip = trip
     if (currency) state.value.inputCurrency = currency
@@ -668,6 +675,8 @@ export const useSettingsStore = defineStore('settings', () => {
       t.currency = patch.currency
       state.value.inputCurrency = t.currency || t.prevCurrency || state.value.inputCurrency
     }
+    // 0.1.39：旅行顏色（旅行中在 TravelSheet 點色板＝即時生效）
+    if (patch.color !== undefined) t.color = isHexColor(patch.color) ? patch.color.trim() : undefined
   }
 
   /**

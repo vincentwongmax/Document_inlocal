@@ -6,7 +6,7 @@ import { fmtMoney } from '@/lib/currency'
 import { displayExpr } from '@/lib/calc'
 import { formatFull, relativeTime } from '@/lib/date'
 import { iconForCategory } from '@/lib/icons'
-import { withAlpha } from '@/lib/color'
+import { withAlpha, DEFAULT_TRIP_COLOR } from '@/lib/color'
 import CategoryIcon from './CategoryIcon.vue'
 import HighlightText from './HighlightText.vue'
 
@@ -78,6 +78,19 @@ const shownRate = computed(() => {
 const displayRate = computed(() => Number(shownRate.value.toFixed(2)))
 /** 舊資料可能沒有 images 欄位 */
 const imgCount = computed(() => props.record.images?.length ?? 0)
+
+/**
+ * 0.1.39：旅行標籤「旅」的顏色＝**這筆記錄所屬那趟旅行**的 color。
+ * - 每趟旅行各自存一個顏色 → 之後的旅行選了別的顏色，**不會**改到以前旅行的標籤
+ *   （使用者：「用戶每次旅行的顏色都是不一樣的」）。
+ * - 顏色來源走 `settings.tripById()`（先進行中、再歷史）——跟組名同一個查法。
+ * - 舊資料／沒設顏色 → 回 `DEFAULT_TRIP_COLOR`（琥珀）＝升級前後畫面一致。
+ */
+const tripTagStyle = computed(() => {
+  if (!props.record.tripId) return undefined
+  const c = settings.tripById(props.record.tripId)?.color ?? DEFAULT_TRIP_COLOR
+  return { color: c, borderColor: withAlpha(c, 0.35), background: withAlpha(c, 0.12) }
+})
 
 /* ── 0.1.38：標籤過多、分類文字被擠壓時 → 所有標籤移到分類上方一行 ──
  *
@@ -151,11 +164,22 @@ watch(
     <button class="row__main" type="button" @click="emit('edit', record.id)">
       <!-- is-stacked（0.1.38）：空間不夠時標籤整排挪到分類上方（見 script 的 recheck） -->
       <span ref="topEl" class="row__top" :class="{ 'is-stacked': stacked }">
-        <!-- 旅行標籤（0.1.37）：這筆歸在某個旅行名下（進行中或已結束都算；琥珀主題） -->
-        <span v-if="record.tripId" class="ttrip" title="旅行記錄">旅</span>
         <span class="row__cat">
           <HighlightText :text="catName" :query="highlight" />
         </span>
+        <!--
+          旅行標籤「旅」（0.1.37 加；0.1.39 兩改）：
+          ① 位置：從分類**左邊**搬到**右邊**（使用者：「更改放到分類文字的右手邊」）。
+             is-stacked 模式不受影響——.row__cat 是 order:10，照樣獨佔下一行。
+          ② 顏色：跟這筆所屬**那趟旅行**的 color（0.1.39）；沒設（舊資料）＝琥珀回退。
+             inline style 只在查得到顏色時掛，蓋過 .ttrip 的琥珀預設。
+        -->
+        <span
+          v-if="record.tripId"
+          class="ttrip"
+          title="旅行記錄"
+          :style="tripTagStyle"
+        >旅</span>
         <span
           v-if="showTime"
           class="ttag"
@@ -379,7 +403,8 @@ watch(
 }
 /*
  * 0.1.37：旅行標籤「旅」——這筆記錄歸在某個旅行名下（記錄頁＋統計頁的區間記錄都會出現，
- * 同一個元件）。琥珀主題（跟旅行組／統計旅行節點同一族）；單字放得下，PWA 窄屏也不擠。
+ * 同一個元件）。0.1.39 起顏色跟**那趟旅行**的 color（inline style 蓋過來）；
+ * 這裡的琥珀＝回退預設（舊資料沒有 color 欄位時，畫面跟升級前完全一樣）。
  */
 .ttrip {
   flex: none;

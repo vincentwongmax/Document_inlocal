@@ -8,6 +8,7 @@ import { useScrollLock } from '@/composables/useScrollLock'
 import { usePullToClose } from '@/composables/usePullToClose'
 import DateField from './DateField.vue'
 import CategoryIcon from './CategoryIcon.vue'
+import { TRIP_COLORS, DEFAULT_TRIP_COLOR, isHexColor, withAlpha } from '@/lib/color'
 
 /**
  * 「旅行模式」的子頁面（0.1.35）。
@@ -26,6 +27,8 @@ import CategoryIcon from './CategoryIcon.vue'
  * - 模式一（記錄歸入旅行）與模式二（備注補後綴）兩個**獨立開關**，可同時開
  * - 「結束旅行」先彈確認（附筆數＋總支出）；0.1.36 起結束**不解除標記**——
  *   記錄的旅行標籤保留、旅行本體移進 tripHistory（下面的「過去的旅行」列表）
+ * - 0.1.39：旅行**顏色色板**——記錄的「旅」標籤與本頁強調色跟著它；
+ *   顏色存在旅行本體上（每趟各自一個，互不影響），結束後頁面自然回到琥珀
  */
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -56,6 +59,8 @@ const draft = ref({
   currency: '',
   mode1: true,
   mode2: false,
+  /** 0.1.39：旅行顏色（色板必選一個，預設琥珀） */
+  color: DEFAULT_TRIP_COLOR as string,
 })
 
 const trip = computed(() => settings.activeTrip)
@@ -70,9 +75,18 @@ function syncFromTrip() {
       currency: t.currency,
       mode1: t.mode1,
       mode2: t.mode2,
+      color: isHexColor(t.color) ? t.color : DEFAULT_TRIP_COLOR,
     }
   } else {
-    draft.value = { name: '', startDate: '', endDate: '', currency: '', mode1: true, mode2: false }
+    draft.value = {
+      name: '',
+      startDate: '',
+      endDate: '',
+      currency: '',
+      mode1: true,
+      mode2: false,
+      color: DEFAULT_TRIP_COLOR,
+    }
   }
 }
 
@@ -100,6 +114,29 @@ const summary = computed(() =>
 
 const title = computed(() => (settings.activeTrip ? '旅行模式 · 進行中' : '旅行模式'))
 
+/* ── 0.1.39：旅行顏色 ─────────────────────────────────── */
+/**
+ * 這個子頁面的強調色（狀態卡／模式開關的琥珀全部跟著換）。
+ * - 進行中＝那趟旅行的 color；還沒開始＝色板目前選的（預覽）。
+ * - 「結束時恢復」：顏色存在旅行本體上，activeTrip 清掉後這裡自然回到
+ *   色板預設（琥珀），不需要任何還原程式碼。
+ */
+const accentStyle = computed(() => {
+  const c = (trip.value && isHexColor(trip.value.color) ? trip.value.color : '') ||
+    (isHexColor(draft.value.color) ? draft.value.color : DEFAULT_TRIP_COLOR)
+  return {
+    '--trip-c': c,
+    '--trip-c-soft': withAlpha(c, 0.12),
+    '--trip-c-line': withAlpha(c, 0.35),
+  }
+})
+
+/** 點色板：還沒開始＝改草稿（開始時一起存）；進行中＝即時寫回 store */
+function pickColor(c: string) {
+  draft.value.color = c
+  if (settings.activeTrip) settings.updateActiveTrip({ color: c })
+}
+
 /* ── 開始／修改／結束 ─────────────────────────────────── */
 function startTrip() {
   const t = settings.startTrip({
@@ -109,6 +146,7 @@ function startTrip() {
     currency: draft.value.currency,
     mode1: draft.value.mode1,
     mode2: draft.value.mode2,
+    color: draft.value.color,
   })
   syncFromTrip()
   notify(`已開始旅行「${t.name}」`, 'ok')
@@ -170,7 +208,7 @@ async function askEnd() {
         ref="sheetEl"
         class="card bsheet"
         :class="{ 'is-dragging': pulling }"
-        :style="pullStyle"
+        :style="[pullStyle, accentStyle]"
         role="dialog"
         aria-modal="true"
         :aria-label="title"
@@ -254,6 +292,28 @@ async function askEnd() {
             </select>
             <span v-if="rateLine" class="tiny muted rateline num">{{ rateLine }}</span>
           </label>
+
+          <!-- 旅行顏色（0.1.39）：記錄的「旅」標籤與這個頁面的強調色都跟著它 -->
+          <div class="lb">
+            <span>
+              旅行顏色
+              <em class="lb__hint">記錄的「旅」標籤會用這個顏色；每一趟各自獨立</em>
+            </span>
+            <div class="swatches" role="radiogroup" aria-label="旅行顏色">
+              <button
+                v-for="c in TRIP_COLORS"
+                :key="c"
+                type="button"
+                class="swatch"
+                :class="{ 'is-on': draft.color === c }"
+                :style="{ background: c }"
+                :title="c"
+                :aria-pressed="draft.color === c"
+                :aria-label="'旅行顏色 ' + c"
+                @click="pickColor(c)"
+              ></button>
+            </div>
+          </div>
 
           <!-- 模式一／模式二：兩個獨立開關（可同時開） -->
           <div class="modes">
@@ -364,15 +424,17 @@ async function askEnd() {
   margin: 0;
 }
 
-/* 進行中狀態卡：行李箱 ＋ 名稱 ＋ 即時小計 ＋「旅行中」標籤（琥珀＝旅行主題色） */
+/* 進行中狀態卡：行李箱 ＋ 名稱 ＋ 即時小計 ＋「旅行中」標籤
+   0.1.39：琥珀全部換成 --trip-c 系變數（根元素 inline 掛，跟著旅行顏色走；
+   沒有旅行／舊資料時 fallback 回原本的琥珀，畫面不變） */
 .status {
   display: flex;
   align-items: center;
   gap: 11px;
   padding: 11px 12px;
   border-radius: var(--r-md);
-  background: var(--amber-soft);
-  border: 1px solid var(--amber-line);
+  background: var(--trip-c-soft, var(--amber-soft));
+  border: 1px solid var(--trip-c-line, var(--amber-line));
 }
 .status__ic {
   flex: none;
@@ -382,8 +444,8 @@ async function askEnd() {
   height: 34px;
   border-radius: 10px;
   background: var(--surface);
-  color: var(--amber);
-  border: 1px solid var(--amber-line);
+  color: var(--trip-c, var(--amber));
+  border: 1px solid var(--trip-c-line, var(--amber-line));
 }
 .status__txt {
   display: flex;
@@ -413,10 +475,32 @@ async function askEnd() {
   padding: 0 10px;
   border-radius: 999px;
   background: var(--surface);
-  border: 1px solid var(--amber);
-  color: var(--amber);
+  border: 1px solid var(--trip-c, var(--amber));
+  color: var(--trip-c, var(--amber));
   font-size: 11.5px;
   font-weight: 700;
+}
+
+/* 旅行顏色色板（0.1.39）：圓形色票一排、選中的加一圈外框 */
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  padding: 3px 0 1px;
+}
+.swatch {
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  border-radius: 999px;
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
+  transition: box-shadow 0.12s, transform 0.12s;
+}
+.swatch.is-on {
+  /* 選中：用自己那個色畫一圈外框（box-shadow 不佔版位，320px 也放得下 8 顆） */
+  box-shadow: 0 0 0 2px var(--trip-c, var(--amber));
+  transform: scale(1.08);
 }
 
 /* 欄位 */
@@ -471,8 +555,8 @@ async function askEnd() {
     border-color 0.12s;
 }
 .mode.is-on {
-  border-color: var(--amber);
-  background: var(--amber-soft);
+  border-color: var(--trip-c, var(--amber));
+  background: var(--trip-c-soft, var(--amber-soft));
 }
 .mode__txt {
   display: flex;
@@ -509,9 +593,9 @@ async function askEnd() {
   font-weight: 700;
 }
 .mode.is-on .mode__sw {
-  border-color: var(--amber);
+  border-color: var(--trip-c, var(--amber));
   background: var(--surface);
-  color: var(--amber);
+  color: var(--trip-c, var(--amber));
 }
 
 /* 過去的旅行（0.1.37 起）搬到 TripHistorySheet 子頁面，這裡不再有清單 */
