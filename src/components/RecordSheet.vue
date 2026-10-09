@@ -293,6 +293,10 @@ const tripOptions = computed(() => {
   }
   for (const h of [...settings.tripHistory].reverse()) {
     if (seen.has(h.id)) continue
+    // 0.1.42：已隱藏的旅行不出現在下拉清單（使用者原話：「如果該旅行已被隱藏，
+    // 就不要在旅行中的下拉清單顯示（本身屬於這個記錄旅行的除外）」）——
+    // 但這筆記錄**已經歸屬**的那趟要保留，否則使用者看不到也改不回現有歸屬。
+    if (h.hidden === true && h.id !== tripId.value) continue
     seen.add(h.id)
     out.push({ id: h.id, label: h.name, mode2: h.mode2 })
   }
