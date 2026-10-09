@@ -606,7 +606,9 @@ watch(
   background: var(--expense-soft);
 }
 
-/* 編輯態（展開在詳情裡；欄位跟 0.1.37 同一套） */
+/* 編輯態（展開在詳情裡；欄位跟 0.1.37 同一套）
+   0.1.40：底色由琥珀軟底改成白色（使用者原話：「詳細模式按鈕中的修改頁面，
+   的區塊的底色改成白色」）；琥珀描邊保留（跟旅行主題同一族，只動底色） */
 .edit {
   display: flex;
   flex-direction: column;
@@ -614,7 +616,7 @@ watch(
   padding: 12px;
   border-radius: var(--r-md);
   border: 1px solid var(--amber-line);
-  background: var(--amber-soft);
+  background: var(--surface);
 }
 .lb {
   display: flex;

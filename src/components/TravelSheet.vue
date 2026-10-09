@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, toRef, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
 import { confirmDialog, notify } from '@/lib/alerts'
@@ -35,6 +36,7 @@ const emit = defineEmits<{ close: [] }>()
 
 const settings = useSettingsStore()
 const records = useRecordsStore()
+const router = useRouter()
 
 /* ── 背景鎖 + 下拉關閉（跟其他子頁面同一套）────────────── */
 const sheetEl = ref<HTMLElement | null>(null)
@@ -113,6 +115,22 @@ const summary = computed(() =>
 )
 
 const title = computed(() => (settings.activeTrip ? '旅行模式 · 進行中' : '旅行模式'))
+
+/**
+ * 0.1.40：查看旅行記錄（使用者原話：「增加功能，就像，查看記錄時只查看旅行的資料
+ * （就像點擊旅行期間記錄時一樣）（用戶可在旅行中隨時打開和關閉這個功能，而不影響任何的狀態）」）。
+ * - 行為**完全同源**於 TripHistorySheet 詳情裡「旅行期間記錄 N 筆」那一列：
+ *   關掉本頁 → 跳 `/records?trip=<id>`（tripId 精確過濾、不限日期）。
+ * - 「隨時打開」＝旅行中每次打開本頁都有這顆按鈕；「關閉」＝記錄頁過濾 chip 的 ✕
+ *   （`clearTripFilter`，0.1.38 就有），或直接跳去別頁。
+ * - 「不影響任何的狀態」＝過濾只是 URL query 的檢視狀態，不動記錄、設定、旅行本體。
+ */
+function viewRecords() {
+  const t = settings.activeTrip
+  if (!t || !records.tripSummary(t.id).count) return
+  emit('close')
+  router.push({ path: '/records', query: { trip: t.id } })
+}
 
 /* ── 0.1.39：旅行顏色 ─────────────────────────────────── */
 /**
@@ -250,6 +268,25 @@ async function askEnd() {
             </span>
             <span class="status__tag">旅行中</span>
           </div>
+
+          <!-- 0.1.40：查看旅行記錄——只看這趟的資料（同「旅行期間記錄 N 筆」的跳轉過濾） -->
+          <button
+            v-if="trip"
+            class="viewrec"
+            type="button"
+            :disabled="!summary || summary.count === 0"
+            :title="summary && summary.count ? `查看這趟的 ${summary.count} 筆記錄` : '這趟還沒有記錄'"
+            @click="viewRecords"
+          >
+            <span class="viewrec__ic" aria-hidden="true">
+              <CategoryIcon name="book" :size="16" :stroke="1.9" />
+            </span>
+            <span class="viewrec__txt">
+              <b>查看旅行記錄</b>
+              <em>記錄頁只顯示這趟的 {{ summary ? summary.count : 0 }} 筆記錄（不限日期）</em>
+            </span>
+            <span class="viewrec__chev" aria-hidden="true">›</span>
+          </button>
           <p v-else class="tiny muted hint">
             設定這趟旅行的名稱、貨幣與模式，按「開始旅行」後生效。期間的記錄會照你選的模式歸進這個旅行。
           </p>
@@ -479,6 +516,64 @@ async function askEnd() {
   color: var(--trip-c, var(--amber));
   font-size: 11.5px;
   font-weight: 700;
+}
+
+/* 0.1.40：查看旅行記錄——整列可按，白底＋旅行色描邊與字色（強調色跟著 --trip-c） */
+.viewrec {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--trip-c-line, var(--amber-line));
+  background: var(--surface);
+  text-align: left;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+.viewrec:active {
+  background: var(--trip-c-soft, var(--amber-soft));
+}
+.viewrec:disabled {
+  opacity: 0.55;
+}
+.viewrec__ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--trip-c-soft, var(--amber-soft));
+  border: 1px solid var(--trip-c-line, var(--amber-line));
+  color: var(--trip-c, var(--amber));
+}
+.viewrec__txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.viewrec__txt b {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--trip-c, var(--amber));
+}
+.viewrec__txt em {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.viewrec__chev {
+  flex: none;
+  color: var(--trip-c, var(--amber));
+  font-weight: 650;
+  font-size: 15px;
 }
 
 /* 旅行顏色色板（0.1.39）：圓形色票一排、選中的加一圈外框 */
