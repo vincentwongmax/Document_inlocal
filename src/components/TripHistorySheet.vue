@@ -5,6 +5,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
 import { confirmDialog, notify } from '@/lib/alerts'
 import { CURRENCIES, fmtMoney } from '@/lib/currency'
+import { withAlpha } from '@/lib/color'
 import { formatFull } from '@/lib/date'
 import { useScrollLock } from '@/composables/useScrollLock'
 import { usePullToClose } from '@/composables/usePullToClose'
@@ -80,7 +81,32 @@ function toggleHidden(t: TravelTrip) {
   //   update 同步把 t.hidden 翻轉，之後才讀 t.hidden 會拿到新值、訊息說反（0.1.41 的教訓）
   const wasHidden = t.hidden === true
   settings.updateTripHistory(t.id, { hidden: !wasHidden })
-  notify(wasHidden ? `已取消隱藏「${t.name}」` : `已隱藏「${t.name}」，可在清單底部展開`, 'ok')
+  notify(wasHidden ? `已取消隱藏「${t.name}」` : `已隱藏「${t.name}」，可在詳細頁取消隱藏`, 'ok')
+}
+
+/**
+ * 0.1.43（使用者原話：「圖標ICON 的顏色也要和旅行時設定一樣，隱藏的旅行的顯示
+ * 就一律用淺灰色，取消隱藏後就恢復顏色。例: 旅行設定紫，過去的旅行中的記錄也要紫，
+ * 隱藏就全灰，恢復就回到紫」）：
+ * - 列表 icon 的底色／描邊／圖案色跟著該趟旅行的 color（跟 TravelSheet／設定頁
+ *   同一套 12% 軟底＋35% 描邊）；舊資料沒有 color → fallback 琥珀（全站旅行主題色）。
+ * - 已隱藏 → 一律淺灰（surface-3／line-strong／text-3），取消隱藏後自動恢復。
+ */
+const TRIP_FALLBACK = '#d9a326'
+function icStyle(h: TravelTrip) {
+  if (h.hidden === true) {
+    return {
+      background: 'var(--surface-3)',
+      borderColor: 'var(--line-strong)',
+      color: 'var(--text-3)',
+    }
+  }
+  const c = h.color || TRIP_FALLBACK
+  return {
+    background: withAlpha(c, 0.12),
+    borderColor: withAlpha(c, 0.35),
+    color: c,
+  }
 }
 
 /** 每一列的時間說明：建立日 ～ 結束日（缺的就留問號） */
@@ -251,7 +277,7 @@ watch(
             <div class="hist">
               <div v-for="h in visibleHistory" :key="h.id" class="hist__item">
                 <div class="hist__row">
-                  <span class="hist__ic" aria-hidden="true">
+                  <span class="hist__ic" aria-hidden="true" :style="icStyle(h)">
                     <CategoryIcon name="luggage" :size="15" :stroke="1.9" />
                   </span>
                   <span class="hist__txt">
@@ -280,7 +306,7 @@ watch(
             <div v-if="hiddenList.length && showHidden" class="hist">
               <div v-for="h in hiddenList" :key="h.id" class="hist__item hist__item--hidden">
                 <div class="hist__row">
-                  <span class="hist__ic" aria-hidden="true">
+                  <span class="hist__ic" aria-hidden="true" :style="icStyle(h)">
                     <CategoryIcon name="luggage" :size="15" :stroke="1.9" />
                   </span>
                   <span class="hist__txt">
@@ -288,7 +314,9 @@ watch(
                     <em>{{ histRange(h) }} · {{ h.count }} 筆</em>
                   </span>
                   <span class="hist__ops">
-                    <button class="op" type="button" title="取消隱藏" @click="toggleHidden(h)">取消隱藏</button>
+                    <!-- 0.1.43：移除「取消隱藏」（使用者原話：「隱藏的旅行，移除取消隱藏的
+                         按鈕（用戶需要在詳細頁面中查看）」）——取消隱藏只在詳情底的
+                         「取消隱藏這個旅行」按鈕 -->
                     <button class="op op--detail" type="button" title="查看詳細" @click="openDetail(h)">詳細</button>
                   </span>
                 </div>
@@ -355,6 +383,14 @@ watch(
                   <span class="tiny muted">旅行貨幣</span>
                   <span class="tiny num meta__val">{{ detail.currency || '無設定' }}<em class="meta__chev">›</em></span>
                 </button>
+                <!-- 0.1.43：顯示這趟選的顏色（唯讀；舊資料沒 color → 顯示預設琥珀） -->
+                <div class="meta__row">
+                  <span class="tiny muted">旅行顏色</span>
+                  <span class="tiny meta__val">
+                    <i class="cdot" :style="{ background: detail.color || '#d9a326' }" aria-hidden="true"></i>
+                    {{ detail.color || '預設（琥珀）' }}
+                  </span>
+                </div>
                 <!-- ↓ 以下是歷史事實／統計，唯讀 -->
                 <div class="meta__row">
                   <span class="tiny muted">建立旅行</span>
@@ -681,6 +717,15 @@ watch(
 }
 .meta__val--amber {
   color: var(--amber);
+}
+/* 0.1.43：詳情「旅行顏色」列的小色票 */
+.cdot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  flex: none;
 }
 .meta__amt {
   font-weight: 650;
