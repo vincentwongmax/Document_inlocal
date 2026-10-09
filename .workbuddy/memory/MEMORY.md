@@ -39,7 +39,7 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - 0.1.39：旅行**顏色**（每趟各自色板；`--trip-c` 三變數）；0.1.40：設定頁區塊 icon/標籤跟旅行色（切換鈕排除）
 - 0.1.41：**tripViewFilter**＝持久「查看旅行記錄」（**module-level ref 不進 state**→切頁保持、刷新重置；URL `?trip=` 優先、✕ 清兩源、finishTrip 自動清）｜自訂色＝彩虹票包 input color（⚠ customColor 宣告在 syncFromTrip **前**防 TDZ）｜`TravelTrip.hidden` 隱藏旅行（收合列「已隱藏 N 趟」）｜分類**不預選**（不讀 draft，唯「記帳預設」）｜日期驗證＝回程不早於出發（原話矛盾拍板）；回退要 bump `:key` 重掛 DateField（同 tick prop 無變化 watch 不觸發）
 - 0.1.42：明細旅行下拉**不顯示 hidden 旅行**（`tripOptions` 迴圈 skip）；**例外＝記錄已歸屬那趟仍顯示**；過濾光且無歸屬→整列隱藏
-- 0.1.43：過去的旅行 icon 綁旅行色（`icStyle`＝withAlpha 12%/35%＋本體；hidden 全灰 surface-3 系；舊資料 fallback #d9a326）｜展開隱藏列**只剩「詳細」**（取消隱藏唯一路徑＝詳情底按鈕）｜詳情唯讀「旅行顏色」欄（色票＋hex）
+- 0.1.43：過去的旅行 icon 綁旅行色（withAlpha 12%/35%；hidden 全灰；舊資料 fallback #d9a326；inline style 蓋 scoped）｜展開隱藏列**只剩「詳細」**（取消唯一路徑＝詳情底按鈕）｜詳情唯讀「旅行顏色」欄（色票＋hex）
 
 ## 全站約定（細節在 CONVENTIONS.md，勿回退）
 1~5. body `min-height:100%`｜日期一律 DateField/DateTimeField（禁 type=date）｜彈層開著背景不能滑｜可編輯元素 16px（不含 select）｜點/雙擊空白不能動（**按鈕連點合法勿擋**）
