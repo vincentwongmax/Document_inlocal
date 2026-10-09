@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { TxRecord } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { fmtMoney } from '@/lib/currency'
@@ -78,15 +78,79 @@ const shownRate = computed(() => {
 const displayRate = computed(() => Number(shownRate.value.toFixed(2)))
 /** 舊資料可能沒有 images 欄位 */
 const imgCount = computed(() => props.record.images?.length ?? 0)
+
+/* ── 0.1.38：標籤過多、分類文字被擠壓時 → 所有標籤移到分類上方一行 ──
+ *
+ * 使用者原話：「如果出現不夠位置，例如標籤過多至分類的文字被壓縮，就把這行的
+ * 所有標籤放到上方的一行即平時的分類文字…的上方，注意是所有標籤」。
+ *
+ * 判定方式（量測，不是猜）：
+ * - `.row__cat` 加了 `white-space: nowrap`（見樣式）：分類名不再自行斷行成兩行，
+ *   空間不夠時 `.row__top` 一定會**橫向溢出**（scrollWidth > clientWidth）——
+ *   這是一個確定的訊號；以前沒有 nowrap，文字會在 span 內悄悄斷行，量不出來。
+ * - 「is-stacked」是**黏性的**：一旦堆疊，不再自動解開（標籤挪走之後量測當然會
+ *   通過，若自動解開會來回抖動）；只有容器寬度改變（轉屏／視窗縮放）或標籤內容
+ *   改變時才重置重測。
+ */
+const rowEl = ref<HTMLElement | null>(null)
+const topEl = ref<HTMLElement | null>(null)
+/** true ＝ 標籤一行在上、分類一行在下 */
+const stacked = ref(false)
+/** ResizeObserver 上次看到的寬度；寬度沒變就不重測（高度變化＝堆疊本身，忽略） */
+let lastW = -1
+let ro: ResizeObserver | null = null
+
+/** 重置 → 等下一次排版 → 量測；溢出才堆疊 */
+async function recheck() {
+  if (!topEl.value) return
+  stacked.value = false
+  await nextTick()
+  const el = topEl.value
+  if (!el) return
+  if (el.scrollWidth > el.clientWidth + 1) stacked.value = true
+}
+
+onMounted(() => {
+  void recheck()
+  if (typeof ResizeObserver !== 'undefined' && rowEl.value) {
+    ro = new ResizeObserver((entries) => {
+      for (const e of entries) {
+        const w = e.contentRect.width
+        if (Math.abs(w - lastW) > 0.5) {
+          lastW = w
+          void recheck()
+        }
+      }
+    })
+    ro.observe(rowEl.value)
+  }
+})
+onBeforeUnmount(() => {
+  ro?.disconnect()
+  ro = null
+})
+/** 影響「這一行有哪些標籤／標籤文字」的東西變了 → 重測 */
+watch(
+  () => [
+    props.record.tripId,
+    props.record.images?.length,
+    props.record.source,
+    props.showTime,
+    props.timeRecent,
+    props.highlight,
+  ],
+  () => void recheck(),
+)
 </script>
 
 <template>
-  <div class="row">
+  <div ref="rowEl" class="row">
     <span class="row__ic" :style="{ '--c': catColor, '--bg': withAlpha(catColor, 0.14) }">
       <CategoryIcon :name="catIcon" :size="17" :stroke="1.9" />
     </span>
     <button class="row__main" type="button" @click="emit('edit', record.id)">
-      <span class="row__top">
+      <!-- is-stacked（0.1.38）：空間不夠時標籤整排挪到分類上方（見 script 的 recheck） -->
+      <span ref="topEl" class="row__top" :class="{ 'is-stacked': stacked }">
         <!-- 旅行標籤（0.1.37）：這筆歸在某個旅行名下（進行中或已結束都算；琥珀主題） -->
         <span v-if="record.tripId" class="ttrip" title="旅行記錄">旅</span>
         <span class="row__cat">
@@ -201,6 +265,35 @@ const imgCount = computed(() => props.record.images?.length ?? 0)
   font-weight: 600;
   font-size: 15px;
   letter-spacing: 0.01em;
+  /**
+   * 0.1.38：分類名不自行斷行。
+   * 以前空間不夠時文字會在這個 span 內悄悄折成兩行（看起來就是「被壓縮」），
+   * 而且 .row__top 的 scrollWidth 不會溢出，程式量測不到。
+   * 改成 nowrap 之後：裝得下＝一行原樣；裝不下＝一定橫向溢出 →
+   * script 的 recheck() 量到 scrollWidth > clientWidth 就把標籤整排挪到上面。
+   * （堆疊後若分類名還是太長，由 is-stacked 的規則收成刪節號。）
+   */
+  white-space: nowrap;
+}
+/*
+ * 0.1.38：標籤過多、分類文字被擠壓時 → **所有標籤**移到分類上方一行
+ * （使用者原話見 script 註解；仍在記錄方框內，只是換行）。
+ * - flex-wrap: wrap 讓 .row__top 可以折行；
+ * - .row__cat 排到 order: 10（所有標籤都在它前面）＋ flex-basis: 100%
+ *   ＝它獨佔一整行 → 標籤自然排在上一行；
+ * - row-gap 收緊成 4px（水平間距維持 8px）。
+ * ⚠ is-stacked 是黏性的（不會自己解開），避免「挪走→量測通過→挪回」的抖動。
+ */
+.row__top.is-stacked {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.row__top.is-stacked .row__cat {
+  order: 10;
+  flex-basis: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .row__note {
   max-width: 100%;
