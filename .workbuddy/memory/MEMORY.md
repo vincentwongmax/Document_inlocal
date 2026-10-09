@@ -17,7 +17,7 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - puppeteer-core 在 `~/.workbuddy/binaries/node/workspace/`
 - RecordSheet＝`.mask > .sheet.card`；子頁面＝`.bsheet`；列點 `.row__main` 開明細（點 `.row` 不開；骨架 `.sheet` 非 `.bsheet`）
 - 守門員：v104 字級｜v105 雙擊｜v106 safe-area｜v107 換算｜v109 快速金額｜v110~v117 旅行系。⚠ `.smoke/` gitignored，回退手動改 ALL
-- ⚠ 斷言課：`.meta__row` 兩 span 相鄰**沒空格**→ 預期寫無空格版；mobile 模擬按下態驗 **CSSOM**
+- ⚠ 斷言課：`.meta__row` 兩 span 相鄰**沒空格**→ 預期寫無空格版；mobile 按下態驗 CSSOM
 
 ## Git/部署
 - Pages＝gh-pages（legacy build）；線上 `vincentwongmax.github.io/Document_inlocal/`
@@ -27,7 +27,7 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - 線上驗證：CDN 等 1~2 分；雜湊 trees API 撈；驗**內容特徵**
 
 ## 資料
-- wallets.v1＝{wallets, activeWalletId}；每錢包設定 `setting.<id>.v1`；記錄單鍵 `records.v1` 蓋 walletId；**預設錢包 id 固定 `w_default`**
+- wallets.v1＝{wallets, activeWalletId}；每錢包設定 `setting.<id>.v1`；記錄單鍵蓋 walletId；預設錢包 id 固定 `w_default`
 - store 對外 `records`＝computed(當前錢包)，內部 `all`＝全部；settings.state＝當前錢包
 - ⚠ 「初始化時改資料要自己寫回去」（watcher 前的遷移不會被看見）
 - 匯出 JSON=format2 可還原；Excel=.zip（自寫 zip.ts/xlsx.ts，動前讀 CONVENTIONS）
