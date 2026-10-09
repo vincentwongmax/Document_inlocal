@@ -9,11 +9,11 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 
 ## 開發/驗證
 - preview :4173（改完先 build）；dev :5173（兩埠 localStorage 分開）
-- 流程：vue-tsc → build → .smoke/vNN.mjs → 截圖 → CHANGELOG → memory → commit
+- 流程：vue-tsc → build → vNN 測試 → 截圖 → CHANGELOG → memory → commit
 - 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v107＋v109~v118（42 支）
 - ⚠⚠ **背景跑回歸時不要編輯 run-regress.sh**（bash 逐段讀腳本→位移→假語法錯 `near unexpected token done`，其實測試全過）
 - ⚠ 升版後必先 build 再跑測試（版本編譯期注入）；斷言「與某來源一致」要讀來源
-- ⚠ 冷啟＋SW 預快取超 goto 30s＝**假紅**（單獨重跑；已放寬 60s）
+- ⚠ 冷啟＋SW 預快取超 goto 30s＝**假紅**（單獨重跑）
 - puppeteer-core 在 `~/.workbuddy/binaries/node/workspace/`
 - RecordSheet＝`.mask > .sheet.card`；子頁面＝`.bsheet`；列點 `.row__main` 開明細（點 `.row` 不開；骨架 `.sheet` 非 `.bsheet`）
 - 守門員：v104 字級｜v105 雙擊｜v106 safe-area｜v107 換算｜v109 快速金額｜v110~v117 旅行系。⚠ `.smoke/` gitignored，回退手動改 ALL
