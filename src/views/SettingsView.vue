@@ -10,7 +10,8 @@ import TravelSheet from '@/components/TravelSheet.vue'
 import TripHistorySheet from '@/components/TripHistorySheet.vue'
 import CategoryIcon from '@/components/CategoryIcon.vue'
 import { iconForCategory } from '@/lib/icons'
-import { withAlpha } from '@/lib/color'
+// 0.1.40：isHexColor——旅行區塊的強調色跟著 activeTrip.color（跟 TravelSheet 同一套驗證）
+import { withAlpha, isHexColor } from '@/lib/color'
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { parseImport, restoreImages } from '@/lib/exportImport'
 import ExportModal from '@/components/ExportModal.vue'
@@ -125,6 +126,27 @@ async function onToggleTrip() {
   settings.finishTrip()
   notify(`已結束旅行「${t.name}」，記錄標記保留`, 'ok')
 }
+
+/**
+ * 0.1.40：旅行區塊的強調色（使用者原話：「圖標icon 顏色，和旅行中標籤的顏色，
+ * 和3個按鈕點擊時（除了開始鍵/停止鍵）要兩種顏色，也要跟著用戶在子頁中的旅行顏色設定」）。
+ * - 跟 TravelSheet.accentStyle 同一套三變數（--trip-c／-soft／-line），
+ *   掛在 .travel-sec 上，icon／「旅行中」標籤／按鈕按下態的 CSS 都吃它。
+ * - 沒有旅行時不掛（undefined）→ CSS 全部 fallback 回琥珀，畫面跟 0.1.39 前一樣。
+ * - 「兩種顏色」拍板＝按下態的**底色（旅行色 12% 軟底）＋字色（旅行色主色）**；
+ *   「3 個按鈕」＝主 cell（＝詳細）＋詳細小鈕＋過去的旅行小鈕——
+ *   開始/停止切換鈕有自己的開始（琥珀）/結束（紅）語意，刻意不跟。
+ */
+const tripAccent = computed(() => {
+  const t = settings.activeTrip
+  if (!t || !isHexColor(t.color)) return undefined
+  const c = t.color
+  return {
+    '--trip-c': c,
+    '--trip-c-soft': withAlpha(c, 0.12),
+    '--trip-c-line': withAlpha(c, 0.35),
+  }
+})
 
 /**
  * 從備註欄的「管理快速備註」跳過來時（?sec=quicknotes）直接捲到那一段。
@@ -596,8 +618,9 @@ const activeWalletName = computed(() => settings.activeWallet.name)
       使用者原話：「旅行模式的按鈕放在獨立的區塊中」——0.1.35 是掛在「幣別與匯率」
       標題列最右，現在整個搬出來自成一個 section（整列可點，打開 TravelSheet 子頁面）。
       進行中會亮成琥珀色並顯示旅行名。
+      0.1.40：強調色跟著旅行顏色（tripAccent 掛 --trip-c 系變數；沒旅行 fallback 琥珀）。
     -->
-    <section class="card sec travel-sec">
+    <section class="card sec travel-sec" :style="tripAccent">
       <!--
         0.1.37：主 cell 右側加三顆小按鈕（使用者原話：「旅行模式增加3個小型按鈕，
         開始旅行和結束旅行的切換按鈕，詳細按鈕，過去的旅行按鈕(新增子頁面, 可修改，可刪除)」）。
@@ -1633,10 +1656,11 @@ const activeWalletName = computed(() => settings.activeWallet.name)
     border-color 0.12s,
     color 0.12s;
 }
+/* 0.1.40：進行中 icon 跟著旅行顏色（--trip-c 由 .travel-sec inline 掛，沒旅行 fallback 琥珀） */
 .travel-cell__ic.is-on {
-  background: var(--amber-soft);
-  border-color: var(--amber);
-  color: var(--amber);
+  background: var(--trip-c-soft, var(--amber-soft));
+  border-color: var(--trip-c-line, var(--amber));
+  color: var(--trip-c, var(--amber));
 }
 .travel-cell__txt {
   display: flex;
@@ -1658,6 +1682,7 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 0.1.40：「旅行中」標籤跟著旅行顏色（原本寫死琥珀） */
 .travel-cell__tag {
   flex: none;
   display: inline-flex;
@@ -1665,9 +1690,9 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   height: 24px;
   padding: 0 10px;
   border-radius: 999px;
-  background: var(--amber-soft);
-  border: 1px solid var(--amber);
-  color: var(--amber);
+  background: var(--trip-c-soft, var(--amber-soft));
+  border: 1px solid var(--trip-c, var(--amber));
+  color: var(--trip-c, var(--amber));
   font-size: 11.5px;
   font-weight: 700;
 }
@@ -1700,10 +1725,23 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+/* 0.1.40：主 cell 按下態也給旅行色軟底回饋（原本整列可點但按下沒反應） */
+.travel-cell:active {
+  background: var(--trip-c-soft, var(--amber-soft));
+  border-radius: var(--r-sm);
+}
 .travel-mini:hover {
   border-color: var(--amber);
   background: var(--amber-soft);
   color: var(--amber);
+}
+/* 0.1.40：詳細／過去的旅行兩顆（不含開始/停止切換鈕）按下與 hover 跟旅行顏色。
+   :not(.is-start):not(.is-end) 把切換鈕排除——它有自己的開始（琥珀）/結束（紅）語意 */
+.travel-mini:not(.is-start):not(.is-end):hover,
+.travel-mini:not(.is-start):not(.is-end):active {
+  border-color: var(--trip-c, var(--amber));
+  background: var(--trip-c-soft, var(--amber-soft));
+  color: var(--trip-c, var(--amber));
 }
 /* 開始（▶）＝琥珀（旅行主題）；結束（■）＝紅調（危險動作） */
 .travel-mini.is-start {
