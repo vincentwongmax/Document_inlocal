@@ -5,10 +5,10 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 
 ## 版本
 - 只加 Z（目前 0.1.43）。package.json → `__APP_VERSION__` → 設定頁膠囊
-- 每次更新：package.json ＋ CHANGELOG（插精選區之後）
+- 每次更新：package.json ＋ CHANGELOG（插最前面 --- 之後）
 
 ## 開發/驗證
-- preview :4173（服務 dist/，**改完先 build**）；dev :5173（兩埠 localStorage 分開）
+- preview :4173（改完先 build）；dev :5173（兩埠 localStorage 分開）
 - 流程：vue-tsc → build → .smoke/vNN.mjs → 截圖 → CHANGELOG → memory → commit
 - 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v107＋v109~v118（42 支）
 - ⚠⚠ **背景跑回歸時不要編輯 run-regress.sh**（bash 逐段讀腳本→位移→假語法錯 `near unexpected token done`，其實測試全過）
