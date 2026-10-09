@@ -13,9 +13,9 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v107＋v109~v117
 - ⚠⚠ **背景跑回歸時不要編輯 run-regress.sh**（bash 逐段讀腳本→位移→假語法錯 `near unexpected token done`，其實測試全過）
 - ⚠ 升版後必先 build 再跑測試（版本編譯期注入）；斷言「與某來源一致」要讀來源
-- ⚠ 冷啟＋SW 預快取超 goto 30s＝**假紅**（單獨重跑；v107/v109 已放寬 60s）
+- ⚠ 冷啟＋SW 預快取超 goto 30s＝**假紅**（單獨重跑；已放寬 60s）
 - puppeteer-core 在 `~/.workbuddy/binaries/node/workspace/`
-- RecordSheet＝`.mask > .sheet.card`；子頁面＝`.bsheet`；列點 `.row__main` 開明細
+- RecordSheet＝`.mask > .sheet.card`；子頁面＝`.bsheet`；列點 `.row__main` 開明細（點 `.row` 不開；骨架 `.sheet` 非 `.bsheet`）
 - 守門員：v104 字級｜v105 雙擊｜v106 safe-area｜v107 換算｜v109 快速金額｜v110~v115 旅行系｜v116 持久過濾/自訂色/隱藏/不預選/日驗證。⚠ `.smoke/` gitignored，回退手動改 ALL
 - ⚠ 斷言課：`.meta__row` 兩 span 相鄰**沒空格**→ 預期寫無空格版；mobile 模擬按下態驗 **CSSOM**
 
