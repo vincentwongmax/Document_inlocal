@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, toRef, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
-import type { HomeDefaults, ImageRef, TxType } from '@/types'
+import type { ImageRef, TxType } from '@/types'
 import { useScrollLock } from '@/composables/useScrollLock'
 import { usePullToClose } from '@/composables/usePullToClose'
 import { compressImage, makeThumb } from '@/lib/imaging'
@@ -46,7 +46,13 @@ const dType = ref<TxType | ''>('')
 const dAmount = ref('')
 const dCategoryId = ref('')
 const dNote = ref('')
-const dDate = ref<HomeDefaults['dateOffset']>('')
+/**
+ * 0.1.48：日期時間改成「數字＋單位＋前/後」三個控制項（同一行）。
+ * 數字留空＝不設定（＝現在，跟原本一樣）。
+ */
+const dDateN = ref('')
+const dDateUnit = ref<'m' | 'd' | 'mo' | 'y'>('m')
+const dDateDir = ref<'before' | 'after'>('before')
 const dImages = ref<ImageRef[]>([])
 
 watch(
@@ -58,7 +64,11 @@ watch(
     dAmount.value = d.amount
     dCategoryId.value = d.categoryId
     dNote.value = d.note
-    dDate.value = d.dateOffset
+    // 解析 `before:5:m` 這種字串回三個控制項
+    const m = /^(before|after):(\d+):(m|d|mo|y)$/.exec(d.dateOffset)
+    dDateN.value = m ? m[2] : ''
+    dDateUnit.value = m ? (m[3] as 'm' | 'd' | 'mo' | 'y') : 'm'
+    dDateDir.value = m ? (m[1] as 'before' | 'after') : 'before'
     dImages.value = [...d.images]
   },
 )
@@ -87,10 +97,24 @@ function clearCategory() {
 function saveNote() {
   settings.setHomeDefaults({ note: dNote.value })
 }
-function saveDate(v: HomeDefaults['dateOffset']) {
-  dDate.value = v
-  settings.setHomeDefaults({ dateOffset: v })
+/** 日期時間：三個控制項任一改動就重組字串存回（數字空＝不設定） */
+function saveDate() {
+  const n = dDateN.value.trim()
+  const spec = n ? `${dDateDir.value}:${Number(n)}:${dDateUnit.value}` : ''
+  settings.setHomeDefaults({ dateOffset: spec })
 }
+
+/** 單位與前後的選項（標籤刻意短，三個控制項才擠得進同一行） */
+const unitOptions: { v: 'm' | 'd' | 'mo' | 'y'; label: string }[] = [
+  { v: 'm', label: '分' },
+  { v: 'd', label: '日' },
+  { v: 'mo', label: '月' },
+  { v: 'y', label: '年' },
+]
+const dirOptions: { v: 'before' | 'after'; label: string }[] = [
+  { v: 'before', label: '前' },
+  { v: 'after', label: '後' },
+]
 
 /* ── 預設圖片：上傳即存、移除即刪 ─────────────────────────── */
 const busyImg = ref(false)
@@ -138,15 +162,6 @@ function removeImage(im: ImageRef) {
 }
 
 /** 日期偏移的選項（使用者原話的例子全收進來） */
-const dateOptions: { v: HomeDefaults['dateOffset']; label: string }[] = [
-  { v: '', label: '不設定（照原本＝現在）' },
-  { v: 'now', label: '現在' },
-  { v: 'yesterday', label: '昨天' },
-  { v: 'tomorrow', label: '明天' },
-  { v: 'm5', label: '5 分鐘前' },
-  { v: 'm30', label: '30 分鐘前' },
-  { v: 'h2', label: '2 小時前' },
-]
 </script>
 
 <template>
@@ -259,13 +274,39 @@ const dateOptions: { v: HomeDefaults['dateOffset']; label: string }[] = [
             />
           </label>
 
-          <!-- 5＝日期時間 -->
-          <label class="frow">
+          <!-- 5＝日期時間（0.1.48：數字＋單位＋前/後，三個控制項同一行、PWA iPhone 不走位） -->
+          <div class="frow">
             <span class="frow__lb">日期時間</span>
-            <select class="field frow__sel" :value="dDate" @change="saveDate(($event.target as HTMLSelectElement).value as HomeDefaults['dateOffset'])">
-              <option v-for="o in dateOptions" :key="o.v" :value="o.v">{{ o.label }}</option>
-            </select>
-          </label>
+            <div class="daterow">
+              <input
+                v-model="dDateN"
+                class="field daterow__n num"
+                inputmode="numeric"
+                type="text"
+                :maxlength="4"
+                placeholder="0"
+                aria-label="預設日期的數字"
+                @input="saveDate"
+                @change="saveDate"
+              />
+              <select
+                v-model="dDateUnit"
+                class="daterow__sel"
+                aria-label="預設日期的單位"
+                @change="saveDate"
+              >
+                <option v-for="o in unitOptions" :key="o.v" :value="o.v">{{ o.label }}</option>
+              </select>
+              <select
+                v-model="dDateDir"
+                class="daterow__sel"
+                aria-label="預設日期的方向"
+                @change="saveDate"
+              >
+                <option v-for="o in dirOptions" :key="o.v" :value="o.v">{{ o.label }}</option>
+              </select>
+            </div>
+          </div>
 
           <!-- 6＝收據圖片 -->
           <div class="frow frow--imgs">
@@ -361,13 +402,43 @@ const dateOptions: { v: HomeDefaults['dateOffset']; label: string }[] = [
   font-weight: 650;
   color: var(--text-2);
 }
-.frow__in,
-.frow__sel {
+.frow__in {
   flex: 1;
   min-width: 0;
   height: 38px;
   padding: 0 10px;
   font-size: 16px;
+}
+/*
+ * 0.1.48（使用者原話）：日期時間＝「數字輸入框＋單位（分/日/月/年）＋方向（前/後）」，
+ * 三個控制項**放在同一行**、支援 PWA (iPhone)、不要走位。
+ * 做法：`.daterow` 一行 flex 不換行；數字框固定 56px（字級 16px 防 iOS focus zoom），
+ * 兩個 select 平分剩下的寬（min-width:0 可壓縮、短標籤 分/日/月/年・前/後 剛好放得下）。
+ */
+.daterow {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.daterow__n {
+  flex: none;
+  width: 56px;
+  min-width: 0;
+  height: 38px;
+  padding: 0 8px;
+  font-size: 16px;
+  text-align: center;
+}
+.daterow__sel {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 38px;
+  padding: 0 4px;
+  font-size: 14px;
+  text-align: center;
+  white-space: nowrap;
 }
 
 /* 支出/收入：三段小膠囊 */

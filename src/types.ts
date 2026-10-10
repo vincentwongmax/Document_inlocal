@@ -225,10 +225,12 @@ export interface HomeDefaults {
   /** 預設備註（區塊 4 隱藏時用）；空＝不設 */
   note: string
   /**
-   * 預設日期（區塊 5 隱藏時用）：now=現在、yesterday=昨天、tomorrow=明天、
-   * m5/m30/h2=5/30 分鐘前/2 小時前；空＝不設（＝現在，跟原本一樣）
+   * 預設日期（區塊 5 隱藏時用）。0.1.48 改成「數字＋單位＋前後」的結構化字串：
+   * 格式 `${before|after}:${整數}:${m|d|mo|y}`（例：`before:5:m`＝5 分鐘前、
+   * `after:1:mo`＝1 個月後）；空字串＝不設（＝現在，跟原本一樣）。
+   * 0.1.46~47 的舊值（now/yesterday/tomorrow/m5/m30/h2）載入時自動遷移。
    */
-  dateOffset: '' | 'now' | 'yesterday' | 'tomorrow' | 'm5' | 'm30' | 'h2'
+  dateOffset: '' | string
   /** 預設收據圖片（區塊 6 隱藏時用）；blob 存 IndexedDB、ImageRef 存設定裡 */
   images: ImageRef[]
 }

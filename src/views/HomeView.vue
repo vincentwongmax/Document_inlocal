@@ -25,7 +25,7 @@ import {
 } from '@/lib/calc'
 import { currency, fmtMoney } from '@/lib/currency'
 import { fromLocalInput, nowLocalInput } from '@/lib/date'
-import type { HomeDefaults, ImageRef, QuickPreset, TxType } from '@/types'
+import type { ImageRef, QuickPreset, TxType } from '@/types'
 import { writeJSON } from '@/lib/storage'
 import { getImage, putImage } from '@/lib/imageDb'
 import { uid } from '@/lib/id'
@@ -84,17 +84,22 @@ const hiddenBlocks = computed<Set<number>>(() => {
   return all
 })
 
-/** 預設日期偏移（0.1.46）：隱藏日期區塊時的 occurredAt */
-function offsetISO(k: HomeDefaults['dateOffset']): string {
-  const ms: Record<string, number> = {
-    now: 0,
-    yesterday: -864e5,
-    tomorrow: 864e5,
-    m5: -3e5,
-    m30: -18e5,
-    h2: -72e5,
-  }
-  return new Date(Date.now() + (ms[k] ?? 0)).toISOString()
+/**
+ * 預設日期偏移（0.1.48）：隱藏日期區塊時的 occurredAt。
+ * 格式 `${before|after}:${n}:${m|d|mo|y}`——分鐘用固定毫秒，日/月/年走日曆運算
+ * （setDate/setMonth/setFullYear，跨月跨年才不會算錯）。
+ */
+function offsetISO(spec: string): string {
+  const m = /^(before|after):(\d+):(m|d|mo|y)$/.exec(spec)
+  if (!m) return new Date().toISOString()
+  const [, dir, nRaw, unit] = m
+  const n = Number(nRaw) * (dir === 'before' ? -1 : 1)
+  const d = new Date()
+  if (unit === 'm') d.setMinutes(d.getMinutes() + n)
+  else if (unit === 'd') d.setDate(d.getDate() + n)
+  else if (unit === 'mo') d.setMonth(d.getMonth() + n)
+  else d.setFullYear(d.getFullYear() + n)
+  return d.toISOString()
 }
 
 /**

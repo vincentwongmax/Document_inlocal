@@ -105,8 +105,26 @@ function normHomeDefaults(v: unknown): HomeDefaults {
   if (!v || typeof v !== 'object') return base
   const o = v as Partial<HomeDefaults>
   const type = o.type === 'expense' || o.type === 'income' ? o.type : ''
-  const offsets = ['', 'now', 'yesterday', 'tomorrow', 'm5', 'm30', 'h2']
-  const dateOffset = offsets.includes(o.dateOffset ?? '') ? (o.dateOffset as HomeDefaults['dateOffset']) : ''
+  /**
+   * 0.1.48：dateOffset 改成「before|after:整數:m|d|mo|y」的結構化字串。
+   * 0.1.46~47 的舊值（now/yesterday/tomorrow/m5/m30/h2）自動遷移一次。
+   */
+  const OFFSET_RE = /^(before|after):(\d+):(m|d|mo|y)$/
+  const LEGACY_OFFSET: Record<string, string> = {
+    yesterday: 'before:1:d',
+    tomorrow: 'after:1:d',
+    m5: 'before:5:m',
+    m30: 'before:30:m',
+    // ⚠ 0.1.48 的單位只有 分/日/月/年——舊「2 小時前」換算成 120 分鐘
+    h2: 'before:120:m',
+    now: '',
+  }
+  const dateOffset =
+    typeof o.dateOffset === 'string' && o.dateOffset
+      ? OFFSET_RE.test(o.dateOffset)
+        ? o.dateOffset
+        : (LEGACY_OFFSET[o.dateOffset] ?? '')
+      : ''
   const images = Array.isArray(o.images)
     ? o.images.filter(
         (im): im is ImageRef =>
