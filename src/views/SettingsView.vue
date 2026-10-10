@@ -1068,7 +1068,7 @@ const activeWalletName = computed(() => settings.activeWallet.name)
       沒排任何一顆＝全部照預設顯示。
     -->
     <section id="sec-homelayout" class="card sec">
-      <header class="sec__hd">
+      <header class="sec__hd sec__hd--lay">
         <span class="sec__icon" aria-hidden="true">
           <svg viewBox="0 0 24 24">
             <rect x="3.6" y="3.6" width="7.2" height="7.2" rx="1.8" />
@@ -1081,7 +1081,13 @@ const activeWalletName = computed(() => settings.activeWallet.name)
           <h2 class="sec__title">記帳頁排版</h2>
           <p class="sec__desc">照你喜歡的上下順序點下面的方塊；沒點到的區塊不會顯示在記帳頁</p>
         </div>
-        <!-- 0.1.46：兩顆都貼在標題列最右（照「快速金額」的詳細鈕同一個位置） -->
+        <!--
+          0.1.46：兩顆都貼在標題列最右（照「快速金額」的詳細鈕同一個位置）。
+          0.1.51（使用者原話）：「在電腦版中，預設值和恢復預設的按鈕要放到記帳頁排版標題的
+          最右邊，如果『恢復預設』按鈕隱藏時，預設值的按鈕就要放到最右邊」
+          → `.sec__hd--lay` 讓 `.sec__meta` 吃滿剩餘寬度（flex:1），按鈕群自然貼右緣；
+            「恢復預設」是 v-if（排版＝預設時不存在），那時「預設值」就成了最後一顆＝最右。
+        -->
         <button class="btn btn--ghost btn--sm ly__hd-btn" type="button" @click="hdOpen = true">
           預設值
         </button>
@@ -1456,6 +1462,18 @@ const activeWalletName = computed(() => settings.activeWallet.name)
 }
 .sec__meta {
   min-width: 0;
+}
+/*
+ * 0.1.51（使用者原話）：「在電腦版中，預設值和恢復預設的按鈕要放到記帳頁排版標題的最右邊」
+ * 只有「記帳頁排版」這一節的標題列要這樣——`.sec__meta` 吃滿剩餘寬度，
+ * 後面的按鈕群（.ly__hd-btn）自然被推到最右緣；「恢復預設」是 v-if，
+ * 它不存在時「預設值」就是最後一顆，同樣貼在最右。
+ */
+.sec__hd--lay .sec__meta {
+  flex: 1;
+}
+.ly__hd-btn {
+  flex: none;
 }
 .sec__title {
   font-size: 16px;

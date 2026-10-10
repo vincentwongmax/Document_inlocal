@@ -433,6 +433,24 @@ function removeImage(im: ImageRef) {
   flex-direction: column;
   gap: 14px;
 }
+/*
+ * 0.1.51（使用者原話）：「參考記帳明細頁面…不會顯示下方的導覽欄」
+ * 這頁的 `.mask` 之前沒給 z-index（＝auto），底部導覽欄（.tabbar, z-index:40）
+ * 就蓋在遮罩上面——彈層看起來像「露出下半截」。這裡補上跟其他設定子頁面
+ * 同一層的 90（TravelSheet／QuickAmountSheet 同值），遮罩才是整片蓋滿。
+ */
+.mask {
+  z-index: 90;
+}
+/*
+ * 0.1.51（使用者原話）：「隱藏文件選擇器的按鈕（用戶按 ICON 就可以上傳圖片）」
+ * 上傳用的 `<input type="file">` 靠 `.hidden` 藏起來——其他子頁面（ReceiptImages／
+ * RecordSheet／設定頁匯入）都在自己的 scoped CSS 定義了 `.hidden`，這一頁漏了，
+ * 原生「Choose Files」才會露出來。補上（不動上傳功能：按「上傳」磚仍是 fileInput.click()）。
+ */
+.hidden {
+  display: none;
+}
 .hd {
   display: flex;
   align-items: center;
@@ -517,6 +535,10 @@ function removeImage(im: ImageRef) {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  /* 0.1.51（使用者原話）：「日期時間中的兩個下拉選單框，往上一點點，
+     跟最底部留有一點點的距離」→ 這一列自己多留 3px 底部內距，
+     兩個下拉框再各自往上收 3px（不貼齊列的底線）。 */
+  padding-bottom: 3px;
 }
 .daterow__n {
   flex: 1 1 100%;
@@ -529,6 +551,7 @@ function removeImage(im: ImageRef) {
   flex: 1 1 0;
   min-width: 0;
   display: block;
+  margin-bottom: 3px;
 }
 @media (min-width: 768px) {
   .daterow__n {

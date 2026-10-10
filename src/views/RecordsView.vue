@@ -89,6 +89,14 @@ function timeOf(r: TxRecord): string {
 const q = ref('')
 /** trim + 轉小寫後的關鍵字（空字串代表沒在搜尋） */
 const kw = computed(() => q.value.trim().toLowerCase())
+/**
+ * 0.1.51（使用者原話）：「搜索框支持用戶輸入空白鍵，可以同時搜索更多的條件，
+ * 需同時符合才會出結果。例：搜『餐飲 123』→ 只出分類餐飲且備註含 123 的那筆；
+ * 搜『餐飲』→ 兩筆都出」
+ * → 以空白把關鍵字切成多個詞，**每一個詞都要在（備註／分類／旅行名）任一欄命中**（AND）。
+ *   單一詞時行為跟以前完全一樣；連續空白／前後空白都會被濾掉。
+ */
+const terms = computed(() => kw.value.split(/\s+/).filter(Boolean))
 
 /**
  * 0.1.44：記錄明細摘要區塊（餐飲 支出 MOP$1.00 那塊）點下去 →
@@ -175,20 +183,22 @@ const rows = computed(() =>
         if (k < range.value.start || k > range.value.end) return false
       }
       if (typeFilter.value !== 'all' && r.type !== typeFilter.value) return false
-      if (!kw.value) return true
-      const note = r.note ?? ''
-      return (
-        note.toLowerCase().includes(kw.value) ||
-        catNameOf(r.categoryId).toLowerCase().includes(kw.value) ||
-        tripNameOf(r).toLowerCase().includes(kw.value)
-      )
+      if (!terms.value.length) return true
+      // 0.1.51：每一欄各自轉小寫的「可搜尋字串」，多詞之間是 AND（全部命中才留）
+      const hay = [r.note ?? '', catNameOf(r.categoryId), tripNameOf(r)].map((x) => x.toLowerCase())
+      return terms.value.every((t) => hay.some((h) => h.includes(t)))
     })
     .sort((a, b) => (timeOf(a) < timeOf(b) ? 1 : -1)),
 )
 
 /** 有在搜尋時，空列表的文案要帶出關鍵字，否則看不出是「找不到」還是「這個範圍本來就沒有」 */
 const emptyText = computed(() => {
-  if (kw.value) return `找不到符合「${q.value.trim()}」的記錄`
+  if (kw.value) {
+    // 0.1.51：多個詞時順便說明「要同時符合」——搜索框 placeholder 放不下這個說明
+    return terms.value.length > 1
+      ? `找不到同時符合「${q.value.trim()}」的記錄（多個條件要全部命中）`
+      : `找不到符合「${q.value.trim()}」的記錄`
+  }
   if (viewFilter.value) return '這趟旅行沒有記錄'
   return recent.value ? '這段時間沒有新增的記錄' : '這個範圍沒有記錄'
 })
@@ -398,7 +408,9 @@ function removeEditing(id: string) {
         <p class="page-sub">收支帳目一覽</p>
       </div>
 
-      <!-- 關鍵字搜尋：只比對備註與分類名稱，命中文字會在下方列表以黃底標示 -->
+      <!-- 關鍵字搜尋：比對備註／分類名稱／旅行名稱（0.1.51 起空白＝多條件，需同時符合）
+           ⚠ placeholder 刻意保持短字串：v95 有「placeholder 必須塞得進可用寬度」的斷言
+             （塞不下會被裁掉），多條件的說明放在「找不到」的空狀態文案裡。 -->
       <div class="search">
         <svg class="search__ic" viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="10.8" cy="10.8" r="6.4" />
