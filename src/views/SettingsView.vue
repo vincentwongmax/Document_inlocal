@@ -231,14 +231,6 @@ const cxOpen = ref(false)
 const cxDraftName = ref<Record<string, string>>({})
 const cxDraftRate = ref<Record<string, string>>({})
 
-/** 0.1.45：收起新增列並清空輸入 */
-function closeCx() {
-  cxOpen.value = false
-  cxCode.value = ''
-  cxName.value = ''
-  cxRate.value = ''
-}
-
 /* ── 記帳頁排版（0.1.45；0.1.46 加入「分類」變 1..7）──────────
  * 1=支出/收入＋幣別、2=金額＋快速金額、3=分類、4=備註、5=日期時間、
  * 6=收據圖片、7=清空＋記錄。點擊順序＝顯示順序；沒點＝不顯示
@@ -759,12 +751,11 @@ const activeWalletName = computed(() => settings.activeWallet.name)
             aria-label="自訂貨幣匯率"
             @keydown.enter.prevent="addCx"
           />
-          <!-- 0.1.46：三個輸入框同一行；新增＋取消掉到下一行、貼右、兩顆之間不留白 -->
+          <!-- 0.1.46：三個輸入框同一行；按鈕貼右。0.1.47：移除「取消」（收合用標題旁的＋鈕） -->
           <div class="cx__btns">
             <button class="btn btn--primary btn--sm" type="button" :disabled="!cxCode.trim()" @click="addCx">
               新增
             </button>
-            <button class="btn btn--sm" type="button" @click="closeCx">取消</button>
           </div>
         </div>      </div>
 
@@ -2072,10 +2063,15 @@ const activeWalletName = computed(() => settings.activeWallet.name)
  * 按鈕放在下一行的最右邊, 兩個按鈕之間不要有空白」。
  * 輸入框一整行（名稱吃彈性）；按鈕包成一組推到最右、組內 gap=0 緊鄰。
  */
+/*
+ * 0.1.46（使用者原話）：三個輸入框同一行、按鈕下一行最右、兩顆之間不留白。
+ * 0.1.47：取消鈕移除後只剩「新增」——flex-basis:100% 讓按鈕列**恆在下一行**
+ * （不會因為輸入框可壓縮而被擠上同一行），貼右對齊。
+ */
 .cx__btns {
   display: flex;
-  margin-left: auto;
-  gap: 0;
+  justify-content: flex-end;
+  flex-basis: 100%;
 }
 
 /* ── 快速金額（0.1.29；0.1.30 編輯移到子頁面）────────── */

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import type { DraftRecord } from '@/types'
 import { useUpload } from '@/composables/useUpload'
 import { useSettingsStore } from '@/stores/settings'
@@ -8,9 +8,11 @@ import { usePullToClose } from '@/composables/usePullToClose'
 import CategoryPicker from './CategoryPicker.vue'
 import ClearableInput from './ClearableInput.vue'
 import DateTimeField from './DateTimeField.vue'
+import ImageLightbox from './ImageLightbox.vue'
 import { currency, fmtMoney } from '@/lib/currency'
 import { toLocalInput, fromLocalInput, formatFull } from '@/lib/date'
 import { formatBytes } from '@/lib/imaging'
+import { getImage } from '@/lib/imageDb'
 
 function sizeInfo(d: DraftRecord): string {
   const im = d.images[0]
@@ -35,7 +37,35 @@ const settings = useSettingsStore()
  * 它現在掛在設定頁的 BETA 區塊旁邊（見 SettingsView.vue）。
  */
 const bodyEl = ref<HTMLElement | null>(null)
-useScrollLock(computed(() => up.reviewOpen.value), { scrollable: () => bodyEl.value })
+/**
+ * 0.1.47：縮圖點開放大檢視（**重用**記錄明細同一顆 `ImageLightbox`，不另寫查看頁）。
+ * 檢視區是整面覆蓋層 → 開著時把它列進可捲區（跟 RecordSheet 同一招）。
+ */
+const lbEl = ref<InstanceType<typeof ImageLightbox> | null>(null)
+useScrollLock(computed(() => up.reviewOpen.value), { scrollable: () => lbEl.value?.stageEl ?? bodyEl.value })
+
+const lightboxSrc = ref<string | null>(null)
+const objectUrls = new Set<string>()
+async function openImage(d: DraftRecord) {
+  const im = d.images[0]
+  if (!im) return
+  const blob = await getImage(im.id)
+  if (!blob) return
+  const url = URL.createObjectURL(blob)
+  objectUrls.add(url)
+  lightboxSrc.value = url
+}
+function closeLightbox() {
+  if (lightboxSrc.value) {
+    URL.revokeObjectURL(lightboxSrc.value)
+    objectUrls.delete(lightboxSrc.value)
+  }
+  lightboxSrc.value = null
+}
+onBeforeUnmount(() => {
+  for (const u of objectUrls) URL.revokeObjectURL(u)
+  objectUrls.clear()
+})
 
 const sheetEl = ref<HTMLElement | null>(null)
 const {
@@ -140,7 +170,10 @@ function applyDate(d: DraftRecord, iso: string) {
           <article v-for="d in list" :key="d.key" class="dcard card">
             <div class="dcard__top">
               <div class="thumb">
-                <img v-if="d.images[0]?.thumb" :src="d.images[0].thumb" alt="" />
+                <!-- 0.1.47：點縮圖放大檢視（共用 ImageLightbox） -->
+                <button class="thumb__btn" type="button" title="放大檢視" @click="openImage(d)">
+                  <img v-if="d.images[0]?.thumb" :src="d.images[0].thumb" alt="" />
+                </button>
               </div>
               <div class="dcard__info">
                 <span class="dcard__name">{{ d.images[0]?.name || '圖片' }}</span>
@@ -235,6 +268,9 @@ function applyDate(d: DraftRecord, iso: string) {
       </div>
     </div>
   </Transition>
+
+  <!-- 0.1.47：圖片放大檢視（跟記錄明細共用同一顆 ImageLightbox，不另寫查看頁） -->
+  <ImageLightbox ref="lbEl" :src="lightboxSrc" @close="closeLightbox" />
 </template>
 
 <style scoped>
@@ -305,6 +341,17 @@ function applyDate(d: DraftRecord, iso: string) {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+/* 0.1.47：縮圖包成按鈕，點一下放大（ImageLightbox） */
+.thumb__btn {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  cursor: zoom-in;
+}
+.thumb__btn:active {
+  filter: brightness(0.92);
 }
 .dcard__info {
   flex: 1;

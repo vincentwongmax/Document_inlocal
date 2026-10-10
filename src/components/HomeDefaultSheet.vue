@@ -295,6 +295,18 @@ const dateOptions: { v: HomeDefaults['dateOffset']; label: string }[] = [
 </template>
 
 <style scoped>
+/*
+ * 0.1.47（使用者原話：「整體要向上一點點，左右要留有空間（可以參考旅行模式的頁面格局）」）：
+ * `.box` 是各子頁面自己 scoped 的（TravelSheet 同款）——之前忘了定義，
+ * 內容才會貼邊又貼底。照 TravelSheet 的格局：左右 18px、底部 18px＋bsheet 的 safe-area，
+ * 列間距 14px。
+ */
+.box {
+  padding: 6px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
 .hd {
   display: flex;
   align-items: center;
@@ -327,7 +339,7 @@ const dateOptions: { v: HomeDefaults['dateOffset']; label: string }[] = [
   stroke-linecap: round;
 }
 .hint {
-  margin: 2px 0 12px;
+  margin: 0;
   line-height: 1.5;
 }
 
