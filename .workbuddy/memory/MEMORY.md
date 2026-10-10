@@ -13,8 +13,8 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - ⚠⚠ **背景跑回歸時不要編輯 run-regress.sh**（bash 逐段讀腳本→假語法錯，其實測試全過）
 - ⚠ 升版後必先 build 再跑測試（版本編譯期注入）；斷言「與某來源一致」要讀來源
 - ⚠ 冷啟＋SW 預快取超 goto 30s＝**假紅**（單獨重跑）；puppeteer-core 在 `~/.workbuddy/binaries/node/workspace/`
-- RecordSheet＝`.mask > .sheet.card`；列點 `.row__main` 開明細（點 `.row` 不開；骨架 `.sheet` 非 `.bsheet`）- 守門員：v104 字級｜v105 雙擊｜v106 safe-area｜v107 換算｜v109 快速金額｜v110~v118 旅行系｜v119=0.1.44
-- ⚠ 斷言課：`.meta__row` 兩 span 相鄰**沒空格**→ 預期寫無空格版；mobile 按下態驗 CSSOM
+- RecordSheet＝`.mask > .sheet.card`；列點 `.row__main` 開明細（點 `.row` 不開；骨架 `.sheet` 非 `.bsheet`）- 守門員：v104 字級｜v105 雙擊/BETA位置｜v106 safe-area｜v107 換算｜v109 快速金額｜v110~v118 旅行系｜v119=0.1.44｜v120=0.1.45
+- ⚠ 斷言課：`.meta__row` 兩 span 相鄰**沒空格**；mobile 按下態驗 CSSOM
 
 ## Git/部署
 - Pages＝gh-pages（legacy build）；線上 `vincentwongmax.github.io/Document_inlocal/`
@@ -22,9 +22,9 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - Actions 全紅＝billing 鎖；`GH_TOKEN=… npm run deploy`（tmpdir 全新建再 force push）；線上驗證：CDN 等 1~2 分；雜湊 trees API 撈；驗**內容特徵**
 
 ## 資料
-- wallets.v1＝{wallets, activeWalletId}；每錢包設定 `setting.<id>.v1`；記錄單鍵蓋 walletId；預設錢包 id 固定 `w_default`
-- store 對外 `records`＝computed(當前錢包)，內部 `all`＝全部；settings.state＝當前錢包；「初始化時改資料要自己寫回去」
-- 匯出 JSON=format2 可還原；Excel=.zip（自寫 zip.ts/xlsx.ts）；`settings.v1` 舊鍵不刪；defaultCategoryId≠favoriteCategories；金額帶入＝initCalc→逐字 input→equals
+- wallets.v1＝{wallets, activeWalletId}；每錢包設定 `setting.<id>.v1`；預設錢包 id 固定 `w_default`
+- store 對外 `records`＝computed(當前錢包)，內部 `all`＝全部；「初始化時改資料要自己寫回去」
+- 匯出 JSON=format2 可還原；Excel=.zip（自寫 zip.ts/xlsx.ts）；金額帶入＝initCalc→逐字 input→equals
 
 ## 旅行模式（0.1.35 起）
 - 一次一個 `activeTrip`（每錢包一份）；記錄蓋 `tripId?`；結束**保留**標籤（推 `tripHistory`）；顯示層 `toDisplay`
@@ -39,9 +39,8 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - `watch route.query.q` 要 **immediate**，callback 勿碰 editingId（TDZ）
 
 ## 0.1.45
-- 上傳收據併進設定頁「收據辨識」節（多幣別下方＋BETA）；sec--beta 移除
-- 自訂貨幣描述移除；「＋」鈕收合輸入列（提交成功/取消收起）
-- **記帳頁排版**＝`settings.homeLayout`（空=預設全顯示；沒排=不顯示）；設定頁 #sec-homelayout 六方塊（點擊順序=顯示順序）；HomeView `flow` computed；**catbox 不參與排序**（固定跟金額後）；表單卡 flex gap 9、`.pad__meta` 包裹層已移除（**舊測試選擇器要找 `.card--ledger`**）；ReceiptImages 在 v-for→function ref
+- 上傳收據併進設定頁「收據辨識」節（多幣別下方＋BETA）；sec--beta 移除；自訂貨幣描述移除、「＋」鈕收合輸入列
+- **記帳頁排版**＝`settings.homeLayout`（空=預設全顯示；沒排=不顯示）；設定頁 #sec-homelayout 六方塊（點擊順序=顯示順序）；**catbox 不參與排序**（固定跟金額後）；表單卡 flex gap 9、`.pad__meta` 已移除（**舊測試選擇器找 `.card--ledger`**）；ReceiptImages 在 v-for→function ref
 
 ## 全站約定（細節在 CONVENTIONS.md，勿回退）
 1~5. body `min-height:100%`｜日期一律 DateField/DateTimeField（禁 type=date）｜彈層開著背景不能滑｜可編輯元素 16px（不含 select）｜點/雙擊空白不能動（按鈕連點合法勿擋）
