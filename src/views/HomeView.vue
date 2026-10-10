@@ -25,8 +25,10 @@ import {
 } from '@/lib/calc'
 import { currency, fmtMoney } from '@/lib/currency'
 import { fromLocalInput, nowLocalInput } from '@/lib/date'
-import type { ImageRef, QuickPreset, TxType } from '@/types'
+import type { HomeDefaults, ImageRef, QuickPreset, TxType } from '@/types'
 import { writeJSON } from '@/lib/storage'
+import { getImage, putImage } from '@/lib/imageDb'
+import { uid } from '@/lib/id'
 
 const records = useRecordsStore()
 const settings = useSettingsStore()
@@ -68,25 +70,76 @@ function setImgEl(el: unknown) {
 }
 
 /**
- * 記帳頁區塊排序（0.1.45）：設定頁「記帳頁排版」決定顯示哪些區塊、什麼順序。
- * 空陣列＝全部照預設（1→6）；有值＝只顯示有排進去的。
+ * 記帳頁區塊排序（0.1.45；0.1.46 起 1..7 含分類）：
+ * 設定頁「記帳頁排版」決定顯示哪些區塊、什麼順序。
+ * 空陣列＝全部照預設（1→7）；有值＝只顯示有排進去的。
  */
 const layout = computed<number[]>(() =>
-  settings.state.homeLayout.length ? settings.state.homeLayout : [1, 2, 3, 4, 5, 6],
+  settings.state.homeLayout.length ? settings.state.homeLayout : [1, 2, 3, 4, 5, 6, 7],
 )
-/**
- * 實際渲染順序：排序區塊＋分類（catbox，編號 0）。
- * 分類不參與排序：固定跟在「金額」後面；金額沒顯示就跟「支出/收入」；
- * 兩個都沒有就放最上面。預設畫面（1,2 都在）跟 0.1.44 之前完全一樣。
- */
-const flow = computed<(0 | 1 | 2 | 3 | 4 | 5 | 6)[]>(() => {
-  const l = layout.value as (1 | 2 | 3 | 4 | 5 | 6)[]
-  const out: (0 | 1 | 2 | 3 | 4 | 5 | 6)[] = [...l]
-  const a2 = l.lastIndexOf(2)
-  const anchor = a2 !== -1 ? a2 : l.lastIndexOf(1)
-  out.splice(anchor === -1 ? 0 : anchor + 1, 0, 0)
-  return out
+/** 目前被隱藏的區塊（提交時要用「預設值」補） */
+const hiddenBlocks = computed<Set<number>>(() => {
+  const all = new Set([1, 2, 3, 4, 5, 6, 7])
+  for (const n of layout.value) all.delete(n)
+  return all
 })
+
+/** 預設日期偏移（0.1.46）：隱藏日期區塊時的 occurredAt */
+function offsetISO(k: HomeDefaults['dateOffset']): string {
+  const ms: Record<string, number> = {
+    now: 0,
+    yesterday: -864e5,
+    tomorrow: 864e5,
+    m5: -3e5,
+    m30: -18e5,
+    h2: -72e5,
+  }
+  return new Date(Date.now() + (ms[k] ?? 0)).toISOString()
+}
+
+/**
+ * 隱藏區塊的預設值 → 這次要送出的實際值（0.1.46）。
+ * 每個欄位：有設預設就用預設，沒設就照原本的行為走。
+ * 圖片要**複製** blob 成新 id（多筆記錄不能共用同一個 blob id，
+ * 不然明細裡刪一筆的圖會把另一筆的也刍掉）。
+ */
+async function resolveHiddenDefaults(): Promise<{
+  type: TxType
+  categoryId: string
+  amount: number
+  note: string
+  occurredAt: string
+  images: ImageRef[]
+}> {
+  const d = settings.state.homeDefaults
+  const hid = hiddenBlocks.value
+
+  const typeOut: TxType = !hid.has(1) || !d.type ? type.value : d.type
+
+  let catOut = categoryId.value
+  if (hid.has(3) && d.categoryId && settings.category(d.categoryId)) catOut = d.categoryId
+
+  const amtOut = hid.has(2) && Number(d.amount) > 0 ? Number(d.amount) : amount.value
+
+  const noteOut = hid.has(4) && d.note ? d.note : note.value
+
+  const occurredOut = hid.has(5) && d.dateOffset ? offsetISO(d.dateOffset) : fromLocalInput(occurredAt.value)
+
+  let imagesOut = [...images.value]
+  if (hid.has(6) && d.images.length) {
+    const copies: ImageRef[] = []
+    for (const im of d.images) {
+      const blob = await getImage(im.id)
+      if (!blob) continue
+      const nid = uid('img')
+      await putImage(nid, blob)
+      copies.push({ ...im, id: nid })
+    }
+    if (copies.length) imagesOut = copies
+  }
+
+  return { type: typeOut, categoryId: catOut, amount: amtOut, note: noteOut, occurredAt: occurredOut, images: imagesOut }
+}
 /** 只有長公式／很大的結果才縮小字級（單一數字最多 11 位，永遠不會觸發） */
 const displayLong = computed(() => isLongDisplay(display.value))
 /** 還沒按 = 之前不顯示換算預覽，答案要按了等於才出現 */
@@ -282,13 +335,25 @@ function clearForm() {
   if (dirty) notify('已清空', 'info')
 }
 
-function submit() {
-  if (!(amount.value > 0)) {
-    notify('請先輸入金額', 'warn')
+async function submit() {
+  /**
+   * 0.1.46：先把「隱藏區塊的預設值」解析成這次要送出的實際值。
+   * 沒設預設的欄位照原本的行為走（用表單現在的值）。
+   */
+  const v = await resolveHiddenDefaults()
+  if (!(v.amount > 0)) {
+    // 金額區塊被隱藏又沒設預設金額的話，會在這裡擋下來（記錄一定要有金額）
+    notify(
+      hiddenBlocks.value.has(2) ? '金額區塊已隱藏——請到設定→記帳頁排版→預設值設預設金額' : '請先輸入金額',
+      'warn',
+    )
     return
   }
-  if (!categoryId.value) {
-    notify('請選擇分類', 'warn')
+  if (!v.categoryId) {
+    notify(
+      hiddenBlocks.value.has(3) ? '分類區塊已隱藏——請到設定→記帳頁排版→預設值設預設分類' : '請選擇分類',
+      'warn',
+    )
     return
   }
   /*
@@ -299,18 +364,18 @@ function submit() {
    *   ⚠ 只在有打備注時補——空備注沒有東西可以「補上」。
    */
   const trip = settings.activeTrip
-  const noteBase = note.value.trim()
+  const noteBase = v.note.trim()
   const noteOut = trip?.mode2 && noteBase ? `${noteBase}_${trip.name}` : noteBase
   const rec = records.add({
-    type: type.value,
-    categoryId: categoryId.value,
-    amount: amount.value,
+    type: v.type,
+    categoryId: v.categoryId,
+    amount: v.amount,
     currency: curCode.value,
-    occurredAt: fromLocalInput(occurredAt.value),
+    occurredAt: v.occurredAt,
     note: noteOut,
-    // 算出來的才記算式（單純輸入一個數字不記）
-    expr: calcExpr(calc.value),
-    images: [...images.value],
+    // 算出來的才記算式（單純輸入一個數字不記；金額來自預設值時沒有算式）
+    expr: hiddenBlocks.value.has(2) ? '' : calcExpr(calc.value),
+    images: v.images,
     source: 'manual',
     ...(trip?.mode1 ? { tripId: trip.id } : {}),
   })
@@ -377,32 +442,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
     <div class="home__grid">
       <!--
-        記帳表單（0.1.45：區塊排序）
+        記帳表單（0.1.45：區塊排序；0.1.46：「分類」加入排序，編號 1..7）
         ────────────────────────────────────────────────────
-        六個區塊的順序由設定頁「記帳頁排版」決定（`settings.homeLayout`）：
-        1=支出/收入＋幣別選單、2=輸入金額＋快速金額、3=備註、4=日期時間、
-        5=收據圖片、6=清空＋記錄。
-        空陣列＝全部照預設（1→6）；有值＝只顯示有排進去的（沒排＝不顯示，
-        記錄提交按預設走）。
-        ⚠ 分類（catbox）**不參與排序**：固定跟在「金額」後面（金額沒顯示就跟
-          「支出/收入」，兩個都沒有就放最上面）——預設畫面跟 0.1.44 之前完全一樣。
+        七個區塊的順序由設定頁「記帳頁排版」決定（`settings.homeLayout`）：
+        1=支出/收入＋幣別選單、2=輸入金額＋快速金額、3=分類、4=備註、5=日期時間、
+        6=收據圖片、7=清空＋記錄。
+        空陣列＝全部照預設（1→7）；有值＝只顯示有排進去的（沒排＝不顯示，
+        提交時改用設定頁「預設值」裡的值；沒設預設就照原本的行為走）。
       -->
       <section class="card pad card--ledger">
-        <template v-for="b in flow" :key="b">
-          <!-- 0＝分類（固定位置，見上） -->
-          <div v-if="b === 0" class="catbox">
-            <span class="catbox__label">分類</span>
-            <CategoryPicker
-              v-model="categoryId"
-              :type="type"
-              collapsed
-              more-external
-              @more="catSheetOpen = true"
-            />
-          </div>
-
+        <template v-for="b in layout" :key="b">
           <!-- 1＝支出/收入＋幣別選單 -->
-          <div v-else-if="b === 1" class="seg">
+          <div v-if="b === 1" class="seg">
             <button
               class="seg__btn"
               :class="{ 'is-on': type === 'expense', 'is-expense': type === 'expense' }"
@@ -469,20 +520,32 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             </button>
           </div>
 
-          <!-- 3＝備註 -->
-          <ClearableInput v-else-if="b === 3" v-model="note" placeholder="備註（可留空）" :maxlength="80">
+          <!-- 3＝分類 -->
+          <div v-else-if="b === 3" class="catbox">
+            <span class="catbox__label">分類</span>
+            <CategoryPicker
+              v-model="categoryId"
+              :type="type"
+              collapsed
+              more-external
+              @more="catSheetOpen = true"
+            />
+          </div>
+
+          <!-- 4＝備註 -->
+          <ClearableInput v-else-if="b === 4" v-model="note" placeholder="備註（可留空）" :maxlength="80">
             <template #trailing>
               <QuickNotePicker v-model="note" />
             </template>
           </ClearableInput>
 
-          <!-- 4＝日期時間 -->
-          <DateTimeField v-else-if="b === 4" v-model="occurredAt" />
+          <!-- 5＝日期時間 -->
+          <DateTimeField v-else-if="b === 5" v-model="occurredAt" />
 
-          <!-- 5＝收據圖片 -->
-          <ReceiptImages v-else-if="b === 5" :ref="setImgEl" v-model="images" />
+          <!-- 6＝收據圖片 -->
+          <ReceiptImages v-else-if="b === 6" :ref="setImgEl" v-model="images" />
 
-          <!-- 6＝清空＋記錄 -->
+          <!-- 7＝清空＋記錄 -->
           <div v-else class="pad__row">
             <button class="btn btn--clear" @click="clearForm">清空</button>
             <button class="btn btn--primary btn--save" @click="submit">記錄</button>

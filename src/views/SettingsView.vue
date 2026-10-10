@@ -6,6 +6,7 @@ import { useRecordsStore } from '@/stores/records'
 import { notify, confirmDialog } from '@/lib/alerts'
 import CategoryManageModal from '@/components/CategoryManageModal.vue'
 import QuickAmountSheet from '@/components/QuickAmountSheet.vue'
+import HomeDefaultSheet from '@/components/HomeDefaultSheet.vue'
 import TravelSheet from '@/components/TravelSheet.vue'
 import TripHistorySheet from '@/components/TripHistorySheet.vue'
 import CategoryIcon from '@/components/CategoryIcon.vue'
@@ -238,19 +239,23 @@ function closeCx() {
   cxRate.value = ''
 }
 
-/* ── 記帳頁排版（0.1.45）─────────────────────────────────
- * 六個區塊：1=支出/收入＋幣別、2=金額＋快速金額、3=備註、4=日期時間、
- * 5=收據圖片、6=清空＋記錄。點擊順序＝顯示順序；沒點＝不顯示。
- * 分類（catbox）不參與排序（HomeView 固定跟在金額後面）。
+/* ── 記帳頁排版（0.1.45；0.1.46 加入「分類」變 1..7）──────────
+ * 1=支出/收入＋幣別、2=金額＋快速金額、3=分類、4=備註、5=日期時間、
+ * 6=收據圖片、7=清空＋記錄。點擊順序＝顯示順序；沒點＝不顯示
+ * （隱藏區塊的預設值在「預設值」子頁面裡設）。
  */
 const layoutItems: { n: number; label: string; icon: string }[] = [
   { n: 1, label: '支出/收入＋幣別', icon: 'M4 8h10M4 8l3-3M4 8l3 3M20 16H10M20 16l-3-3M20 16l-3 3' },
   { n: 2, label: '金額＋快速金額', icon: 'M4.7 2.7h14.6v18.6H4.7zM8.2 7h7.6M8.6 11.4h.01M12 11.4h.01M15.4 11.4h.01M8.6 17.8h3.6' },
-  { n: 3, label: '備註', icon: 'M5 5h14v14l-3-1.6L13 19l-2-1.6L8 19l-3-1.6V5ZM9 10h6M9 13.4h4' },
-  { n: 4, label: '日期時間', icon: 'M4.4 6.4h15.2v13.2H4.4zM4.4 10.6h15.2M8.4 3.8v4M15.6 3.8v4' },
-  { n: 5, label: '收據圖片', icon: 'M6 3h12v18l-2-1.4L14 21l-2-1.4L10 21l-2-1.4L6 21V3ZM9.5 8h5M9.5 12h5' },
-  { n: 6, label: '清空＋記錄', icon: 'M5 12.6 9.4 17 19 7.4' },
+  { n: 3, label: '分類', icon: 'M4.6 4.6h5.8l9 9-5.8 5.8-9-9V4.6ZM8.3 8.3h.01' },
+  { n: 4, label: '備註', icon: 'M5 5h14v14l-3-1.6L13 19l-2-1.6L8 19l-3-1.6V5ZM9 10h6M9 13.4h4' },
+  { n: 5, label: '日期時間', icon: 'M4.4 6.4h15.2v13.2H4.4zM4.4 10.6h15.2M8.4 3.8v4M15.6 3.8v4' },
+  { n: 6, label: '收據圖片', icon: 'M6 3h12v18l-2-1.4L14 21l-2-1.4L10 21l-2-1.4L6 21V3ZM9.5 8h5M9.5 12h5' },
+  { n: 7, label: '清空＋記錄', icon: 'M5 12.6 9.4 17 19 7.4' },
 ]
+
+/** 「預設值」子頁面（0.1.46）：隱藏區塊提交時要用的預設內容 */
+const hdOpen = ref(false)
 
 /** 點方塊：已排＝取消；沒排＝加到排序最後 */
 function toggleLayout(n: number) {
@@ -742,7 +747,7 @@ const activeWalletName = computed(() => settings.activeWallet.name)
             class="field cx__addin"
             type="text"
             :maxlength="12"
-            placeholder="名稱（可留空）"
+            placeholder="名稱"
             aria-label="自訂貨幣名稱"
             @keydown.enter.prevent="addCx"
           />
@@ -754,12 +759,14 @@ const activeWalletName = computed(() => settings.activeWallet.name)
             aria-label="自訂貨幣匯率"
             @keydown.enter.prevent="addCx"
           />
-          <button class="btn btn--primary btn--sm" type="button" :disabled="!cxCode.trim()" @click="addCx">
-            新增
-          </button>
-          <button class="btn btn--sm" type="button" @click="closeCx">取消</button>
-        </div>
-      </div>
+          <!-- 0.1.46：三個輸入框同一行；新增＋取消掉到下一行、貼右、兩顆之間不留白 -->
+          <div class="cx__btns">
+            <button class="btn btn--primary btn--sm" type="button" :disabled="!cxCode.trim()" @click="addCx">
+              新增
+            </button>
+            <button class="btn btn--sm" type="button" @click="closeCx">取消</button>
+          </div>
+        </div>      </div>
 
       <div class="panel">
         <div class="panel__hd">
@@ -1079,6 +1086,18 @@ const activeWalletName = computed(() => settings.activeWallet.name)
           <h2 class="sec__title">記帳頁排版</h2>
           <p class="sec__desc">照你喜歡的上下順序點下面的方塊；沒點到的區塊不會顯示在記帳頁</p>
         </div>
+        <!-- 0.1.46：兩顆都貼在標題列最右（照「快速金額」的詳細鈕同一個位置） -->
+        <button class="btn btn--ghost btn--sm ly__hd-btn" type="button" @click="hdOpen = true">
+          預設值
+        </button>
+        <button
+          v-if="settings.state.homeLayout.length"
+          class="btn btn--sm ly__hd-btn"
+          type="button"
+          @click="resetLayout"
+        >
+          恢復預設
+        </button>
       </header>
 
       <div class="panel">
@@ -1086,14 +1105,6 @@ const activeWalletName = computed(() => settings.activeWallet.name)
           <span class="panel__label">
             {{ settings.state.homeLayout.length ? `目前順序（${settings.state.homeLayout.length} 個區塊）` : '預設（全部顯示）' }}
           </span>
-          <button
-            v-if="settings.state.homeLayout.length"
-            class="btn btn--sm"
-            type="button"
-            @click="resetLayout"
-          >
-            恢復預設
-          </button>
         </div>
 
         <!-- 目前順序的預覽：1 → 3 → 4 …（空的時候不顯示） -->
@@ -1328,6 +1339,8 @@ const activeWalletName = computed(() => settings.activeWallet.name)
     <!-- 匯出：先選格式（JSON／Excel）與範圍，再下載 -->
     <!-- 快速金額的詳細子頁面（格局照「管理分類」：鎖背景、下拉關閉、清單↔編輯轉場） -->
     <QuickAmountSheet :open="quickAmtOpen" @close="quickAmtOpen = false" />
+    <!-- 記帳頁排版的「預設值」子頁面（0.1.46）：隱藏區塊提交時要用的預設內容 -->
+    <HomeDefaultSheet :open="hdOpen" @close="hdOpen = false" />
 
     <!-- 旅行模式子頁面（0.1.35；骨架與其他子頁面同一套） -->
     <TravelSheet :open="travelOpen" @close="travelOpen = false" />
@@ -2038,7 +2051,7 @@ const activeWalletName = computed(() => settings.activeWallet.name)
 }
 .cx__addin {
   flex: 1;
-  min-width: 110px;
+  min-width: 0;
   height: 34px;
   padding: 0 10px;
   font-size: 16px;
@@ -2054,9 +2067,15 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   width: 84px;
   text-align: right;
 }
-/* 0.1.45：＋鈕展開列——按鈕們在窄屏換行、靠右收尾 */
-.cx__add .btn--sm {
+/*
+ * 0.1.46（使用者原話）：「自訂貨幣的3個輸入框，都要放在同一行，新增和取消的
+ * 按鈕放在下一行的最右邊, 兩個按鈕之間不要有空白」。
+ * 輸入框一整行（名稱吃彈性）；按鈕包成一組推到最右、組內 gap=0 緊鄰。
+ */
+.cx__btns {
+  display: flex;
   margin-left: auto;
+  gap: 0;
 }
 
 /* ── 快速金額（0.1.29；0.1.30 編輯移到子頁面）────────── */

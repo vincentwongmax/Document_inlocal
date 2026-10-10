@@ -35,8 +35,19 @@ export function defaultSettings(base = 'MOP'): Settings {
     rateCurrencies: ['MOP', 'CNY', 'HKD'],
     // 自訂貨幣（0.1.44）：一開始沒有；使用者在設定頁「幣別與匯率 → 自訂貨幣」新增
     customCurrencies: [],
-    // 記帳頁區塊排序（0.1.45）：空＝全部照預設顯示；使用者排了就只顯示有排的
+    // 記帳頁區塊排序（0.1.45；0.1.46 插入「分類」變 1..7）：空＝全部照預設顯示
     homeLayout: [],
+    // 排版編號版本（0.1.46）：舊資料沒有這個記號 → 載入時自動遷移一次
+    homeLayoutV: 2,
+    // 隱藏區塊的預設值（0.1.46）：全部留空＝跟原本完全一樣
+    homeDefaults: {
+      type: '',
+      amount: '',
+      categoryId: '',
+      note: '',
+      dateOffset: '',
+      images: [],
+    },
     // 只是給個起手式（打開就有東西可按），使用者可以在設定頁改掉或刪光
     quickNotes: ['M記', '麵'],
     /*

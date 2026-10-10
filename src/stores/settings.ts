@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
-import type { Category, CustomCurrency, QuickPreset, Settings, TravelTrip, TxType, Wallet, WalletState } from '@/types'
+import type { Category, CustomCurrency, HomeDefaults, ImageRef, QuickPreset, Settings, TravelTrip, TxType, Wallet, WalletState } from '@/types'
 import { Keys, readJSON, writeJSON, remove, walletSettingsKey } from '@/lib/storage'
 import { defaultSettings } from '@/lib/defaults'
 import { CURRENCIES, fetchRates, defaultRates } from '@/lib/currency'
@@ -76,6 +76,53 @@ function MAP_HAS_BUILTIN(code: string): boolean {
   return CURRENCIES.some((c) => c.code === code)
 }
 
+/**
+ * 排版編號的正規化（0.1.46）：只留 1..7 的整數、去重。
+ */
+function normLayout(v: unknown): number[] {
+  if (!Array.isArray(v)) return []
+  return [...new Set(v.filter((n) => Number.isInteger(n) && n >= 1 && n <= 7))]
+}
+
+/**
+ * 0.1.45 → 0.1.46 的排版編號遷移（只跑一次）：
+ * 舊編號 1..6 沒有「分類」→ 新編號把分類插成 3 號、後面全部 +1。
+ * 舊 [1,3,4]（支出收入、備註、日期）＝新 [1,3,4,5]（分類跟在金額後面，跟 0.1.45 的錨點規則一致）。
+ */
+function migrateHomeLayout(raw: number[]): number[] {
+  const map: Record<number, number> = { 1: 1, 2: 2, 3: 4, 4: 5, 5: 6, 6: 7 }
+  const mapped = raw.map((n) => map[n] ?? n).filter((n) => n >= 1 && n <= 7)
+  if (!mapped.length) return []
+  const a2 = mapped.indexOf(2)
+  const at = a2 !== -1 ? a2 + 1 : mapped.indexOf(1) !== -1 ? mapped.indexOf(1) + 1 : 0
+  mapped.splice(at, 0, 3)
+  return [...new Set(mapped)]
+}
+
+/** 隱藏區塊預設值（0.1.46）的正規化：只挑已知欄位、型別不對就丟掉 */
+function normHomeDefaults(v: unknown): HomeDefaults {
+  const base: HomeDefaults = { type: '', amount: '', categoryId: '', note: '', dateOffset: '', images: [] }
+  if (!v || typeof v !== 'object') return base
+  const o = v as Partial<HomeDefaults>
+  const type = o.type === 'expense' || o.type === 'income' ? o.type : ''
+  const offsets = ['', 'now', 'yesterday', 'tomorrow', 'm5', 'm30', 'h2']
+  const dateOffset = offsets.includes(o.dateOffset ?? '') ? (o.dateOffset as HomeDefaults['dateOffset']) : ''
+  const images = Array.isArray(o.images)
+    ? o.images.filter(
+        (im): im is ImageRef =>
+          !!im && typeof im === 'object' && typeof (im as ImageRef).id === 'string' && !!(im as ImageRef).id,
+      )
+    : []
+  return {
+    type,
+    amount: typeof o.amount === 'string' ? o.amount : '',
+    categoryId: typeof o.categoryId === 'string' ? o.categoryId : '',
+    note: typeof o.note === 'string' ? o.note : '',
+    dateOffset,
+    images,
+  }
+}
+
 function merge(base: Settings, saved: Partial<Settings>): Settings {
   return {
     ...base,
@@ -110,10 +157,15 @@ function merge(base: Settings, saved: Partial<Settings>): Settings {
     customCurrencies: Array.isArray(saved.customCurrencies)
       ? normCustomCurrencies(saved.customCurrencies)
       : base.customCurrencies,
-    // 記帳頁區塊排序（0.1.45）：只留 1~6 的整數、去重；空陣列＝全部照預設顯示
-    homeLayout: Array.isArray(saved.homeLayout)
-      ? [...new Set(saved.homeLayout.filter((n) => Number.isInteger(n) && n >= 1 && n <= 6))]
-      : base.homeLayout,
+    // 記帳頁區塊排序（0.1.45 → 0.1.46 編號遷移）：
+    // 有 homeLayoutV=2 的照新編號（1..7）正規化；沒有記號的舊資料遷移一次（分類插成 3 號）
+    homeLayout:
+      Array.isArray(saved.homeLayout) && saved.homeLayoutV !== 2
+        ? migrateHomeLayout(saved.homeLayout)
+        : normLayout(saved.homeLayout),
+    homeLayoutV: 2,
+    // 隱藏區塊的預設值（0.1.46）
+    homeDefaults: normHomeDefaults(saved.homeDefaults),
     // 旅行模式（0.1.35）：舊資料沒有這個欄位 → null＝沒有旅行；形狀不對也當沒有
     activeTrip: normTrip(saved.activeTrip),
     // 旅行模式（0.1.36）：已結束的旅行。每一筆照樣過一次 normTrip（形狀不對的丟掉）
@@ -491,11 +543,18 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   /**
-   * 記帳頁區塊排序（0.1.45）：直接存使用者的排序（merge 時會再正規化一次）。
-   * 空陣列＝恢復預設（全部顯示、照原本順序）。
+   * 記帳頁區塊排序（0.1.45；0.1.46 起 1..7 含分類）：直接存使用者的排序
+   * （merge 時會再正規化一次）。空陣列＝恢復預設（全部顯示、照原本順序）。
    */
   function setHomeLayout(v: number[]) {
-    state.value.homeLayout = [...new Set(v.filter((n) => Number.isInteger(n) && n >= 1 && n <= 6))]
+    state.value.homeLayout = normLayout(v)
+  }
+
+  /**
+   * 隱藏區塊的預設值（0.1.46）：patch 合進現值（normHomeDefaults 會再過濾一次）。
+   */
+  function setHomeDefaults(patch: Partial<HomeDefaults>) {
+    state.value.homeDefaults = normHomeDefaults({ ...state.value.homeDefaults, ...patch })
   }
 
   /**
@@ -902,6 +961,7 @@ export const useSettingsStore = defineStore('settings', () => {
     updateCustomCurrency,
     removeCustomCurrency,
     setHomeLayout,
+    setHomeDefaults,
     addCategory,
     updateCategory,
     removeCategory,
