@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, toRef, watch } from 'vue'
+import { computed, ref, toRef, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import type { ImageRef, TxType } from '@/types'
 import { useScrollLock } from '@/composables/useScrollLock'
@@ -10,6 +10,7 @@ import { uid } from '@/lib/id'
 import { notify } from '@/lib/alerts'
 import { IMG_MIME } from '@/lib/clipboard'
 import CategoryPicker from './CategoryPicker.vue'
+import MiniSelect from './MiniSelect.vue'
 
 /**
  * 「記帳頁排版 → 預設值」子頁面（0.1.46）。
@@ -47,13 +48,31 @@ const dAmount = ref('')
 const dCategoryId = ref('')
 const dNote = ref('')
 /**
- * 0.1.48：日期時間改成「數字＋單位＋前/後」三個控制項（同一行）。
- * 數字留空＝不設定（＝現在，跟原本一樣）。
+ * 0.1.49：日期時間＝「輸入框（數字**或完整時間**）＋單位下拉＋方向下拉」。
+ * 單位：時/分/日/月/年/現在/無；方向：現在/前/後/無。
+ * 存值規則（優先序）：
+ *   1. 輸入框是完整時間（可解析）→ `at:YYYY-MM-DDTHH:mm`（絕對日期，單位/方向停用）
+ *   2. 單位或方向＝無 → `''`（不設定）
+ *   3. 單位或方向＝現在 → `'now'`
+ *   4. 輸入框是純數字 → `before|after:N:單位`
+ *   5. 其他（沒數字）→ `''`
  */
 const dDateN = ref('')
-const dDateUnit = ref<'m' | 'd' | 'mo' | 'y'>('m')
-const dDateDir = ref<'before' | 'after'>('before')
+const dDateUnit = ref<'h' | 'm' | 'd' | 'mo' | 'y' | 'now' | 'none'>('none')
+const dDateDir = ref<'now' | 'before' | 'after' | 'none'>('none')
 const dImages = ref<ImageRef[]>([])
+
+/** 輸入框是否為「完整時間」（含 - 或 : 且可解析成日期） */
+function parseDateTimeInput(v: string): string | null {
+  const t = v.trim()
+  if (!t || /^\d+$/.test(t)) return null
+  const d = new Date(t)
+  if (isNaN(d.getTime())) return null
+  const p = (x: number) => String(x).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+const isDatetimeInput = computed(() => parseDateTimeInput(dDateN.value) !== null)
 
 watch(
   () => props.open,
@@ -64,11 +83,25 @@ watch(
     dAmount.value = d.amount
     dCategoryId.value = d.categoryId
     dNote.value = d.note
-    // 解析 `before:5:m` 這種字串回三個控制項
-    const m = /^(before|after):(\d+):(m|d|mo|y)$/.exec(d.dateOffset)
-    dDateN.value = m ? m[2] : ''
-    dDateUnit.value = m ? (m[3] as 'm' | 'd' | 'mo' | 'y') : 'm'
-    dDateDir.value = m ? (m[1] as 'before' | 'after') : 'before'
+    // 解析 `before:5:m`／`at:…`／`now`／'' 回三個控制項
+    const rel = /^(before|after):(\d+):(m|h|d|mo|y)$/.exec(d.dateOffset)
+    if (rel) {
+      dDateN.value = rel[2]
+      dDateUnit.value = rel[3] as 'h' | 'm' | 'd' | 'mo' | 'y'
+      dDateDir.value = rel[1] as 'before' | 'after'
+    } else if (d.dateOffset.startsWith('at:')) {
+      dDateN.value = d.dateOffset.slice(3)
+      dDateUnit.value = 'none'
+      dDateDir.value = 'none'
+    } else if (d.dateOffset === 'now') {
+      dDateN.value = ''
+      dDateUnit.value = 'now'
+      dDateDir.value = 'none'
+    } else {
+      dDateN.value = ''
+      dDateUnit.value = 'none'
+      dDateDir.value = 'none'
+    }
     dImages.value = [...d.images]
   },
 )
@@ -97,23 +130,43 @@ function clearCategory() {
 function saveNote() {
   settings.setHomeDefaults({ note: dNote.value })
 }
-/** 日期時間：三個控制項任一改動就重組字串存回（數字空＝不設定） */
+/**
+ * 日期時間：三個控制項任一改動就重組字串存回（0.1.49 優先序見上方註解）。
+ */
 function saveDate() {
+  const abs = parseDateTimeInput(dDateN.value)
+  if (abs) {
+    settings.setHomeDefaults({ dateOffset: `at:${abs}` })
+    return
+  }
+  if (dDateUnit.value === 'none' || dDateDir.value === 'none') {
+    settings.setHomeDefaults({ dateOffset: '' })
+    return
+  }
+  if (dDateUnit.value === 'now' || dDateDir.value === 'now') {
+    settings.setHomeDefaults({ dateOffset: 'now' })
+    return
+  }
   const n = dDateN.value.trim()
-  const spec = n ? `${dDateDir.value}:${Number(n)}:${dDateUnit.value}` : ''
+  const spec = /^\d+$/.test(n) && Number(n) > 0 ? `${dDateDir.value}:${Number(n)}:${dDateUnit.value}` : ''
   settings.setHomeDefaults({ dateOffset: spec })
 }
 
-/** 單位與前後的選項（標籤刻意短，三個控制項才擠得進同一行） */
-const unitOptions: { v: 'm' | 'd' | 'mo' | 'y'; label: string }[] = [
+/** 單位與方向的選項（0.1.49：加回「時」＋「現在」＋「無」） */
+const unitOptions: { v: 'h' | 'm' | 'd' | 'mo' | 'y' | 'now' | 'none'; label: string }[] = [
+  { v: 'h', label: '時' },
   { v: 'm', label: '分' },
   { v: 'd', label: '日' },
   { v: 'mo', label: '月' },
   { v: 'y', label: '年' },
+  { v: 'now', label: '現在' },
+  { v: 'none', label: '無' },
 ]
-const dirOptions: { v: 'before' | 'after'; label: string }[] = [
+const dirOptions: { v: 'now' | 'before' | 'after' | 'none'; label: string }[] = [
+  { v: 'now', label: '現在' },
   { v: 'before', label: '前' },
   { v: 'after', label: '後' },
+  { v: 'none', label: '無' },
 ]
 
 /* ── 預設圖片：上傳即存、移除即刪 ─────────────────────────── */
@@ -274,37 +327,40 @@ function removeImage(im: ImageRef) {
             />
           </label>
 
-          <!-- 5＝日期時間（0.1.48：數字＋單位＋前/後，三個控制項同一行、PWA iPhone 不走位） -->
-          <div class="frow">
+          <!-- 5＝日期時間（0.1.49：輸入框可輸入數字或完整時間；單位/方向下拉照分類下拉的格局）。
+               PWA：輸入框獨立一行、兩個下拉在下一行；電腦版（≥768px）三個同一行。 -->
+          <div class="frow frow--date">
             <span class="frow__lb">日期時間</span>
             <div class="daterow">
               <input
                 v-model="dDateN"
-                class="field daterow__n num"
-                inputmode="numeric"
+                class="field daterow__n"
                 type="text"
-                :maxlength="4"
-                placeholder="0"
-                aria-label="預設日期的數字"
+                inputmode="text"
+                placeholder="數字，或 2026-10-12 09:30"
+                aria-label="預設日期（數字或完整時間）"
                 @input="saveDate"
                 @change="saveDate"
               />
-              <select
-                v-model="dDateUnit"
-                class="daterow__sel"
-                aria-label="預設日期的單位"
-                @change="saveDate"
-              >
-                <option v-for="o in unitOptions" :key="o.v" :value="o.v">{{ o.label }}</option>
-              </select>
-              <select
-                v-model="dDateDir"
-                class="daterow__sel"
-                aria-label="預設日期的方向"
-                @change="saveDate"
-              >
-                <option v-for="o in dirOptions" :key="o.v" :value="o.v">{{ o.label }}</option>
-              </select>
+              <!-- ⚠ MiniSelect 是多根元件（scoped class 不會 fallthrough）→ 用 span 當 flex 子元素 -->
+              <span class="daterow__sel">
+                <MiniSelect
+                  v-model="dDateUnit"
+                  :options="unitOptions"
+                  :disabled="isDatetimeInput"
+                  aria-label="預設日期的單位"
+                  @update:model-value="saveDate"
+                />
+              </span>
+              <span class="daterow__sel">
+                <MiniSelect
+                  v-model="dDateDir"
+                  :options="dirOptions"
+                  :disabled="isDatetimeInput"
+                  aria-label="預設日期的方向"
+                  @update:model-value="saveDate"
+                />
+              </span>
             </div>
           </div>
 
@@ -410,35 +466,34 @@ function removeImage(im: ImageRef) {
   font-size: 16px;
 }
 /*
- * 0.1.48（使用者原話）：日期時間＝「數字輸入框＋單位（分/日/月/年）＋方向（前/後）」，
- * 三個控制項**放在同一行**、支援 PWA (iPhone)、不要走位。
- * 做法：`.daterow` 一行 flex 不換行；數字框固定 56px（字級 16px 防 iOS focus zoom），
- * 兩個 select 平分剩下的寬（min-width:0 可壓縮、短標籤 分/日/月/年・前/後 剛好放得下）。
+ * 0.1.49：日期時間＝「輸入框（數字或完整時間）＋單位下拉＋方向下拉」。
+ * PWA（<768px）：輸入框**獨立一行**、兩個下拉同行在其**下方**；
+ * 電腦版（≥768px）：三個同一行。都不走位（min-width:0 可壓縮）。
  */
 .daterow {
   flex: 1;
   min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
 }
 .daterow__n {
-  flex: none;
-  width: 56px;
+  flex: 1 1 100%;
   min-width: 0;
   height: 38px;
-  padding: 0 8px;
+  padding: 0 10px;
   font-size: 16px;
-  text-align: center;
 }
 .daterow__sel {
   flex: 1 1 0;
   min-width: 0;
-  height: 38px;
-  padding: 0 4px;
-  font-size: 14px;
-  text-align: center;
-  white-space: nowrap;
+  display: block;
+}
+@media (min-width: 768px) {
+  .daterow__n {
+    flex: 1 1 0;
+  }
 }
 
 /* 支出/收入：三段小膠囊 */

@@ -262,8 +262,8 @@ function resetLayout() {
 
 function addCx() {  const code = cxCode.value.trim().toUpperCase()
   const rate = Number(cxRate.value)
-  if (!/^[A-Z]{3}$/.test(code)) {
-    notify('貨幣代碼要 3 個大寫英文字母（例如 XYZ）', 'warn')
+  if (!/^[A-Z0-9]{1,12}$/.test(code)) {
+    notify('貨幣代碼要 1~12 碼英文字母或數字（例如 XYZ、NTD2）', 'warn')
     return
   }
   if (CURRENCIES.some((c) => c.code === code)) {
@@ -580,13 +580,13 @@ const activeWalletName = computed(() => settings.activeWallet.name)
       <div class="panel">
         <div class="rows">
           <label class="row">
-            <span>主幣別<small class="tiny muted">統計與圖表的換算基準</small></span>
+            <span>主幣別<small class="tiny muted">統計與圖表的換算基準（0.1.49 起自訂貨幣也可以）</small></span>
             <select
               class="field row__ctl"
               :value="settings.baseCurrency"
               @change="changeBase(($event.target as HTMLSelectElement).value)"
             >
-              <option v-for="c in CURRENCIES" :key="c.code" :value="c.code">
+              <option v-for="c in settings.allCurrencies" :key="c.code" :value="c.code">
                 {{ c.code }} · {{ c.name }}
               </option>
             </select>
@@ -729,9 +729,9 @@ const activeWalletName = computed(() => settings.activeWallet.name)
             v-model="cxCode"
             class="field cx__addin cx__addin--code num"
             type="text"
-            :maxlength="3"
+            :maxlength="12"
             placeholder="代碼"
-            aria-label="自訂貨幣代碼（3 個大寫字母）"
+            aria-label="自訂貨幣代碼（1~12 碼英文字母或數字）"
             @keydown.enter.prevent="addCx"
           />
           <input
@@ -2032,7 +2032,6 @@ const activeWalletName = computed(() => settings.activeWallet.name)
 }
 .cx__add {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 7px;
   padding: 9px;
@@ -2044,34 +2043,23 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   flex: 1;
   min-width: 0;
   height: 34px;
-  padding: 0 10px;
+  padding: 0 8px;
   font-size: 16px;
   background: var(--surface);
 }
-.cx__addin--code {
-  flex: none;
-  width: 64px;
-  text-transform: uppercase;
-}
 .cx__addin--rate {
   flex: none;
-  width: 84px;
+  width: 64px;
   text-align: right;
 }
 /*
- * 0.1.46（使用者原話）：「自訂貨幣的3個輸入框，都要放在同一行，新增和取消的
- * 按鈕放在下一行的最右邊, 兩個按鈕之間不要有空白」。
- * 輸入框一整行（名稱吃彈性）；按鈕包成一組推到最右、組內 gap=0 緊鄰。
- */
-/*
- * 0.1.46（使用者原話）：三個輸入框同一行、按鈕下一行最右、兩顆之間不留白。
- * 0.1.47：取消鈕移除後只剩「新增」——flex-basis:100% 讓按鈕列**恆在下一行**
- * （不會因為輸入框可壓縮而被擠上同一行），貼右對齊。
+ * 0.1.49（使用者原話）：「自訂貨幣的輸入框和按鈕，也要放在同一行（PWA 和電腦版也要）」
+ * → 代碼/名稱/匯率/新增 四個元素同一行（.cx__btns 不再搶整行、輸入框 min-width:0 可壓縮）。
+ *   代碼 0.1.49 起不限 3 碼（1~12 碼字母或數字）。
  */
 .cx__btns {
   display: flex;
-  justify-content: flex-end;
-  flex-basis: 100%;
+  align-items: center;
 }
 
 /* ── 快速金額（0.1.29；0.1.30 編輯移到子頁面）────────── */

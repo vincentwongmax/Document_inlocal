@@ -55,7 +55,7 @@ function normTrip(v: unknown): TravelTrip | null {
 
 /**
  * 自訂貨幣（0.1.44）的正規化：
- * - code 必須是 3 個大寫英文字母（照 ISO 4217 的樣子）、不能撞內建 12 種
+ * - code＝1~12 碼大寫英文字母或數字（0.1.49 放寬，不限 3 碼）、不能撞內建 12 種
  * - name 空的就沿用 code；同一個 code 只留第一筆
  */
 function normCustomCurrencies(v: unknown): CustomCurrency[] {
@@ -65,7 +65,7 @@ function normCustomCurrencies(v: unknown): CustomCurrency[] {
   for (const raw of v) {
     const o = raw as Partial<CustomCurrency>
     const code = typeof o.code === 'string' ? o.code.trim().toUpperCase() : ''
-    if (!/^[A-Z]{3}$/.test(code) || seen.has(code) || MAP_HAS_BUILTIN(code)) continue
+    if (!/^[A-Z0-9]{1,12}$/.test(code) || seen.has(code) || MAP_HAS_BUILTIN(code)) continue
     seen.add(code)
     const name = typeof o.name === 'string' && o.name.trim() ? o.name.trim() : code
     out.push({ code, name })
@@ -109,19 +109,19 @@ function normHomeDefaults(v: unknown): HomeDefaults {
    * 0.1.48：dateOffset 改成「before|after:整數:m|d|mo|y」的結構化字串。
    * 0.1.46~47 的舊值（now/yesterday/tomorrow/m5/m30/h2）自動遷移一次。
    */
-  const OFFSET_RE = /^(before|after):(\d+):(m|d|mo|y)$/
+  const OFFSET_RE = /^(before|after):(\d+):(m|h|d|mo|y)$/
+  const ABSOLUTE_RE = /^at:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/
   const LEGACY_OFFSET: Record<string, string> = {
     yesterday: 'before:1:d',
     tomorrow: 'after:1:d',
     m5: 'before:5:m',
     m30: 'before:30:m',
-    // ⚠ 0.1.48 的單位只有 分/日/月/年——舊「2 小時前」換算成 120 分鐘
-    h2: 'before:120:m',
-    now: '',
+    h2: 'before:2:h',
+    now: 'now',
   }
   const dateOffset =
     typeof o.dateOffset === 'string' && o.dateOffset
-      ? OFFSET_RE.test(o.dateOffset)
+      ? OFFSET_RE.test(o.dateOffset) || o.dateOffset === 'now' || ABSOLUTE_RE.test(o.dateOffset)
         ? o.dateOffset
         : (LEGACY_OFFSET[o.dateOffset] ?? '')
       : ''
@@ -171,7 +171,7 @@ function merge(base: Settings, saved: Partial<Settings>): Settings {
     quickPresets: Array.isArray(saved.quickPresets)
       ? saved.quickPresets.map((p) => ({ ...p, currency: p.currency ?? '' }))
       : base.quickPresets,
-    // 自訂貨幣（0.1.44）：每一筆過一次正規化（code 3 個大寫字母、不撞內建、去重）
+    // 自訂貨幣（0.1.44；0.1.49 代碼放寬 1~12 碼）：每一筆過一次正規化（不撞內建、去重）
     customCurrencies: Array.isArray(saved.customCurrencies)
       ? normCustomCurrencies(saved.customCurrencies)
       : base.customCurrencies,
@@ -499,9 +499,22 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   async function setBaseCurrency(code: string) {
+    const oldRates = { ...state.value.rates }
     state.value.baseCurrency = code
     const rates = defaultRates(code)
-    keepCustomRates(rates)
+    /**
+     * 0.1.49：**自訂幣別也能當主幣別**（使用者原話）。自訂幣別沒有交叉匯率來源，
+     * 但整組換算不需要——用「舊 base 下各幣別的匯率」除以「舊 base 下新主幣的匯率」，
+     * 就得到新 base 下的全套匯率（自訂幣別也一起換算，rates[新主幣] 自然變 1）。
+     * 舊 rates 補不到的（例如剛加的自訂幣別還沒有匯率）就用 defaultRates 的內建值。
+     */
+    const conv = oldRates[code]
+    if (typeof conv === 'number' && conv > 0) {
+      for (const [c, r] of Object.entries(oldRates)) {
+        const v = Number((r / conv).toFixed(6))
+        if (v > 0 && isFinite(v)) rates[c] = v
+      }
+    }
     state.value.rates = rates
     state.value.ratesUpdatedAt = null
     if (state.value.inputCurrency === state.value.baseCurrency) state.value.inputCurrency = code
@@ -537,7 +550,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   function addCustomCurrency(code: string, name: string, rate: number): boolean {
     const c = code.trim().toUpperCase()
-    if (!/^[A-Z]{3}$/.test(c)) return false
+    if (!/^[A-Z0-9]{1,12}$/.test(c)) return false
     if (CURRENCIES.some((x) => x.code === c)) return false
     if (state.value.customCurrencies.some((x) => x.code === c)) return false
     state.value.customCurrencies.push({ code: c, name: name.trim() || c })

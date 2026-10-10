@@ -1,7 +1,7 @@
 export type TxType = 'expense' | 'income'
 export type RecordSource = 'manual' | 'image'
 
-/** 自訂貨幣（0.1.44）：code＝3 個大寫字母、name＝顯示名（例如「澳門幣」） */
+/** 自訂貨幣（0.1.44）：code＝1~12 碼大寫字母/數字（0.1.49 放寬）、name＝顯示名（例如「澳門幣」） */
 export interface CustomCurrency {
   code: string
   name: string
@@ -225,9 +225,11 @@ export interface HomeDefaults {
   /** 預設備註（區塊 4 隱藏時用）；空＝不設 */
   note: string
   /**
-   * 預設日期（區塊 5 隱藏時用）。0.1.48 改成「數字＋單位＋前後」的結構化字串：
-   * 格式 `${before|after}:${整數}:${m|d|mo|y}`（例：`before:5:m`＝5 分鐘前、
-   * `after:1:mo`＝1 個月後）；空字串＝不設（＝現在，跟原本一樣）。
+   * 預設日期（區塊 5 隱藏時用）。0.1.49 的格式：
+   * - `''`＝不設定（照原本的行為走）
+   * - `'now'`＝現在
+   * - `'before|after:整數:m|h|d|mo|y'`＝相對現在（0.1.49 把「時(h)」加回單位）
+   * - `'at:YYYY-MM-DDTHH:mm'`＝使用者手動輸入的完整時間（絕對日期）
    * 0.1.46~47 的舊值（now/yesterday/tomorrow/m5/m30/h2）載入時自動遷移。
    */
   dateOffset: '' | string

@@ -85,17 +85,25 @@ const hiddenBlocks = computed<Set<number>>(() => {
 })
 
 /**
- * 預設日期偏移（0.1.48）：隱藏日期區塊時的 occurredAt。
- * 格式 `${before|after}:${n}:${m|d|mo|y}`——分鐘用固定毫秒，日/月/年走日曆運算
- * （setDate/setMonth/setFullYear，跨月跨年才不會算錯）。
+ * 預設日期偏移（0.1.49）：隱藏日期區塊時的 occurredAt。
+ * - `now`＝現在
+ * - `at:YYYY-MM-DDTHH:mm`＝使用者輸入的完整時間（解析失敗退回現在）
+ * - `before|after:N:m|h|d|mo|y`＝相對偏移；分/時用固定毫秒，
+ *   日/月/年走日曆運算（setDate/setMonth/setFullYear，跨月跨年不會算錯）。
  */
 function offsetISO(spec: string): string {
-  const m = /^(before|after):(\d+):(m|d|mo|y)$/.exec(spec)
+  if (spec === 'now') return new Date().toISOString()
+  if (spec.startsWith('at:')) {
+    const d = new Date(spec.slice(3))
+    return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString()
+  }
+  const m = /^(before|after):(\d+):(m|h|d|mo|y)$/.exec(spec)
   if (!m) return new Date().toISOString()
   const [, dir, nRaw, unit] = m
   const n = Number(nRaw) * (dir === 'before' ? -1 : 1)
   const d = new Date()
   if (unit === 'm') d.setMinutes(d.getMinutes() + n)
+  else if (unit === 'h') d.setHours(d.getHours() + n)
   else if (unit === 'd') d.setDate(d.getDate() + n)
   else if (unit === 'mo') d.setMonth(d.getMonth() + n)
   else d.setFullYear(d.getFullYear() + n)
