@@ -1,6 +1,6 @@
 # 記帳本（mop-ledger）— 核心備忘
 
-Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\Desktop\AI`（**無 E: 槽**），main。
+Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\Desktop\AI`，main。
 完整約定／踩坑 → 同目錄 `CONVENTIONS.md`。
 
 ## 版本
