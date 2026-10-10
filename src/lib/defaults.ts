@@ -33,6 +33,8 @@ export function defaultSettings(base = 'MOP'): Settings {
     defaultCategoryId: '',
     visibleCurrencies: [],
     rateCurrencies: ['MOP', 'CNY', 'HKD'],
+    // 自訂貨幣（0.1.44）：一開始沒有；使用者在設定頁「幣別與匯率 → 自訂貨幣」新增
+    customCurrencies: [],
     // 只是給個起手式（打開就有東西可按），使用者可以在設定頁改掉或刪光
     quickNotes: ['M記', '麵'],
     /*

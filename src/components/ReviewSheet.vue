@@ -8,7 +8,7 @@ import { usePullToClose } from '@/composables/usePullToClose'
 import CategoryPicker from './CategoryPicker.vue'
 import ClearableInput from './ClearableInput.vue'
 import DateTimeField from './DateTimeField.vue'
-import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
+import { currency, fmtMoney } from '@/lib/currency'
 import { toLocalInput, fromLocalInput, formatFull } from '@/lib/date'
 import { formatBytes } from '@/lib/imaging'
 
@@ -166,7 +166,7 @@ function applyDate(d: DraftRecord, iso: string) {
                 <div class="amt">
                   <input v-model.number="d.amount" class="field num" inputmode="decimal" placeholder="0.00" />
                   <select v-model="d.currency" class="field sel">
-                    <option v-for="c in CURRENCIES" :key="c.code" :value="c.code">{{ c.code }}</option>
+                    <option v-for="c in settings.allCurrencies" :key="c.code" :value="c.code">{{ c.code }}</option>
                   </select>
                 </div>
               </label>

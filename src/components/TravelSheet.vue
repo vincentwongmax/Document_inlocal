@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
 import { confirmDialog, notify } from '@/lib/alerts'
-import { CURRENCIES, fmtMoney } from '@/lib/currency'
+import { fmtMoney } from '@/lib/currency'
 import { useScrollLock } from '@/composables/useScrollLock'
 import { usePullToClose } from '@/composables/usePullToClose'
 import DateField from './DateField.vue'
@@ -384,7 +384,7 @@ async function askEnd() {
             <span>旅行貨幣 <em class="lb__hint">留「不自動切換」＝記帳頁幣別不動</em></span>
             <select v-model="draft.currency" class="field" @change="applyCurrency">
               <option value="">不自動切換</option>
-              <option v-for="c in CURRENCIES" :key="c.code" :value="c.code">
+              <option v-for="c in settings.allCurrencies" :key="c.code" :value="c.code">
                 {{ c.code }} · {{ c.name }}
               </option>
             </select>

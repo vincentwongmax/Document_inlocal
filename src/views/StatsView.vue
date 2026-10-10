@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
 import { notify } from '@/lib/alerts'
@@ -30,6 +31,16 @@ import { withAlpha } from '@/lib/color'
 
 const settings = useSettingsStore()
 const records = useRecordsStore()
+const router = useRouter()
+
+/**
+ * 0.1.44：統計頁的明細摘要區塊點下去 → 跳到記錄頁並帶 `?q=分類名`
+ * 記錄頁會 watch route.query.q 把它填進搜索框。
+ */
+function searchCat(name: string) {
+  editingId.value = null
+  void router.push({ path: '/records', query: { q: name } })
+}
 
 /* ── 區間選擇 ───────────────────────────────────────────── */
 const mode = ref<'day' | 'month' | 'year' | 'custom'>('month')
@@ -755,6 +766,7 @@ watch([mode, range], () => {
       @close="editingId = null"
       @save="saveEdit"
       @remove="removeRecord"
+      @search-cat="searchCat"
     />
   </div>
 </template>

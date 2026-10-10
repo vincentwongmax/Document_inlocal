@@ -1,6 +1,12 @@
 export type TxType = 'expense' | 'income'
 export type RecordSource = 'manual' | 'image'
 
+/** 自訂貨幣（0.1.44）：code＝3 個大寫字母、name＝顯示名（例如「澳門幣」） */
+export interface CustomCurrency {
+  code: string
+  name: string
+}
+
 /**
  * 錢包：一本獨立的帳。
  * 每個錢包有自己的一整套設定（分類、匯率、幣別、常用備註）與自己的記錄，
@@ -206,6 +212,12 @@ export interface TravelTrip {
 
 export interface Settings {
   baseCurrency: string
+  /**
+   * 自訂貨幣（0.1.44）：使用者自己加的幣別（不在內建 12 種清單裡的）。
+   * 匯率存在 `rates` map（跟內建幣別同一個地方）；這裡只記「有哪些自訂幣別」。
+   * 刪除自訂幣別**不會**動 `rates`——已記錄的資料（記錄自己凍結的 rate）完全不受影響。
+   */
+  customCurrencies: CustomCurrency[]
   /**
    * 目前輸入幣別（記帳頁的預設幣別，可在此手動切換）。
    * 旅行模式（0.1.35）開著且設了旅行貨幣時，會被自動切換並在結束後恢復。

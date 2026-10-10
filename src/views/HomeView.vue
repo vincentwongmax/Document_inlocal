@@ -23,7 +23,7 @@ import {
   isLongDisplay,
   type CalcState,
 } from '@/lib/calc'
-import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
+import { currency, fmtMoney } from '@/lib/currency'
 import { fromLocalInput, nowLocalInput } from '@/lib/date'
 import type { ImageRef, QuickPreset, TxType } from '@/types'
 import { writeJSON } from '@/lib/storage'
@@ -69,11 +69,12 @@ const tripColor = computed(() => settings.activeTrip?.color ?? DEFAULT_TRIP_COLO
 
 /** 記帳幣別選單：設定頁可挑選要顯示哪幾個（沒選 = 全部），目前選用的幣別一律保留 */
 const currencyOptions = computed(() => {
+  const all = settings.allCurrencies
   const vis = settings.visibleCurrencies
-  if (!vis.length) return CURRENCIES
-  const list = CURRENCIES.filter((c) => vis.includes(c.code))
+  if (!vis.length) return all
+  const list = all.filter((c) => vis.includes(c.code))
   if (list.length && !list.some((c) => c.code === curCode.value)) {
-    const cur = CURRENCIES.find((c) => c.code === curCode.value)
+    const cur = all.find((c) => c.code === curCode.value)
     if (cur) return [cur, ...list]
   }
   return list

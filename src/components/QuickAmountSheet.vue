@@ -2,7 +2,7 @@
 import { computed, ref, toRef, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { confirmDialog, notify } from '@/lib/alerts'
-import { CURRENCIES } from '@/lib/currency'
+
 import { useScrollLock } from '@/composables/useScrollLock'
 import { usePullToClose } from '@/composables/usePullToClose'
 import type { QuickPreset, TxType } from '@/types'
@@ -284,7 +284,7 @@ async function askRemove() {
                   <span>貨幣</span>
                   <select v-model="draft.currency" class="field">
                     <option value="">（預設）</option>
-                    <option v-for="c in CURRENCIES" :key="c.code" :value="c.code">
+                    <option v-for="c in settings.allCurrencies" :key="c.code" :value="c.code">
                       {{ c.code }} · {{ c.name }}
                     </option>
                   </select>

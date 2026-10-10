@@ -11,7 +11,7 @@ import { compressImage, makeThumb } from '@/lib/imaging'
 import { md5OfFile } from '@/lib/md5'
 import { uid } from '@/lib/id'
 import { dupNotice } from '@/lib/receiptDup'
-import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
+import { currency, fmtMoney } from '@/lib/currency'
 import { displayExpr } from '@/lib/calc'
 import { formatFull, fromLocalInput, toLocalInput } from '@/lib/date'
 import { iconForCategory } from '@/lib/icons'
@@ -29,6 +29,8 @@ const emit = defineEmits<{
   close: []
   save: [patch: Partial<TxRecord>]
   remove: [id: string]
+  /** 0.1.44：點摘要區塊 → 跳到記錄搜索頁搜尋這筆的分類 */
+  'search-cat': [name: string]
 }>()
 
 const settings = useSettingsStore()
@@ -89,6 +91,18 @@ const exprValid = computed(
 const preview = computed(() => fmtMoney(numeric.value * rate.value, settings.baseCurrency))
 const cat = computed(() => settings.category(categoryId.value))
 const catName = computed(() => cat.value?.name ?? '未分類')
+
+/**
+ * 0.1.44：明細裡顯示圖片大小（壓縮後存進系統的大小，不是原圖）。
+ * 把所有圖片的 `bytes`（ImageRef 裡壓縮後的實際佔用）加總。
+ */
+const imgBytes = computed(() => images.value.reduce((s, im) => s + (im.bytes || 0), 0))
+/** 位元組 → 人看得懂的字串（<1KB 用 B，否則 KB，>1MB 用 MB） */
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n / 1024 >= 100 ? 0 : 1)} KB`
+  return `${(n / 1024 / 1024).toFixed(2)} MB`
+}
 const catColor = computed(() => cat.value?.color ?? '#8a857c')
 const catIcon = computed(() =>
   cat.value ? iconForCategory(cat.value) : iconForCategory({ id: '', name: '' }),
@@ -400,14 +414,14 @@ function save() {
         </header>
 
         <div ref="bodyEl" class="sheet__body">
-          <!-- 即時摘要 -->
-          <div class="hero" :class="isExpense ? 'is-exp' : 'is-inc'">
+          <!-- 即時摘要（0.1.44：點它 → 跳到記錄搜索頁搜尋這筆的分類） -->
+          <button class="hero" :class="isExpense ? 'is-exp' : 'is-inc'" type="button" @click="emit('search-cat', catName)">
             <div class="hero__l">
               <span class="hero__cat">{{ catName }}</span>
               <span class="hero__sub">{{ typeLabel }} · {{ fmtMoney(numeric || 0, currencyCode) }}</span>
             </div>
             <span class="hero__amt num">{{ isExpense ? '−' : '+' }}{{ preview }}</span>
-          </div>
+          </button>
 
           <!-- 類型 -->
           <div class="flat">
@@ -429,7 +443,7 @@ function save() {
                 :placeholder="`${currency(currencyCode).symbol} 0`"
               />
               <select v-model="currencyCode" class="field sel2">
-                <option v-for="c in CURRENCIES" :key="c.code" :value="c.code">{{ c.code }}</option>
+                <option v-for="c in settings.allCurrencies" :key="c.code" :value="c.code">{{ c.code }}</option>
               </select>
             </div>
           </label>
@@ -475,9 +489,44 @@ function save() {
             </ClearableInput>
           </label>
 
-          <!-- 收據圖片 -->
-          <div class="flat">
-            <span class="flat__label">收據圖片</span>
+          <!-- 詳細資訊 -->
+          <section class="meta">
+            <div class="meta__row">
+              <span class="tiny muted">新增時間</span>
+              <span class="tiny num">{{ formatFull(record.createdAt) }}</span>
+            </div>
+            <!-- 記帳當下用計算機算出來的公式（唯讀；改了金額就不再成立，會自己消失） -->
+            <div v-if="exprValid" class="meta__row">
+              <span class="tiny muted">計算公式</span>
+              <span class="tiny num expr__v">{{ displayExpr(expr) }}=</span>
+            </div>
+            <div class="meta__row">
+              <span class="tiny muted">主幣金額</span>
+              <span class="tiny num">{{ fmtMoney(record.baseAmount, record.baseCurrency) }}</span>
+            </div>
+            <template v-if="converted">
+              <div class="meta__row">
+                <span class="tiny muted">原幣金額</span>
+                <span class="tiny num">{{ fmtMoney(record.amount, record.currency) }}</span>
+              </div>
+              <div class="meta__row">
+                <span class="tiny muted">記錄匯率</span>
+                <span class="tiny num">1 {{ record.currency }} = {{ record.rate }} {{ record.baseCurrency }}</span>
+              </div>
+            </template>
+            <!-- 0.1.44：壓縮後實際儲存的大小（不是原圖大小）；沒圖就不顯示 -->
+            <div v-if="imgBytes > 0" class="meta__row">
+              <span class="tiny muted">圖片大小</span>
+              <span class="tiny num">{{ fmtBytes(imgBytes) }}（壓縮後）</span>
+            </div>
+          </section>
+
+          <!-- 0.1.44：收據圖片合併進「收據辨識」（原本是分開的「收據圖片」flat 區塊） -->
+          <section class="flat ocrsec">
+            <div class="ocrsec__head">
+              <span class="flat__label">收據辨識</span>
+              <span class="beta">BETA</span>
+            </div>
             <div class="imgs">
               <div v-for="im in images" :key="im.id" class="imgs__cell">
                 <button class="imgs__item" :title="im.name || '收據圖片'" @click="openImage(im)">
@@ -527,41 +576,13 @@ function save() {
                     : '可上傳或貼上多張圖片（自動壓縮，保留文字清晰度）'
               }}
             </p>
-          </div>
-
-          <!-- 詳細資訊 -->
-          <section class="meta">
-            <div class="meta__row">
-              <span class="tiny muted">新增時間</span>
-              <span class="tiny num">{{ formatFull(record.createdAt) }}</span>
-            </div>
-            <!-- 記帳當下用計算機算出來的公式（唯讀；改了金額就不再成立，會自己消失） -->
-            <div v-if="exprValid" class="meta__row">
-              <span class="tiny muted">計算公式</span>
-              <span class="tiny num expr__v">{{ displayExpr(expr) }}=</span>
-            </div>
-            <div class="meta__row">
-              <span class="tiny muted">主幣金額</span>
-              <span class="tiny num">{{ fmtMoney(record.baseAmount, record.baseCurrency) }}</span>
-            </div>
-            <template v-if="converted">
-              <div class="meta__row">
-                <span class="tiny muted">原幣金額</span>
-                <span class="tiny num">{{ fmtMoney(record.amount, record.currency) }}</span>
-              </div>
-              <div class="meta__row">
-                <span class="tiny muted">記錄匯率</span>
-                <span class="tiny num">1 {{ record.currency }} = {{ record.rate }} {{ record.baseCurrency }}</span>
-              </div>
-            </template>
+            <details v-if="record.ocr?.text" class="raw">
+              <summary class="tiny muted">
+                收據辨識原始文字（信心度 {{ Math.round(record.ocr.confidence) }}%）
+              </summary>
+              <pre>{{ record.ocr.text }}</pre>
+            </details>
           </section>
-
-          <details v-if="record.ocr?.text" class="raw">
-            <summary class="tiny muted">
-              收據辨識原始文字（信心度 {{ Math.round(record.ocr.confidence) }}%）
-            </summary>
-            <pre>{{ record.ocr.text }}</pre>
-          </details>
         </div>
 
         <footer class="sheet__foot">
@@ -865,6 +886,15 @@ function save() {
   border-radius: var(--r-lg);
   background: var(--surface-2);
   border: 1px solid var(--line);
+  /* 0.1.44：改成 <button>（點它 → 搜尋分類），把按鈕外觀歸零 */
+  width: 100%;
+  font: inherit;
+  text-align: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.hero:active {
+  filter: brightness(0.97);
 }
 .hero.is-exp {
   background: var(--expense-soft);
@@ -947,6 +977,22 @@ function save() {
 }
 .meta__row:last-child {
   border-bottom: 0;
+}
+/* 0.1.44：收據辨識合併區塊的標頭（標籤＋BETA 膠囊） */
+.ocrsec__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.beta {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--pick-soft);
+  color: var(--pick);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
 }
 .raw pre {
   margin: 8px 0 0;

@@ -1,9 +1,9 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
-import type { Category, QuickPreset, Settings, TravelTrip, TxType, Wallet, WalletState } from '@/types'
+import type { Category, CustomCurrency, QuickPreset, Settings, TravelTrip, TxType, Wallet, WalletState } from '@/types'
 import { Keys, readJSON, writeJSON, remove, walletSettingsKey } from '@/lib/storage'
 import { defaultSettings } from '@/lib/defaults'
-import { fetchRates, defaultRates } from '@/lib/currency'
+import { CURRENCIES, fetchRates, defaultRates } from '@/lib/currency'
 import { iconForCategory } from '@/lib/icons'
 import { uid } from '@/lib/id'
 import { isHexColor } from '@/lib/color'
@@ -53,6 +53,29 @@ function normTrip(v: unknown): TravelTrip | null {
   }
 }
 
+/**
+ * 自訂貨幣（0.1.44）的正規化：
+ * - code 必須是 3 個大寫英文字母（照 ISO 4217 的樣子）、不能撞內建 12 種
+ * - name 空的就沿用 code；同一個 code 只留第一筆
+ */
+function normCustomCurrencies(v: unknown): CustomCurrency[] {
+  if (!Array.isArray(v)) return []
+  const out: CustomCurrency[] = []
+  const seen = new Set<string>()
+  for (const raw of v) {
+    const o = raw as Partial<CustomCurrency>
+    const code = typeof o.code === 'string' ? o.code.trim().toUpperCase() : ''
+    if (!/^[A-Z]{3}$/.test(code) || seen.has(code) || MAP_HAS_BUILTIN(code)) continue
+    seen.add(code)
+    const name = typeof o.name === 'string' && o.name.trim() ? o.name.trim() : code
+    out.push({ code, name })
+  }
+  return out
+}
+function MAP_HAS_BUILTIN(code: string): boolean {
+  return CURRENCIES.some((c) => c.code === code)
+}
+
 function merge(base: Settings, saved: Partial<Settings>): Settings {
   return {
     ...base,
@@ -83,6 +106,10 @@ function merge(base: Settings, saved: Partial<Settings>): Settings {
     quickPresets: Array.isArray(saved.quickPresets)
       ? saved.quickPresets.map((p) => ({ ...p, currency: p.currency ?? '' }))
       : base.quickPresets,
+    // 自訂貨幣（0.1.44）：每一筆過一次正規化（code 3 個大寫字母、不撞內建、去重）
+    customCurrencies: Array.isArray(saved.customCurrencies)
+      ? normCustomCurrencies(saved.customCurrencies)
+      : base.customCurrencies,
     // 旅行模式（0.1.35）：舊資料沒有這個欄位 → null＝沒有旅行；形狀不對也當沒有
     activeTrip: normTrip(saved.activeTrip),
     // 旅行模式（0.1.36）：已結束的旅行。每一筆照樣過一次 normTrip（形狀不對的丟掉）
@@ -399,7 +426,9 @@ export const useSettingsStore = defineStore('settings', () => {
 
   async function setBaseCurrency(code: string) {
     state.value.baseCurrency = code
-    state.value.rates = defaultRates(code)
+    const rates = defaultRates(code)
+    keepCustomRates(rates)
+    state.value.rates = rates
     state.value.ratesUpdatedAt = null
     if (state.value.inputCurrency === state.value.baseCurrency) state.value.inputCurrency = code
   }
@@ -417,10 +446,62 @@ export const useSettingsStore = defineStore('settings', () => {
     state.value.rates[code] = value
   }
 
+  /* ── 自訂貨幣（0.1.44）──────────────────────────────────
+   * 使用者原話：「增加一個區塊，用戶可以新增或修改或刪除一個現在沒有選單中的貨幣，
+   * 自訂匯率，（用戶記錄後，如果DEL 這個匯率的選單，也不影響已記錄的數據）」。
+   * - 匯率存進 `rates` map（跟內建幣別同一個地方）→ rate()／toBase／toDisplay 全部自動支援。
+   * - **刪除只從選單移除，rates 留著**：已記錄的資料用自己凍結的 rate；
+   *   顯示層（即時換算）也還查得到匯率——記錄的數據完全不影響。
+   * - ⚠ 不能設為**主幣別**（主幣別切換會整組重算 defaultRates，自訂幣別沒有交叉匯率來源）；
+   *   可以設為記帳幣別／記錄幣別／旅行貨幣。
+   */
+  /** 內建 12 種＋自訂，合起來給各處的幣別 <select> 用（自訂的 symbol 就是 code） */
+  const allCurrencies = computed(() => [
+    ...CURRENCIES,
+    ...state.value.customCurrencies.map((c) => ({ code: c.code, name: c.name, symbol: c.code })),
+  ])
+
+  function addCustomCurrency(code: string, name: string, rate: number): boolean {
+    const c = code.trim().toUpperCase()
+    if (!/^[A-Z]{3}$/.test(c)) return false
+    if (CURRENCIES.some((x) => x.code === c)) return false
+    if (state.value.customCurrencies.some((x) => x.code === c)) return false
+    state.value.customCurrencies.push({ code: c, name: name.trim() || c })
+    if (isFinite(rate) && rate > 0) state.value.rates[c] = rate
+    return true
+  }
+
+  function updateCustomCurrency(code: string, patch: { name?: string; rate?: number }) {
+    const c = state.value.customCurrencies.find((x) => x.code === code)
+    if (!c) return
+    if (typeof patch.name === 'string' && patch.name.trim()) c.name = patch.name.trim()
+    if (typeof patch.rate === 'number' && isFinite(patch.rate) && patch.rate > 0) {
+      state.value.rates[code] = patch.rate
+    }
+  }
+
+  function removeCustomCurrency(code: string) {
+    const i = state.value.customCurrencies.findIndex((x) => x.code === code)
+    if (i >= 0) state.value.customCurrencies.splice(i, 1)
+    // ⚠ 刻意不刪 rates[code]：舊記錄的顯示換算照舊（「刪除不影響已記錄的數據」）
+  }
+
+  /**
+   * 線上更新／切換主幣別會整組重建 `rates`——**自訂幣別的匯率不在 API 回傳裡**，
+   * 重建後要把它們補回去（沒補的話自訂幣別的顯示換算會退化成 ×1）。
+   */
+  function keepCustomRates(newRates: Record<string, number>) {
+    for (const c of state.value.customCurrencies) {
+      const old = state.value.rates[c.code]
+      if (typeof old === 'number' && old > 0) newRates[c.code] = old
+    }
+  }
+
   /** 線上更新匯率；失敗則沿用舊匯率（回傳 false） */
   async function refreshRates(): Promise<boolean> {
     try {
       const { rates, updatedAt } = await fetchRates(state.value.baseCurrency)
+      keepCustomRates(rates)
       state.value.rates = rates
       state.value.ratesUpdatedAt = updatedAt
       return true
@@ -803,6 +884,11 @@ export const useSettingsStore = defineStore('settings', () => {
     setInputCurrency,
     setRate,
     refreshRates,
+    /* ── 自訂貨幣 ── */
+    allCurrencies,
+    addCustomCurrency,
+    updateCustomCurrency,
+    removeCustomCurrency,
     addCategory,
     updateCategory,
     removeCategory,

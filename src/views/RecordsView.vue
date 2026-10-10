@@ -11,6 +11,7 @@ import RecordRow from '@/components/RecordRow.vue'
 import RecordSheet from '@/components/RecordSheet.vue'
 import DateField from '@/components/DateField.vue'
 import ClearableInput from '@/components/ClearableInput.vue'
+import CategorySearchPicker from '@/components/CategorySearchPicker.vue'
 import CategoryIcon from '@/components/CategoryIcon.vue'
 import HighlightText from '@/components/HighlightText.vue'
 import { fmtMoney } from '@/lib/currency'
@@ -89,6 +90,15 @@ const q = ref('')
 /** trim + 轉小寫後的關鍵字（空字串代表沒在搜尋） */
 const kw = computed(() => q.value.trim().toLowerCase())
 
+/**
+ * 0.1.44：記錄明細摘要區塊（餐飲 支出 MOP$1.00 那塊）點下去 →
+ * 關掉明細，用這筆的分類名稱直接搜尋（本頁就有搜索框，不必跳頁）。
+ */
+function searchCat(name: string) {
+  editingId.value = null
+  q.value = name
+}
+
 /** 記錄所屬分類的顯示名稱（未分類也要能被搜尋到，所以用同一個 fallback） */
 /** 子分類顯示成「餐飲 › 早餐」，搜尋時打大類或子類都找得到 */
 function catNameOf(categoryId: string) {
@@ -106,6 +116,19 @@ function tripNameOf(r: TxRecord): string {
 watch(unit, (u) => {
   key.value = todayUnit(u)
 })
+
+/**
+ * 0.1.44：從記錄明細的摘要區塊（或統計頁）跳過來搜尋某個分類。
+ * 用 `?q=` 帶分類名稱進來；同頁內再點一次也能觸發（query 變化就同步）。
+ */
+watch(
+  () => route.query.q,
+  (v) => {
+    // ⚠ 不碰 editingId：immediate 會在 setup 早期（editingId 初始化前）就跑
+    if (typeof v === 'string' && v) q.value = v
+  },
+  { immediate: true }, // 從統計頁跳過來時 query 在掛載前就帶好了，必須 immediate 才接得到
+)
 
 const units: { key: RangeUnit; label: string }[] = [
   { key: 'day', label: '日' },
@@ -381,7 +404,12 @@ function removeEditing(id: string) {
           <circle cx="10.8" cy="10.8" r="6.4" />
           <path d="M15.6 15.6 20 20" />
         </svg>
-        <ClearableInput v-model="q" placeholder="搜尋備註或旅行" :maxlength="40" />
+        <ClearableInput v-model="q" placeholder="搜尋備註或旅行" :maxlength="40">
+          <template #trailing>
+            <!-- 0.1.44：分類選擇器，點分類把名稱填進搜索框 -->
+            <CategorySearchPicker v-model="q" />
+          </template>
+        </ClearableInput>
       </div>
     </div>
 
@@ -658,6 +686,7 @@ function removeEditing(id: string) {
       @close="editingId = null"
       @save="saveEdit"
       @remove="removeEditing"
+      @search-cat="searchCat"
     />
   </div>
 </template>

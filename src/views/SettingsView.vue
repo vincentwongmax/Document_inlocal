@@ -201,18 +201,76 @@ function addRate(e: Event) {
 
 /** 主頁幣別選單：已勾選的幣別（依總表順序） */
 const visibleCurs = computed(() =>
-  CURRENCIES.filter((c) => settings.state.visibleCurrencies.includes(c.code)),
+  settings.allCurrencies.filter((c) => settings.state.visibleCurrencies.includes(c.code)),
 )
 
 /** 主頁幣別選單：還能加入下拉的幣別 */
 const addableVisible = computed(() =>
-  CURRENCIES.filter((c) => !settings.state.visibleCurrencies.includes(c.code)),
+  settings.allCurrencies.filter((c) => !settings.state.visibleCurrencies.includes(c.code)),
 )
 
 function addVisible(e: Event) {
   const el = e.target as HTMLSelectElement
   if (el.value) settings.toggleVisibleCurrency(el.value)
   el.value = ''
+}
+
+/* ── 自訂貨幣（0.1.44）────────────────────────────────────
+ * 使用者原話：「增加一個區塊，用戶可以新增或修改或刪除一個現在沒有選單中的貨幣，
+ * 自訂匯率，（用戶記錄後，如果DEL 這個匯率的選單，也不影響已記錄的數據）」。
+ * 匯率寫進 rates map（跟內建同一個地方）；刪除只從選單移除、rates 留著，
+ * 已記錄的資料（自己凍結的 rate）與顯示換算都不受影響。
+ */
+const customs = computed(() => settings.state.customCurrencies)
+const cxCode = ref('')
+const cxName = ref('')
+const cxRate = ref('')
+const cxDraftName = ref<Record<string, string>>({})
+const cxDraftRate = ref<Record<string, string>>({})
+
+function addCx() {
+  const code = cxCode.value.trim().toUpperCase()
+  const rate = Number(cxRate.value)
+  if (!/^[A-Z]{3}$/.test(code)) {
+    notify('貨幣代碼要 3 個大寫英文字母（例如 XYZ）', 'warn')
+    return
+  }
+  if (CURRENCIES.some((c) => c.code === code)) {
+    notify(`${code} 是內建幣別，直接在選單選就好`, 'warn')
+    return
+  }
+  if (settings.state.customCurrencies.some((c) => c.code === code)) {
+    notify(`${code} 已經加過了`, 'warn')
+    return
+  }
+  if (!(isFinite(rate) && rate > 0)) {
+    notify('匯率要大於 0（1 單位自訂貨幣 = ? 主幣）', 'warn')
+    return
+  }
+  settings.addCustomCurrency(code, cxName.value, rate)
+  notify(`已新增自訂貨幣 ${code}（1 ${code} = ${rate} ${settings.baseCurrency}）`, 'ok')
+  cxCode.value = ''
+  cxName.value = ''
+  cxRate.value = ''
+}
+
+function commitCx(code: string) {
+  const name = cxDraftName.value[code]
+  const rateRaw = cxDraftRate.value[code]
+  const patch: { name?: string; rate?: number } = {}
+  if (name !== undefined) patch.name = name
+  if (rateRaw !== undefined) {
+    const n = Number(rateRaw)
+    if (isFinite(n) && n > 0) patch.rate = n
+  }
+  settings.updateCustomCurrency(code, patch)
+  delete cxDraftName.value[code]
+  delete cxDraftRate.value[code]
+}
+
+function removeCx(code: string) {
+  settings.removeCustomCurrency(code)
+  notify(`已移除自訂貨幣 ${code}（已記錄的資料不受影響）`, 'info')
 }
 
 async function refresh() {
@@ -529,7 +587,7 @@ const activeWalletName = computed(() => settings.activeWallet.name)
               :disabled="!!settings.activeTrip"
               @change="settings.setInputCurrency(($event.target as HTMLSelectElement).value)"
             >
-              <option v-for="c in CURRENCIES" :key="c.code" :value="c.code">
+              <option v-for="c in settings.allCurrencies" :key="c.code" :value="c.code">
                 {{ c.code }} · {{ c.name }}
               </option>
             </select>
@@ -576,6 +634,83 @@ const activeWalletName = computed(() => settings.activeWallet.name)
               @keyup.enter="commitRate(r.code)"
             />
           </div>
+        </div>
+      </div>
+
+      <!-- 自訂貨幣（0.1.44）：內建 12 種之外的幣別，自己加／改／刪 -->
+      <div class="panel">
+        <div class="panel__hd">
+          <span class="panel__label">自訂貨幣</span>
+          <span class="tiny muted panel__meta">內建清單沒有的幣別；自訂匯率（1 單位 = ? 主幣）</span>
+        </div>
+        <p class="tiny muted cx__hint">
+          刪除只會從選單移除——已記錄的資料（記錄當下凍結的匯率）完全不影響。
+          自訂貨幣可以記帳、設旅行貨幣，但不能設為主幣別。
+        </p>
+
+        <div v-if="customs.length" class="cx__list">
+          <div v-for="c in customs" :key="c.code" class="cx__row">
+            <span class="cx__code num">{{ c.code }}</span>
+            <input
+              class="field cx__in"
+              :value="cxDraftName[c.code] ?? c.name"
+              :aria-label="`${c.code} 名稱`"
+              @input="cxDraftName[c.code] = ($event.target as HTMLInputElement).value"
+              @blur="commitCx(c.code)"
+              @keyup.enter="commitCx(c.code)"
+            />
+            <input
+              class="field cx__in cx__in--rate num"
+              :value="cxDraftRate[c.code] ?? (settings.state.rates[c.code] ?? 1)"
+              inputmode="decimal"
+              :aria-label="`${c.code} 匯率`"
+              @input="cxDraftRate[c.code] = ($event.target as HTMLInputElement).value"
+              @blur="commitCx(c.code)"
+              @keyup.enter="commitCx(c.code)"
+            />
+            <button
+              class="cx__del"
+              type="button"
+              :title="`刪除自訂貨幣 ${c.code}`"
+              :aria-label="`刪除自訂貨幣 ${c.code}`"
+              @click="removeCx(c.code)"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.8 7.8 16.2 16.2M16.2 7.8 7.8 16.2" /></svg>
+            </button>
+          </div>
+        </div>
+        <p v-else class="tiny muted cx__hint">還沒有自訂貨幣，用下面那行加第一個。</p>
+
+        <div class="cx__add">
+          <input
+            v-model="cxCode"
+            class="field cx__addin cx__addin--code num"
+            type="text"
+            :maxlength="3"
+            placeholder="代碼"
+            aria-label="自訂貨幣代碼（3 個大寫字母）"
+            @keydown.enter.prevent="addCx"
+          />
+          <input
+            v-model="cxName"
+            class="field cx__addin"
+            type="text"
+            :maxlength="12"
+            placeholder="名稱（可留空）"
+            aria-label="自訂貨幣名稱"
+            @keydown.enter.prevent="addCx"
+          />
+          <input
+            v-model="cxRate"
+            class="field cx__addin cx__addin--rate num"
+            inputmode="decimal"
+            placeholder="匯率"
+            aria-label="自訂貨幣匯率"
+            @keydown.enter.prevent="addCx"
+          />
+          <button class="btn btn--primary btn--sm" type="button" :disabled="!cxCode.trim()" @click="addCx">
+            新增
+          </button>
         </div>
       </div>
 
@@ -716,7 +851,7 @@ const activeWalletName = computed(() => settings.activeWallet.name)
               :value="settings.preferredCurrency"
               @change="settings.setPreferredCurrency(($event.target as HTMLSelectElement).value)"
             >
-              <option v-for="c in CURRENCIES" :key="c.code" :value="c.code">
+              <option v-for="c in settings.allCurrencies" :key="c.code" :value="c.code">
                 {{ c.code }} · {{ c.name }}
               </option>
             </select>
@@ -861,6 +996,7 @@ const activeWalletName = computed(() => settings.activeWallet.name)
         </p>
         <div v-else class="qn__list">
           <div v-for="(t, i) in settings.quickNotes" :key="i" class="qn__row">
+            <span class="qn__no num" aria-hidden="true">{{ i + 1 }}</span>
             <input
               class="field qn__in"
               type="text"
@@ -1525,12 +1661,24 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   display: flex;
   flex-direction: column;
   gap: 7px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
+/* 0.1.44 美化：每列改成卡片（描邊＋圓角＋淡底），列內輸入框去框融入卡片 */
 .qn__row {
   display: flex;
   align-items: center;
   gap: 7px;
+  padding: 5px 6px 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.qn__no {
+  flex: none;
+  width: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3);
 }
 /* 這裡的輸入框刻意比 .field 矮（34px），跟旁邊的「新增」鈕同高，列才不會鬆掉。
    ⚠ 字級 16px 是 0.1.25 的全站約定（見 src/style.css）：iOS 對 < 16px 的可編輯元素
@@ -1545,6 +1693,12 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   font-size: 16px;
   background: var(--surface);
 }
+/* 列內的輸入框融入卡片：去框、透明底（字級 16px 約定照舊） */
+.qn__row .qn__in {
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+}
 .qn__del {
   flex: none;
   display: grid;
@@ -1552,12 +1706,10 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   width: 30px;
   height: 30px;
   border-radius: var(--r-sm);
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: transparent;
   color: var(--text-3);
   transition:
     background 0.12s,
-    border-color 0.12s,
     color 0.12s;
 }
 .qn__del:hover {
@@ -1577,6 +1729,106 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* ── 自訂貨幣（0.1.44）────────────────────────────────── */
+.cx__hint {
+  margin: 0 0 10px;
+}
+.cx__list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+.cx__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 6px 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.cx__code {
+  flex: none;
+  width: 42px;
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+.cx__in {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  font-size: 16px;
+  background: transparent;
+  border: none;
+}
+.cx__in--rate {
+  flex: none;
+  width: 88px;
+  text-align: right;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.cx__del {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--text-3);
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+.cx__del:hover {
+  border-color: var(--expense);
+  background: var(--expense-soft);
+  color: var(--expense);
+}
+.cx__del svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.cx__add {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.cx__addin {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  font-size: 16px;
+  background: var(--surface);
+}
+.cx__addin--code {
+  flex: none;
+  width: 64px;
+  text-transform: uppercase;
+}
+.cx__addin--rate {
+  flex: none;
+  width: 84px;
+  text-align: right;
 }
 
 /* ── 快速金額（0.1.29；0.1.30 編輯移到子頁面）────────── */

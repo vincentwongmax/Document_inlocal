@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
 import { confirmDialog, notify } from '@/lib/alerts'
-import { CURRENCIES, fmtMoney } from '@/lib/currency'
+import { fmtMoney } from '@/lib/currency'
 import { withAlpha } from '@/lib/color'
 import { formatFull } from '@/lib/date'
 import { useScrollLock } from '@/composables/useScrollLock'
@@ -352,7 +352,7 @@ watch(
                 <span>旅行貨幣 <em class="lb__hint">只影響標示；記錄金額與匯率是歷史事實</em></span>
                 <select v-model="editDraft.currency" class="field">
                   <option value="">無設定</option>
-                  <option v-for="c in CURRENCIES" :key="c.code" :value="c.code">
+                  <option v-for="c in settings.allCurrencies" :key="c.code" :value="c.code">
                     {{ c.code }} · {{ c.name }}
                   </option>
                 </select>
