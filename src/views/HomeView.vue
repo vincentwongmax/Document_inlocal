@@ -58,7 +58,35 @@ const expr = computed(() => displaySub(calc.value))
 const display = computed(() => displayMain(calc.value))
 /** 這次記帳要附加的收據圖片（存檔前的暫存；上傳／貼上／拖曳都在 ReceiptImages 裡處理） */
 const images = ref<ImageRef[]>([])
-const imgEl = ref<InstanceType<typeof ReceiptImages> | null>(null)
+/**
+ * ReceiptImages 的實例。
+ * ⚠ 0.1.45 起它在 v-for（區塊排序）裡 → 字串 ref 會變陣列，改用 function ref 存單一實例。
+ */
+let imgEl: InstanceType<typeof ReceiptImages> | null = null
+function setImgEl(el: unknown) {
+  imgEl = (el as InstanceType<typeof ReceiptImages> | null) ?? null
+}
+
+/**
+ * 記帳頁區塊排序（0.1.45）：設定頁「記帳頁排版」決定顯示哪些區塊、什麼順序。
+ * 空陣列＝全部照預設（1→6）；有值＝只顯示有排進去的。
+ */
+const layout = computed<number[]>(() =>
+  settings.state.homeLayout.length ? settings.state.homeLayout : [1, 2, 3, 4, 5, 6],
+)
+/**
+ * 實際渲染順序：排序區塊＋分類（catbox，編號 0）。
+ * 分類不參與排序：固定跟在「金額」後面；金額沒顯示就跟「支出/收入」；
+ * 兩個都沒有就放最上面。預設畫面（1,2 都在）跟 0.1.44 之前完全一樣。
+ */
+const flow = computed<(0 | 1 | 2 | 3 | 4 | 5 | 6)[]>(() => {
+  const l = layout.value as (1 | 2 | 3 | 4 | 5 | 6)[]
+  const out: (0 | 1 | 2 | 3 | 4 | 5 | 6)[] = [...l]
+  const a2 = l.lastIndexOf(2)
+  const anchor = a2 !== -1 ? a2 : l.lastIndexOf(1)
+  out.splice(anchor === -1 ? 0 : anchor + 1, 0, 0)
+  return out
+})
 /** 只有長公式／很大的結果才縮小字級（單一數字最多 11 位，永遠不會觸發） */
 const displayLong = computed(() => isLongDisplay(display.value))
 /** 還沒按 = 之前不顯示換算預覽，答案要按了等於才出現 */
@@ -250,7 +278,7 @@ function clearForm() {
   const dirty = calc.value.tokens.length > 0 || note.value !== '' || hadImages
   resetForm()
   // 還沒存檔的圖片要一起丟掉（連 IndexedDB 的 blob 也刪，不留孤兒）
-  if (hadImages) imgEl.value?.discard()
+  if (hadImages) imgEl?.discard()
   if (dirty) notify('已清空', 'info')
 }
 
@@ -287,7 +315,7 @@ function submit() {
     ...(trip?.mode1 ? { tripId: trip.id } : {}),
   })
   // 圖片已經被這筆記錄接手：清空面板但**不能**刪 blob
-  imgEl.value?.release()
+  imgEl?.release()
   // 0.1.28：通知裡的金額也用「目前的主幣別」顯示（跟清單同一套換算）
   // 0.1.35：模式一開著時補上旅行名，讓使用者知道這筆進了旅行
   // 0.1.36：顯示幣別——旅行中金額直接用旅行貨幣呈現
@@ -348,98 +376,21 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     </div>
 
     <div class="home__grid">
-      <!-- 記帳表單 -->
+      <!--
+        記帳表單（0.1.45：區塊排序）
+        ────────────────────────────────────────────────────
+        六個區塊的順序由設定頁「記帳頁排版」決定（`settings.homeLayout`）：
+        1=支出/收入＋幣別選單、2=輸入金額＋快速金額、3=備註、4=日期時間、
+        5=收據圖片、6=清空＋記錄。
+        空陣列＝全部照預設（1→6）；有值＝只顯示有排進去的（沒排＝不顯示，
+        記錄提交按預設走）。
+        ⚠ 分類（catbox）**不參與排序**：固定跟在「金額」後面（金額沒顯示就跟
+          「支出/收入」，兩個都沒有就放最上面）——預設畫面跟 0.1.44 之前完全一樣。
+      -->
       <section class="card pad card--ledger">
-        <div class="seg">
-          <button
-            class="seg__btn"
-            :class="{ 'is-on': type === 'expense', 'is-expense': type === 'expense' }"
-            @click="type = 'expense'"
-          >
-            支出
-          </button>
-          <button
-            class="seg__btn"
-            :class="{ 'is-on': type === 'income', 'is-income': type === 'income' }"
-            @click="type = 'income'"
-          >
-            收入
-          </button>
-          <div class="seg__cur">
-            <select v-model="curCode" class="sel" :title="'目前以 ' + curCode + ' 記錄'">
-              <option v-for="c in currencyOptions" :key="c.code" :value="c.code">
-                {{ c.code }}
-              </option>
-            </select>
-          </div>
-        </div>
-
-        <!--
-          ⚠ 0.1.26：原本這裡有一顆「上傳收據圖片／自動辨識記帳」的按鈕，
-            已搬到「設定 → BETA 收據辨識記帳」。記帳頁不再顯示它。
-            下面的「收據圖片」區塊是完全不同的功能（附加圖片到這次記帳），維持不動。
-        -->
-
-        <!--
-          金額框（0.1.30 改版）：
-          ⚠ 外框改成包一層 `.amountbox`（框線／底色／陰影都移到它身上），
-            因為「快速金額」那一排要放在**框內上方**（使用者：「放在計算機的點擊輸入金額裡
-            （金額數字的框內上方）」），而按鈕裡面不能再包按鈕（HTML 不允許，
-            瀏覽器會把巢狀 button 解析壞掉）→ `.amount` 保持是 button（點它開計算機），
-            快速金額按鈕跟它是**平輩**，一起被包在 `.amountbox` 裡。
-        -->
-        <div class="amountbox">
-          <!--
-            快速金額（0.1.29 → 0.1.30）：這排的數量與內容由設定頁「快速金額」決定。
-            0.1.30 兩個改動：①搬進金額框**內**的上方；②按鈕**不用 icon**（使用者明確要求）。
-            ⚠ 點下去**只帶入**金額／類型／分類／備註，**不自動送出**——
-              使用者原話：「依然要用戶手動按記錄的按鈕」。
-          -->
-          <div v-if="presetRows.length" class="qamt">
-            <button
-              v-for="row in presetRows"
-              :key="row.preset.id"
-              type="button"
-              class="qamt__b"
-              :title="row.title"
-              @click="applyPreset(row.preset)"
-            >
-              <span class="qamt__n num">{{ row.label }}</span>
-            </button>
-          </div>
-
-          <!-- 金額：只留顯示欄位，點一下開計算機子頁面 -->
-          <button
-            type="button"
-            class="amount"
-            :class="{ 'is-empty': !calc.tokens.length }"
-            @click="keypadOpen = true"
-          >
-            <span class="amount__hint">
-              <svg class="amount__ic" viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="4.7" y="2.7" width="14.6" height="18.6" rx="2.8" />
-                <path d="M8.2 7h7.6" />
-                <path d="M8.6 11.4h.01M12 11.4h.01M15.4 11.4h.01" />
-                <path d="M8.6 14.6h.01M12 14.6h.01M15.4 14.6h.01" />
-                <path d="M8.6 17.8h3.6" />
-              </svg>
-              <em class="tiny">{{ calc.tokens.length ? '點擊修改' : '點擊輸入金額' }}</em>
-            </span>
-            <span class="amount__val">
-              <span class="amount__expr num">{{ expr || '\u00a0' }}</span>
-              <span class="amount__main">
-                <span class="amount__sym">{{ currency(curCode).symbol }}</span>
-                <span class="amount__num num" :class="{ 'is-long': displayLong }">{{ display }}</span>
-              </span>
-              <span v-if="converted && amount > 0" class="amount__conv num tiny">
-                ≈ {{ fmtMoney(convertedAmount, settings.baseCurrency) }}
-              </span>
-            </span>
-          </button>
-        </div>
-
-        <div class="pad__meta">
-          <div class="catbox">
+        <template v-for="b in flow" :key="b">
+          <!-- 0＝分類（固定位置，見上） -->
+          <div v-if="b === 0" class="catbox">
             <span class="catbox__label">分類</span>
             <CategoryPicker
               v-model="categoryId"
@@ -449,21 +400,94 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               @more="catSheetOpen = true"
             />
           </div>
-          <ClearableInput v-model="note" placeholder="備註（可留空）" :maxlength="80">
+
+          <!-- 1＝支出/收入＋幣別選單 -->
+          <div v-else-if="b === 1" class="seg">
+            <button
+              class="seg__btn"
+              :class="{ 'is-on': type === 'expense', 'is-expense': type === 'expense' }"
+              @click="type = 'expense'"
+            >
+              支出
+            </button>
+            <button
+              class="seg__btn"
+              :class="{ 'is-on': type === 'income', 'is-income': type === 'income' }"
+              @click="type = 'income'"
+            >
+              收入
+            </button>
+            <div class="seg__cur">
+              <select v-model="curCode" class="sel" :title="'目前以 ' + curCode + ' 記錄'">
+                <option v-for="c in currencyOptions" :key="c.code" :value="c.code">
+                  {{ c.code }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 2＝輸入金額＋快速金額 -->
+          <div v-else-if="b === 2" class="amountbox">
+            <div v-if="presetRows.length" class="qamt">
+              <button
+                v-for="row in presetRows"
+                :key="row.preset.id"
+                type="button"
+                class="qamt__b"
+                :title="row.title"
+                @click="applyPreset(row.preset)"
+              >
+                <span class="qamt__n num">{{ row.label }}</span>
+              </button>
+            </div>
+            <button
+              type="button"
+              class="amount"
+              :class="{ 'is-empty': !calc.tokens.length }"
+              @click="keypadOpen = true"
+            >
+              <span class="amount__hint">
+                <svg class="amount__ic" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="4.7" y="2.7" width="14.6" height="18.6" rx="2.8" />
+                  <path d="M8.2 7h7.6" />
+                  <path d="M8.6 11.4h.01M12 11.4h.01M15.4 11.4h.01" />
+                  <path d="M8.6 14.6h.01M12 14.6h.01M15.4 14.6h.01" />
+                  <path d="M8.6 17.8h3.6" />
+                </svg>
+                <em class="tiny">{{ calc.tokens.length ? '點擊修改' : '點擊輸入金額' }}</em>
+              </span>
+              <span class="amount__val">
+                <span class="amount__expr num">{{ expr || '\u00a0' }}</span>
+                <span class="amount__main">
+                  <span class="amount__sym">{{ currency(curCode).symbol }}</span>
+                  <span class="amount__num num" :class="{ 'is-long': displayLong }">{{ display }}</span>
+                </span>
+                <span v-if="converted && amount > 0" class="amount__conv num tiny">
+                  ≈ {{ fmtMoney(convertedAmount, settings.baseCurrency) }}
+                </span>
+              </span>
+            </button>
+          </div>
+
+          <!-- 3＝備註 -->
+          <ClearableInput v-else-if="b === 3" v-model="note" placeholder="備註（可留空）" :maxlength="80">
             <template #trailing>
               <QuickNotePicker v-model="note" />
             </template>
           </ClearableInput>
-          <!-- 日期跟備註同層（同一個 flex 直欄），寬度永遠一致，
-               不會被下面「清空／記錄」那列的 min-width 撐寬而跑掉 -->
-          <DateTimeField v-model="occurredAt" />
-          <!-- 收據圖片：上傳／貼上／拖曳，附在這次記帳上 -->
-          <ReceiptImages ref="imgEl" v-model="images" />
-          <div class="pad__row">
+
+          <!-- 4＝日期時間 -->
+          <DateTimeField v-else-if="b === 4" v-model="occurredAt" />
+
+          <!-- 5＝收據圖片 -->
+          <ReceiptImages v-else-if="b === 5" :ref="setImgEl" v-model="images" />
+
+          <!-- 6＝清空＋記錄 -->
+          <div v-else class="pad__row">
             <button class="btn btn--clear" @click="clearForm">清空</button>
             <button class="btn btn--primary btn--save" @click="submit">記錄</button>
           </div>
-        </div>
+        </template>
       </section>
     </div>
 
@@ -608,7 +632,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
  */
 .amountbox {
   width: 100%;
-  margin: 16px 0 14px;
+  /*
+   * 0.1.45：整張卡改成 flex column + gap 9px（區塊排序需要）。
+   * 原 margin 16/14 扣掉 gap 各 9 → 7/5，**預設畫面的間距跟原本完全一樣**。
+   */
+  margin: 7px 0 5px;
   padding: 10px 12px 0;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
@@ -748,13 +776,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   color: var(--accent);
   margin-top: 2px;
 }
-.pad__meta {
+/*
+ * 0.1.45：區塊排序——六個區塊都變成這張卡的直接子元素（順序由 flow 決定），
+ * 原本的 `.pad__meta` 包裹層移除（gap 9px 移到卡上）。
+ * `> *` 的 min-width: 0 照舊，備註／日期／按鈕列左右一定切齊。
+ */
+.card--ledger {
   display: flex;
   flex-direction: column;
   gap: 9px;
+  align-items: stretch;
 }
-/* 每一列都由同一個 flex 直欄撐滿，備註、日期、按鈕列左右一定切齊 */
-.pad__meta > * {
+.card--ledger > * {
   min-width: 0;
 }
 /* 分類：把整組選框框成一個明顯的區塊，方便一眼看到 */

@@ -110,6 +110,10 @@ function merge(base: Settings, saved: Partial<Settings>): Settings {
     customCurrencies: Array.isArray(saved.customCurrencies)
       ? normCustomCurrencies(saved.customCurrencies)
       : base.customCurrencies,
+    // 記帳頁區塊排序（0.1.45）：只留 1~6 的整數、去重；空陣列＝全部照預設顯示
+    homeLayout: Array.isArray(saved.homeLayout)
+      ? [...new Set(saved.homeLayout.filter((n) => Number.isInteger(n) && n >= 1 && n <= 6))]
+      : base.homeLayout,
     // 旅行模式（0.1.35）：舊資料沒有這個欄位 → null＝沒有旅行；形狀不對也當沒有
     activeTrip: normTrip(saved.activeTrip),
     // 旅行模式（0.1.36）：已結束的旅行。每一筆照樣過一次 normTrip（形狀不對的丟掉）
@@ -484,6 +488,14 @@ export const useSettingsStore = defineStore('settings', () => {
     const i = state.value.customCurrencies.findIndex((x) => x.code === code)
     if (i >= 0) state.value.customCurrencies.splice(i, 1)
     // ⚠ 刻意不刪 rates[code]：舊記錄的顯示換算照舊（「刪除不影響已記錄的數據」）
+  }
+
+  /**
+   * 記帳頁區塊排序（0.1.45）：直接存使用者的排序（merge 時會再正規化一次）。
+   * 空陣列＝恢復預設（全部顯示、照原本順序）。
+   */
+  function setHomeLayout(v: number[]) {
+    state.value.homeLayout = [...new Set(v.filter((n) => Number.isInteger(n) && n >= 1 && n <= 6))]
   }
 
   /**
@@ -889,6 +901,7 @@ export const useSettingsStore = defineStore('settings', () => {
     addCustomCurrency,
     updateCustomCurrency,
     removeCustomCurrency,
+    setHomeLayout,
     addCategory,
     updateCategory,
     removeCategory,

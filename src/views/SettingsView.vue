@@ -225,11 +225,45 @@ const customs = computed(() => settings.state.customCurrencies)
 const cxCode = ref('')
 const cxName = ref('')
 const cxRate = ref('')
+/** 0.1.45：新增列預設收起，按標題右邊的「＋」才展開；提交成功（或按取消）後收起 */
+const cxOpen = ref(false)
 const cxDraftName = ref<Record<string, string>>({})
 const cxDraftRate = ref<Record<string, string>>({})
 
-function addCx() {
-  const code = cxCode.value.trim().toUpperCase()
+/** 0.1.45：收起新增列並清空輸入 */
+function closeCx() {
+  cxOpen.value = false
+  cxCode.value = ''
+  cxName.value = ''
+  cxRate.value = ''
+}
+
+/* ── 記帳頁排版（0.1.45）─────────────────────────────────
+ * 六個區塊：1=支出/收入＋幣別、2=金額＋快速金額、3=備註、4=日期時間、
+ * 5=收據圖片、6=清空＋記錄。點擊順序＝顯示順序；沒點＝不顯示。
+ * 分類（catbox）不參與排序（HomeView 固定跟在金額後面）。
+ */
+const layoutItems: { n: number; label: string; icon: string }[] = [
+  { n: 1, label: '支出/收入＋幣別', icon: 'M4 8h10M4 8l3-3M4 8l3 3M20 16H10M20 16l-3-3M20 16l-3 3' },
+  { n: 2, label: '金額＋快速金額', icon: 'M4.7 2.7h14.6v18.6H4.7zM8.2 7h7.6M8.6 11.4h.01M12 11.4h.01M15.4 11.4h.01M8.6 17.8h3.6' },
+  { n: 3, label: '備註', icon: 'M5 5h14v14l-3-1.6L13 19l-2-1.6L8 19l-3-1.6V5ZM9 10h6M9 13.4h4' },
+  { n: 4, label: '日期時間', icon: 'M4.4 6.4h15.2v13.2H4.4zM4.4 10.6h15.2M8.4 3.8v4M15.6 3.8v4' },
+  { n: 5, label: '收據圖片', icon: 'M6 3h12v18l-2-1.4L14 21l-2-1.4L10 21l-2-1.4L6 21V3ZM9.5 8h5M9.5 12h5' },
+  { n: 6, label: '清空＋記錄', icon: 'M5 12.6 9.4 17 19 7.4' },
+]
+
+/** 點方塊：已排＝取消；沒排＝加到排序最後 */
+function toggleLayout(n: number) {
+  const cur = settings.state.homeLayout
+  settings.setHomeLayout(cur.includes(n) ? cur.filter((x) => x !== n) : [...cur, n])
+}
+
+/** 恢復預設＝清空排序（全部顯示、照原本順序） */
+function resetLayout() {
+  settings.setHomeLayout([])
+}
+
+function addCx() {  const code = cxCode.value.trim().toUpperCase()
   const rate = Number(cxRate.value)
   if (!/^[A-Z]{3}$/.test(code)) {
     notify('貨幣代碼要 3 個大寫英文字母（例如 XYZ）', 'warn')
@@ -252,6 +286,7 @@ function addCx() {
   cxCode.value = ''
   cxName.value = ''
   cxRate.value = ''
+  cxOpen.value = false // 0.1.45：提交成功後再次隱藏
 }
 
 function commitCx(code: string) {
@@ -637,16 +672,29 @@ const activeWalletName = computed(() => settings.activeWallet.name)
         </div>
       </div>
 
-      <!-- 自訂貨幣（0.1.44）：內建 12 種之外的幣別，自己加／改／刪 -->
+      <!--
+        自訂貨幣（0.1.44 → 0.1.45 改版）
+        ──────────────────────────────────────────────
+        0.1.45：① 說明文字全部移除（使用者原話）；② 新增改為標題最右的「＋」icon 鈕，
+        按了才展開輸入列，提交（或取消）後收起。
+      -->
       <div class="panel">
         <div class="panel__hd">
           <span class="panel__label">自訂貨幣</span>
-          <span class="tiny muted panel__meta">內建清單沒有的幣別；自訂匯率（1 單位 = ? 主幣）</span>
+          <button
+            class="cx__plus"
+            type="button"
+            :class="{ 'is-open': cxOpen }"
+            :title="cxOpen ? '收起新增列' : '新增自訂貨幣'"
+            :aria-label="cxOpen ? '收起新增列' : '新增自訂貨幣'"
+            :aria-expanded="cxOpen"
+            @click="cxOpen = !cxOpen"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
         </div>
-        <p class="tiny muted cx__hint">
-          刪除只會從選單移除——已記錄的資料（記錄當下凍結的匯率）完全不影響。
-          自訂貨幣可以記帳、設旅行貨幣，但不能設為主幣別。
-        </p>
 
         <div v-if="customs.length" class="cx__list">
           <div v-for="c in customs" :key="c.code" class="cx__row">
@@ -679,9 +727,7 @@ const activeWalletName = computed(() => settings.activeWallet.name)
             </button>
           </div>
         </div>
-        <p v-else class="tiny muted cx__hint">還沒有自訂貨幣，用下面那行加第一個。</p>
-
-        <div class="cx__add">
+        <div v-if="cxOpen" class="cx__add">
           <input
             v-model="cxCode"
             class="field cx__addin cx__addin--code num"
@@ -711,6 +757,7 @@ const activeWalletName = computed(() => settings.activeWallet.name)
           <button class="btn btn--primary btn--sm" type="button" :disabled="!cxCode.trim()" @click="addCx">
             新增
           </button>
+          <button class="btn btn--sm" type="button" @click="closeCx">取消</button>
         </div>
       </div>
 
@@ -858,40 +905,16 @@ const activeWalletName = computed(() => settings.activeWallet.name)
           </label>
         </div>
       </div>
-    </section>
-
-    <!--
-      BETA：收據辨識記帳（0.1.26 從記帳頁搬過來）
-      ────────────────────────────────────────────────────────
-      使用者原話：「把上傳收據圖片自動辨識記帳的區塊放到設定頁中（新建一個新的 BETA
-      版區塊），不要顯示在記帳頁面上（不要影響收據圖片的區塊）」。
-
-      ⚠ 跟上面那個「收據辨識」區塊的差別：
-        上面的是**設定**（辨識語言、多幣別預設），
-        這一塊是**入口**（真的上傳收據、跑 OCR、把結果建成記錄）。
-      ⚠ 也跟記帳頁的「收據圖片」區塊完全不同 —— 那個是把圖片附加到「這次記帳」上，
-        沒有 OCR、也不會自動建記錄。兩者刻意分開，不要合併。
-    -->
-    <section class="card sec sec--beta">
-      <header class="sec__hd">
-        <span class="sec__icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <path d="M12 16V5m0 0 4 4m-4-4L8 9" />
-            <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
-          </svg>
-        </span>
-        <div class="sec__meta">
-          <h2 class="sec__title">
-            BETA 收據辨識記帳
-            <span class="beta">BETA</span>
-          </h2>
-          <p class="sec__desc">
-            上傳收據照片 → 離線辨識金額與日期 → 一次確認並建立多筆記錄。圖片不會上傳
-          </p>
-        </div>
-      </header>
-
+      <!--
+        0.1.45：原本獨立的「BETA 收據辨識記帳」section 整個移除，
+        上傳入口併進這一節、放在「多幣別時預設採用」的下方（使用者原話）。
+        上傳／拖放／ReviewSheet 的邏輯（betaOver、onBetaDragLeave、onBetaDrop、up）都不變。
+      -->
       <div class="panel">
+        <div class="panel__hd">
+          <span class="panel__label">上傳收據辨識記帳</span>
+          <span class="beta">BETA</span>
+        </div>
         <button
           class="upload"
           type="button"
@@ -912,7 +935,6 @@ const activeWalletName = computed(() => settings.activeWallet.name)
         </button>
         <p class="tiny muted beta__hint">
           也可以直接把圖片拖進上面的框。辨識完會彈出一張清單，讓你逐筆確認後才建立記錄。
-          <br />
           ⚠ 這是實驗性功能：數字若辨識得怪怪的，請以收據上的金額為準，或改用記帳頁的「收據圖片」。
         </p>
       </div>
@@ -1031,6 +1053,75 @@ const activeWalletName = computed(() => settings.activeWallet.name)
           />
           <button class="btn btn--primary btn--sm" type="button" :disabled="!newQuick.trim()" @click="addQuick">
             新增
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!--
+      記帳頁排版（0.1.45）：把記帳頁的六個區塊由上到下排序，不點的＝不顯示。
+      使用者原話：「用戶先點擊先排序……或不顯示(沒參加排序不顯示, 不顯示的時候，
+      記錄提交按預設走，所有東西都可以不參加排序)」。
+      互動：按想要出現的順序**逐顆點**（第 1 顆點的最上面），點已排的＝取消；
+      沒排任何一顆＝全部照預設顯示。
+    -->
+    <section id="sec-homelayout" class="card sec">
+      <header class="sec__hd">
+        <span class="sec__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <rect x="3.6" y="3.6" width="7.2" height="7.2" rx="1.8" />
+            <rect x="13.2" y="3.6" width="7.2" height="7.2" rx="1.8" />
+            <rect x="3.6" y="13.2" width="7.2" height="7.2" rx="1.8" />
+            <rect x="13.2" y="13.2" width="7.2" height="7.2" rx="1.8" />
+          </svg>
+        </span>
+        <div class="sec__meta">
+          <h2 class="sec__title">記帳頁排版</h2>
+          <p class="sec__desc">照你喜歡的上下順序點下面的方塊；沒點到的區塊不會顯示在記帳頁</p>
+        </div>
+      </header>
+
+      <div class="panel">
+        <div class="panel__hd">
+          <span class="panel__label">
+            {{ settings.state.homeLayout.length ? `目前順序（${settings.state.homeLayout.length} 個區塊）` : '預設（全部顯示）' }}
+          </span>
+          <button
+            v-if="settings.state.homeLayout.length"
+            class="btn btn--sm"
+            type="button"
+            @click="resetLayout"
+          >
+            恢復預設
+          </button>
+        </div>
+
+        <!-- 目前順序的預覽：1 → 3 → 4 …（空的時候不顯示） -->
+        <p v-if="settings.state.homeLayout.length" class="ly__order tiny">
+          <template v-for="(n, i) in settings.state.homeLayout" :key="n">
+            <span class="ly__chip num">{{ i + 1 }} {{ layoutItems.find((x) => x.n === n)?.label }}</span>
+            <span v-if="i < settings.state.homeLayout.length - 1" class="ly__arrow" aria-hidden="true">→</span>
+          </template>
+        </p>
+
+        <div class="ly__grid">
+          <button
+            v-for="it in layoutItems"
+            :key="it.n"
+            type="button"
+            class="ly__t"
+            :class="settings.state.homeLayout.includes(it.n) ? 'is-on' : 'is-off'"
+            :title="settings.state.homeLayout.includes(it.n) ? '點一下取消顯示' : '點一下加到排序最後'"
+            @click="toggleLayout(it.n)"
+          >
+            <span class="ly__ic" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path :d="it.icon" /></svg>
+            </span>
+            <span class="ly__n">{{ it.label }}</span>
+            <span v-if="settings.state.homeLayout.includes(it.n)" class="ly__no num">
+              {{ settings.state.homeLayout.indexOf(it.n) + 1 }}
+            </span>
+            <span v-else class="ly__off">不顯示</span>
           </button>
         </div>
       </div>
@@ -1731,7 +1822,139 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   gap: 8px;
 }
 
-/* ── 自訂貨幣（0.1.44）────────────────────────────────── */
+/* ── 記帳頁排版（0.1.45）────────────────────────────────── */
+/* 目前順序的預覽（1 支出/收入 → 3 備註 → …） */
+.ly__order {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 11px;
+}
+.ly__chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+.ly__arrow {
+  color: var(--text-3);
+}
+/* 六個小方塊：兩欄卡片格 */
+.ly__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.ly__t {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  text-align: left;
+  transition:
+    border-color 0.12s,
+    background 0.12s,
+    opacity 0.12s;
+}
+.ly__t.is-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.ly__t.is-off {
+  opacity: 0.6;
+}
+.ly__t:hover {
+  border-color: var(--accent);
+}
+.ly__ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+.ly__t.is-on .ly__ic {
+  background: var(--surface);
+  color: var(--accent);
+}
+.ly__ic svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ly__n {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.ly__no {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 750;
+}
+.ly__off {
+  flex: none;
+  font-size: 10px;
+  font-weight: 650;
+  color: var(--text-3);
+}
+
+/* ── 自訂貨幣（0.1.44；0.1.45 新增列收合）────────────── */
+/* 標題最右的「＋」icon 鈕：按了展開／收起新增列（樣式跟 ClearableInput 的小鈕同一族） */
+.cx__plus {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  transition:
+    background 0.12s,
+    color 0.12s,
+    transform 0.06s;
+}
+.cx__plus:hover,
+.cx__plus.is-open {
+  background: var(--accent);
+  color: #fff;
+}
+.cx__plus:active {
+  transform: scale(0.94);
+}
+.cx__plus svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
 .cx__hint {
   margin: 0 0 10px;
 }
@@ -1805,6 +2028,7 @@ const activeWalletName = computed(() => settings.activeWallet.name)
 }
 .cx__add {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 7px;
   padding: 9px;
@@ -1814,7 +2038,7 @@ const activeWalletName = computed(() => settings.activeWallet.name)
 }
 .cx__addin {
   flex: 1;
-  min-width: 0;
+  min-width: 110px;
   height: 34px;
   padding: 0 10px;
   font-size: 16px;
@@ -1829,6 +2053,10 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   flex: none;
   width: 84px;
   text-align: right;
+}
+/* 0.1.45：＋鈕展開列——按鈕們在窄屏換行、靠右收尾 */
+.cx__add .btn--sm {
+  margin-left: auto;
 }
 
 /* ── 快速金額（0.1.29；0.1.30 編輯移到子頁面）────────── */

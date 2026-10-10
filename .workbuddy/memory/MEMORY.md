@@ -4,12 +4,12 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 完整約定／踩坑 → 同目錄 `CONVENTIONS.md`。
 
 ## 版本
-- 只加 Z（目前 0.1.44）。package.json → `__APP_VERSION__` → 設定頁膠囊
+- 只加 Z（目前 0.1.45）。package.json → `__APP_VERSION__` → 設定頁膠囊
 - 每次更新：package.json ＋ CHANGELOG（插最前面 --- 之後）
 
 ## 開發/驗證
 - preview :4173（改完先 build）；dev :5173（兩埠 localStorage 分開）
-- 流程：vue-tsc → build → vNN 測試 → 截圖 → CHANGELOG → memory → commit- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v107＋v109~v119（43 支）
+- 流程：vue-tsc → build → vNN 測試 → 截圖 → CHANGELOG → memory → commit- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v107＋v109~v120（44 支）
 - ⚠⚠ **背景跑回歸時不要編輯 run-regress.sh**（bash 逐段讀腳本→假語法錯，其實測試全過）
 - ⚠ 升版後必先 build 再跑測試（版本編譯期注入）；斷言「與某來源一致」要讀來源
 - ⚠ 冷啟＋SW 預快取超 goto 30s＝**假紅**（單獨重跑）；puppeteer-core 在 `~/.workbuddy/binaries/node/workspace/`
@@ -28,15 +28,20 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 
 ## 旅行模式（0.1.35 起）
 - 一次一個 `activeTrip`（每錢包一份）；記錄蓋 `tripId?`；結束**保留**標籤（推 `tripHistory`）；顯示層 `toDisplay`
-- 0.1.38~40：TripHistorySheet 列表↔詳情＋`?trip=` 過濾；旅行**顏色**（`--trip-c`）；設定頁區塊跟旅行色
-- 0.1.41：**tripViewFilter**＝持久「查看旅行記錄」（module-level ref 不進 state）｜自訂色彩虹票包 input color（防 TDZ）｜`hidden` 隱藏旅行｜分類不預選｜回程不早於出發；回退 bump `:key` 重掛 DateField
-- 0.1.42：明細旅行下拉不顯示 hidden 旅行；例外＝記錄已歸屬那趟仍顯示；過濾光且無歸屬→整列隱藏
-- 0.1.43：過去的旅行 icon 綁旅行色（hidden 全灰；fallback #d9a326；inline style 蓋 scoped）｜展開隱藏列只剩「詳細」（取消唯一路徑＝詳情按鈕）｜詳情唯讀「旅行顏色」欄
+- 0.1.38~40：TripHistorySheet 列表↔詳情＋`?trip=` 過濾；旅行**顏色**（`--trip-c`）
+- 0.1.41：**tripViewFilter**＝持久「查看旅行記錄」（module-level ref 不進 state）｜自訂色彩虹票包 input color｜`hidden` 隱藏旅行｜分類不預選｜回程不早於出發
+- 0.1.42：明細旅行下拉不顯示 hidden 旅行；例外＝記錄已歸屬那趟仍顯示
+- 0.1.43：過去的旅行 icon 綁旅行色（hidden 全灰；fallback #d9a326）；展開隱藏列只剩「詳細」；詳情唯讀「旅行顏色」欄
 
 ## 0.1.44
-- 自訂貨幣＝`settings.customCurrencies`＋匯率進 `rates`；**刪除只移選單、rates 留著**；`keepCustomRates()` 防 refresh/setBase 沖掉；不能設主幣別；幣別 select 用 `settings.allCurrencies`
+- 自訂貨幣＝`settings.customCurrencies`＋匯率進 `rates`；**刪除只移選單、rates 留著**；不能設主幣別；幣別 select 用 `settings.allCurrencies`
 - 明細：「圖片大小（壓縮後）」＝`ImageRef.bytes` 加總；hero 變 button→emit search-cat（記錄頁填搜索框；統計頁跳 `/records?q=`）；「收據圖片」併入「收據辨識＋BETA」（`.ocrsec`）
-- 搜索框 `#trailing` 加 `CategorySearchPicker`；`watch route.query.q` 要 **immediate**，callback 勿碰 editingId（TDZ）
+- `watch route.query.q` 要 **immediate**，callback 勿碰 editingId（TDZ）
+
+## 0.1.45
+- 上傳收據併進設定頁「收據辨識」節（多幣別下方＋BETA）；sec--beta 移除
+- 自訂貨幣描述移除；「＋」鈕收合輸入列（提交成功/取消收起）
+- **記帳頁排版**＝`settings.homeLayout`（空=預設全顯示；沒排=不顯示）；設定頁 #sec-homelayout 六方塊（點擊順序=顯示順序）；HomeView `flow` computed；**catbox 不參與排序**（固定跟金額後）；表單卡 flex gap 9、`.pad__meta` 包裹層已移除（**舊測試選擇器要找 `.card--ledger`**）；ReceiptImages 在 v-for→function ref
 
 ## 全站約定（細節在 CONVENTIONS.md，勿回退）
 1~5. body `min-height:100%`｜日期一律 DateField/DateTimeField（禁 type=date）｜彈層開著背景不能滑｜可編輯元素 16px（不含 select）｜點/雙擊空白不能動（按鈕連點合法勿擋）
