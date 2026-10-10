@@ -260,10 +260,16 @@ function resetLayout() {
   settings.setHomeLayout([])
 }
 
-function addCx() {  const code = cxCode.value.trim().toUpperCase()
+function addCx() {
+  const code = cxCode.value.trim().toUpperCase()
   const rate = Number(cxRate.value)
-  if (!/^[A-Z0-9]{1,12}$/.test(code)) {
-    notify('貨幣代碼要 1~12 碼英文字母或數字（例如 XYZ、NTD2）', 'warn')
+  /*
+   * 0.1.50：使用者原話「代碼不要限制用戶輸入 3 個字母，可以任何長度的字母或數字、
+   * 符號、英文中文其他語言也可以，直接移除判斷就行」→ **格式與長度判斷整段拿掉**。
+   * 只剩三條必要的保護（空白／撞內建／重複），不然選單會出現重複或蓋掉內建幣別。
+   */
+  if (!code) {
+    notify('貨幣代碼不能是空白', 'warn')
     return
   }
   if (CURRENCIES.some((c) => c.code === code)) {
@@ -580,7 +586,7 @@ const activeWalletName = computed(() => settings.activeWallet.name)
       <div class="panel">
         <div class="rows">
           <label class="row">
-            <span>主幣別<small class="tiny muted">統計與圖表的換算基準（0.1.49 起自訂貨幣也可以）</small></span>
+            <span>主幣別<small class="tiny muted">統計與圖表的換算基準</small></span>
             <select
               class="field row__ctl"
               :value="settings.baseCurrency"
@@ -727,18 +733,16 @@ const activeWalletName = computed(() => settings.activeWallet.name)
         <div v-if="cxOpen" class="cx__add">
           <input
             v-model="cxCode"
-            class="field cx__addin cx__addin--code num"
+            class="field cx__addin cx__addin--code"
             type="text"
-            :maxlength="12"
             placeholder="代碼"
-            aria-label="自訂貨幣代碼（1~12 碼英文字母或數字）"
+            aria-label="自訂貨幣代碼（任何文字都可以）"
             @keydown.enter.prevent="addCx"
           />
           <input
             v-model="cxName"
             class="field cx__addin"
             type="text"
-            :maxlength="12"
             placeholder="名稱"
             aria-label="自訂貨幣名稱"
             @keydown.enter.prevent="addCx"
@@ -2055,7 +2059,8 @@ const activeWalletName = computed(() => settings.activeWallet.name)
 /*
  * 0.1.49（使用者原話）：「自訂貨幣的輸入框和按鈕，也要放在同一行（PWA 和電腦版也要）」
  * → 代碼/名稱/匯率/新增 四個元素同一行（.cx__btns 不再搶整行、輸入框 min-width:0 可壓縮）。
- *   代碼 0.1.49 起不限 3 碼（1~12 碼字母或數字）。
+ * 0.1.50：代碼的**格式與長度判斷整段移除**（原話：「可以任何長度的字母或數字、符號、
+ *   英文中文其他語言也可以，直接移除判斷就行」）→ 輸入框也拿掉 maxlength 與等寬數字字體。
  */
 .cx__btns {
   display: flex;

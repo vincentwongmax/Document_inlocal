@@ -54,9 +54,13 @@ function normTrip(v: unknown): TravelTrip | null {
 }
 
 /**
- * 自訂貨幣（0.1.44）的正規化：
- * - code＝1~12 碼大寫英文字母或數字（0.1.49 放寬，不限 3 碼）、不能撞內建 12 種
- * - name 空的就沿用 code；同一個 code 只留第一筆
+ * 自訂貨幣（0.1.44）的正規化。
+ * 0.1.50：**移除代碼的格式與長度限制**（使用者原話：「不要限制用戶輸入 3 個字母，
+ * 可以任何長度的字母或數字、符號、英文中文其他語言也可以，直接移除判斷就行」）。
+ * 只剩三條必要的保護（不然資料會壞）：
+ * - 不能是空白
+ * - 不能撞內建 12 種幣別（內建的直接選就有）
+ * - 同一個 code 只留第一筆（避免選單出現重複選項）
  */
 function normCustomCurrencies(v: unknown): CustomCurrency[] {
   if (!Array.isArray(v)) return []
@@ -65,7 +69,7 @@ function normCustomCurrencies(v: unknown): CustomCurrency[] {
   for (const raw of v) {
     const o = raw as Partial<CustomCurrency>
     const code = typeof o.code === 'string' ? o.code.trim().toUpperCase() : ''
-    if (!/^[A-Z0-9]{1,12}$/.test(code) || seen.has(code) || MAP_HAS_BUILTIN(code)) continue
+    if (!code || seen.has(code) || MAP_HAS_BUILTIN(code)) continue
     seen.add(code)
     const name = typeof o.name === 'string' && o.name.trim() ? o.name.trim() : code
     out.push({ code, name })
@@ -101,7 +105,15 @@ function migrateHomeLayout(raw: number[]): number[] {
 
 /** 隱藏區塊預設值（0.1.46）的正規化：只挑已知欄位、型別不對就丟掉 */
 function normHomeDefaults(v: unknown): HomeDefaults {
-  const base: HomeDefaults = { type: '', amount: '', categoryId: '', note: '', dateOffset: '', images: [] }
+  const base: HomeDefaults = {
+    type: '',
+    amount: '',
+    currency: '',
+    categoryId: '',
+    note: '',
+    dateOffset: '',
+    images: [],
+  }
   if (!v || typeof v !== 'object') return base
   const o = v as Partial<HomeDefaults>
   const type = o.type === 'expense' || o.type === 'income' ? o.type : ''
@@ -134,6 +146,8 @@ function normHomeDefaults(v: unknown): HomeDefaults {
   return {
     type,
     amount: typeof o.amount === 'string' ? o.amount : '',
+    // 0.1.50：預設幣別（空＝沿用記帳頁上的選擇）
+    currency: typeof o.currency === 'string' ? o.currency : '',
     categoryId: typeof o.categoryId === 'string' ? o.categoryId : '',
     note: typeof o.note === 'string' ? o.note : '',
     dateOffset,
@@ -548,9 +562,10 @@ export const useSettingsStore = defineStore('settings', () => {
     ...state.value.customCurrencies.map((c) => ({ code: c.code, name: c.name, symbol: c.code })),
   ])
 
+  /** 0.1.50：代碼不再做任何格式／長度檢查（見 normCustomCurrencies），只擋空白、撞內建、重複 */
   function addCustomCurrency(code: string, name: string, rate: number): boolean {
     const c = code.trim().toUpperCase()
-    if (!/^[A-Z0-9]{1,12}$/.test(c)) return false
+    if (!c) return false
     if (CURRENCIES.some((x) => x.code === c)) return false
     if (state.value.customCurrencies.some((x) => x.code === c)) return false
     state.value.customCurrencies.push({ code: c, name: name.trim() || c })

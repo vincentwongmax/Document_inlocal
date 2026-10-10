@@ -43,6 +43,8 @@ export function defaultSettings(base = 'MOP'): Settings {
     homeDefaults: {
       type: '',
       amount: '',
+      // 0.1.50：預設幣別（空＝沿用記帳頁上的選擇）
+      currency: '',
       categoryId: '',
       note: '',
       dateOffset: '',

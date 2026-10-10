@@ -120,6 +120,7 @@ async function resolveHiddenDefaults(): Promise<{
   type: TxType
   categoryId: string
   amount: number
+  currency: string
   note: string
   occurredAt: string
   images: ImageRef[]
@@ -133,6 +134,13 @@ async function resolveHiddenDefaults(): Promise<{
   if (hid.has(3) && d.categoryId && settings.category(d.categoryId)) catOut = d.categoryId
 
   const amtOut = hid.has(2) && Number(d.amount) > 0 ? Number(d.amount) : amount.value
+
+  /**
+   * 0.1.50：預設幣別。幣別選單位於區塊 1（支出/收入＋幣別選單），
+   * 所以**只有區塊 1 被隱藏**時才套用——區塊 1 有排進去就以記帳頁上的選擇為準，
+   * 不然會出現「頁面上顯示 USD、存進去是 JPY」的落差。
+   */
+  const curOut = hid.has(1) && d.currency ? d.currency : curCode.value
 
   const noteOut = hid.has(4) && d.note ? d.note : note.value
 
@@ -151,7 +159,15 @@ async function resolveHiddenDefaults(): Promise<{
     if (copies.length) imagesOut = copies
   }
 
-  return { type: typeOut, categoryId: catOut, amount: amtOut, note: noteOut, occurredAt: occurredOut, images: imagesOut }
+  return {
+    type: typeOut,
+    categoryId: catOut,
+    amount: amtOut,
+    currency: curOut,
+    note: noteOut,
+    occurredAt: occurredOut,
+    images: imagesOut,
+  }
 }
 /** 只有長公式／很大的結果才縮小字級（單一數字最多 11 位，永遠不會觸發） */
 const displayLong = computed(() => isLongDisplay(display.value))
@@ -383,7 +399,8 @@ async function submit() {
     type: v.type,
     categoryId: v.categoryId,
     amount: v.amount,
-    currency: curCode.value,
+    // 0.1.50：幣別可能來自預設值（區塊 1 隱藏時）
+    currency: v.currency,
     occurredAt: v.occurredAt,
     note: noteOut,
     // 算出來的才記算式（單純輸入一個數字不記；金額來自預設值時沒有算式）

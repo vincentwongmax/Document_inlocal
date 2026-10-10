@@ -45,6 +45,8 @@ const {
 /* ── 本地草稿（開啟時從設定同步；每一個改動即時寫回）────── */
 const dType = ref<TxType | ''>('')
 const dAmount = ref('')
+/** 0.1.50：預設幣別（空＝沿用記帳頁上選的）；整行、跟金額同一組 */
+const dCurrency = ref('')
 const dCategoryId = ref('')
 const dNote = ref('')
 /**
@@ -81,6 +83,7 @@ watch(
     const d = settings.state.homeDefaults
     dType.value = d.type
     dAmount.value = d.amount
+    dCurrency.value = d.currency
     dCategoryId.value = d.categoryId
     dNote.value = d.note
     // 解析 `before:5:m`／`at:…`／`now`／'' 回三個控制項
@@ -119,6 +122,13 @@ function saveType(v: TxType | '') {
 function saveAmount() {
   settings.setHomeDefaults({ amount: dAmount.value.trim() })
 }
+/** 0.1.50：幣別下拉（區塊 1 隱藏時才會套用；留空＝沿用記帳頁上的選擇） */
+function saveCurrency(v: string) {
+  dCurrency.value = v
+  settings.setHomeDefaults({ currency: v })
+}
+/** 下拉的選項＝內建＋自訂貨幣（0.1.49 起自訂貨幣也能選） */
+const currencyOptions = computed(() => settings.allCurrencies)
 /** 分類即改即存（CategoryPicker v-model → watch） */
 watch(dCategoryId, (id) => {
   settings.setHomeDefaults({ categoryId: id })
@@ -282,8 +292,12 @@ function removeImage(im: ImageRef) {
             </div>
           </div>
 
-          <!-- 2＝金額 -->
-          <label class="frow">
+          <!--
+            2＝金額（0.1.50：下方再加一列「幣別」下拉，整行、所有貨幣都能選）
+            ⚠ 幣別選單屬於區塊 1，所以只有區塊 1 沒排進記帳頁時才會用這裡的值；
+              區塊 1 有排進去就以記帳頁上的選擇為準。
+          -->
+          <label class="frow frow--nosep">
             <span class="frow__lb">金額</span>
             <input
               v-model="dAmount"
@@ -293,6 +307,20 @@ function removeImage(im: ImageRef) {
               @change="saveAmount"
               @blur="saveAmount"
             />
+          </label>
+          <label class="frow">
+            <span class="frow__lb">幣別</span>
+            <select
+              class="field frow__in"
+              :value="dCurrency"
+              aria-label="預設幣別"
+              @change="saveCurrency(($event.target as HTMLSelectElement).value)"
+            >
+              <option value="">不設定（沿用記帳頁）</option>
+              <option v-for="c in currencyOptions" :key="c.code" :value="c.code">
+                {{ c.code }} · {{ c.name }}
+              </option>
+            </select>
           </label>
 
           <!-- 3＝分類 -->
@@ -313,8 +341,8 @@ function removeImage(im: ImageRef) {
             </div>
           </div>
 
-          <!-- 4＝備註 -->
-          <label class="frow">
+          <!-- 4＝備註（0.1.50：下方多一條明顯的分割線，跟「日期時間」分開） -->
+          <label class="frow frow--nosep">
             <span class="frow__lb">備註</span>
             <input
               v-model="dNote"
@@ -326,6 +354,7 @@ function removeImage(im: ImageRef) {
               @blur="saveNote"
             />
           </label>
+          <div class="frow-sep" role="separator" aria-hidden="true"></div>
 
           <!-- 5＝日期時間（0.1.49：輸入框可輸入數字或完整時間；單位/方向下拉照分類下拉的格局）。
                PWA：輸入框獨立一行、兩個下拉在下一行；電腦版（≥768px）三個同一行。 -->
@@ -450,6 +479,17 @@ function removeImage(im: ImageRef) {
 }
 .frow:last-of-type {
   border-bottom: 0;
+}
+/* 0.1.50：某些列自己不要底線（改由 .frow-sep 畫一條更明顯的分割線），
+   例如「金額→幣別」要黏成一組、「備註」下面要留間距再畫線。 */
+.frow--nosep {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.frow-sep {
+  height: 1px;
+  margin: 2px 0;
+  background: var(--line-strong);
 }
 .frow__lb {
   flex: none;
