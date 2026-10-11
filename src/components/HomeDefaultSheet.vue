@@ -247,8 +247,26 @@ function removeImage(im: ImageRef) {
         <div class="bsheet__grab" aria-hidden="true"></div>
 
         <div ref="boxEl" class="box bsheet__body">
+          <!--
+            0.1.52 美化（使用者原話：「美化一下這個介面，可自由發揮」）：
+            標題列＝圖示磚＋標題＋一句說明；說明整合原本兩段 hint 的重點
+            （「7＝清空＋記錄…」那段已按需求移除）。
+          -->
           <header class="hd">
-            <h3>記帳頁預設值</h3>
+            <span class="hd__ic" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M5 7.5h9M17.5 7.5H19M5 12h2M10.5 12H19M5 16.5h6M14.5 16.5H19" />
+                <circle cx="15.6" cy="7.5" r="1.9" />
+                <circle cx="8.6" cy="12" r="1.9" />
+                <circle cx="12.6" cy="16.5" r="1.9" />
+              </svg>
+            </span>
+            <div class="hd__txt">
+              <h3>記帳頁預設值</h3>
+              <p class="hd__sub">
+                只用在排版裡<b>沒排進去</b>的區塊；留空＝照原本的行為走，設定即改即存。
+              </p>
+            </div>
             <button class="closebtn" type="button" title="關閉" aria-label="關閉" @click="emit('close')">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M7.8 7.8 16.2 16.2M16.2 7.8 7.8 16.2" />
@@ -256,14 +274,14 @@ function removeImage(im: ImageRef) {
             </button>
           </header>
 
-          <p class="tiny muted hint">
-            只有用在「記帳頁排版」裡<b>沒排進去</b>的區塊——提交記錄時改用這裡的值。
-            每個欄位都可以不設（留空＝照原本的行為走）。設定即改即存。
-          </p>
-
           <!-- 1＝支出/收入 -->
           <div class="frow">
-            <span class="frow__lb">支出／收入</span>
+            <span class="frow__lb">
+              <svg class="frow__ic" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4.6 8.4h12.2l-3.2-3.2M19.4 15.6H7.2l3.2 3.2" />
+              </svg>
+              支出／收入
+            </span>
             <div class="seg3">
               <button
                 type="button"
@@ -298,7 +316,12 @@ function removeImage(im: ImageRef) {
               區塊 1 有排進去就以記帳頁上的選擇為準。
           -->
           <label class="frow frow--nosep">
-            <span class="frow__lb">金額</span>
+            <span class="frow__lb">
+              <svg class="frow__ic" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 4.4v15.2M15.4 8.2H10.6a2.5 2.5 0 0 0 0 5h2.8a2.5 2.5 0 0 1 0 5h-4.8" />
+              </svg>
+              金額
+            </span>
             <input
               v-model="dAmount"
               class="field frow__in num"
@@ -309,7 +332,13 @@ function removeImage(im: ImageRef) {
             />
           </label>
           <label class="frow">
-            <span class="frow__lb">幣別</span>
+            <span class="frow__lb">
+              <svg class="frow__ic" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="7.6" />
+                <path d="M4.4 9.6h15.2M4.4 14.4h15.2" />
+              </svg>
+              幣別
+            </span>
             <select
               class="field frow__in"
               :value="dCurrency"
@@ -325,7 +354,12 @@ function removeImage(im: ImageRef) {
 
           <!-- 3＝分類 -->
           <div class="frow">
-            <span class="frow__lb">分類</span>
+            <span class="frow__lb">
+              <svg class="frow__ic" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4.4 6.6A2.2 2.2 0 0 1 6.6 4.4h2.7l1.9 2.2h6.2a2.2 2.2 0 0 1 2.2 2.2v8.6a2.2 2.2 0 0 1-2.2 2.2H6.6a2.2 2.2 0 0 1-2.2-2.2Z" />
+              </svg>
+              分類
+            </span>
             <div class="frow__cat">
               <CategoryPicker v-model="dCategoryId" :type="pickerType" variant="select" />
               <button
@@ -343,7 +377,13 @@ function removeImage(im: ImageRef) {
 
           <!-- 4＝備註（0.1.50：下方多一條明顯的分割線，跟「日期時間」分開） -->
           <label class="frow frow--nosep">
-            <span class="frow__lb">備註</span>
+            <span class="frow__lb">
+              <svg class="frow__ic" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6.6 4.4h10.8a1.6 1.6 0 0 1 1.6 1.6v12a1.6 1.6 0 0 1-1.6 1.6H6.6A1.6 1.6 0 0 1 5 18V6a1.6 1.6 0 0 1 1.6-1.6Z" />
+                <path d="M8.6 9.2h6.8M8.6 12.6h6.8M8.6 16h4" />
+              </svg>
+              備註
+            </span>
             <input
               v-model="dNote"
               class="field frow__in"
@@ -359,7 +399,13 @@ function removeImage(im: ImageRef) {
           <!-- 5＝日期時間（0.1.49：輸入框可輸入數字或完整時間；單位/方向下拉照分類下拉的格局）。
                PWA：輸入框獨立一行、兩個下拉在下一行；電腦版（≥768px）三個同一行。 -->
           <div class="frow frow--date">
-            <span class="frow__lb">日期時間</span>
+            <span class="frow__lb">
+              <svg class="frow__ic" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5.6 6.2h12.8a1.6 1.6 0 0 1 1.6 1.6v10.4a1.6 1.6 0 0 1-1.6 1.6H5.6A1.6 1.6 0 0 1 4 18.2V7.8a1.6 1.6 0 0 1 1.6-1.6Z" />
+                <path d="M4 10.4h16M8.4 4.2v3.6M15.6 4.2v3.6" />
+              </svg>
+              日期時間
+            </span>
             <div class="daterow">
               <input
                 v-model="dDateN"
@@ -395,7 +441,14 @@ function removeImage(im: ImageRef) {
 
           <!-- 6＝收據圖片 -->
           <div class="frow frow--imgs">
-            <span class="frow__lb">收據圖片</span>
+            <span class="frow__lb">
+              <svg class="frow__ic" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5.6 4.8h12.8a1.6 1.6 0 0 1 1.6 1.6v11.2a1.6 1.6 0 0 1-1.6 1.6H5.6A1.6 1.6 0 0 1 4 17.6V6.4a1.6 1.6 0 0 1 1.6-1.6Z" />
+                <path d="m4.6 16.6 4.4-4.4 3.2 3.2 2.6-2.6 4.6 4.6" />
+                <circle cx="9.2" cy="9.4" r="1.3" />
+              </svg>
+              收據圖片
+            </span>
             <div class="imgs">
               <div v-for="im in dImages" :key="im.id" class="imgs__cell">
                 <img v-if="im.thumb" :src="im.thumb" alt="" />
@@ -410,10 +463,6 @@ function removeImage(im: ImageRef) {
               <input ref="fileInput" class="hidden" type="file" accept="image/*" multiple @change="onFiles" />
             </div>
           </div>
-
-          <p class="tiny muted hint">
-            7＝清空＋記錄：沒有東西可以設（那排按鈕本來就是空的）。
-          </p>
         </div>
       </div>
     </div>
@@ -428,10 +477,10 @@ function removeImage(im: ImageRef) {
  * 列間距 14px。
  */
 .box {
-  padding: 6px 18px 18px;
+  padding: 4px 18px 22px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 /*
  * 0.1.51（使用者原話）：「參考記帳明細頁面…不會顯示下方的導覽欄」
@@ -451,18 +500,57 @@ function removeImage(im: ImageRef) {
 .hidden {
   display: none;
 }
+/*
+ * 0.1.52 美化：標題列＝圖示磚（漸層底）＋標題＋一句說明。
+ * `.hd__txt` 是 flex 子項要吃剩餘寬度，說明才不會把標題擠歪。
+ */
 .hd {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 11px;
+  padding-bottom: 2px;
 }
-.hd h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 700;
+.hd__ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: linear-gradient(150deg, var(--accent-soft) 0%, var(--surface-3) 100%);
+  color: var(--accent);
+}
+.hd__ic svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.hd__txt {
+  flex: 1;
+  min-width: 0;
+}
+.hd__txt h3 {
+  margin: 1px 0 0;
+  font-size: 16.5px;
+  font-weight: 750;
+  letter-spacing: 0.2px;
+}
+.hd__sub {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.hd__sub b {
+  font-weight: 650;
+  color: var(--text-2);
 }
 .closebtn {
+  flex: none;
   display: grid;
   place-items: center;
   width: 30px;
@@ -482,12 +570,11 @@ function removeImage(im: ImageRef) {
   stroke-width: 2;
   stroke-linecap: round;
 }
-.hint {
-  margin: 0;
-  line-height: 1.5;
-}
-
-/* 每一列：左標籤、右控制項 */
+/*
+ * 0.1.52 美化：每一列＝左邊「圖示＋標籤」、右邊控制項。
+ * ⚠ 列結構刻意維持「只有兩個子元素」（標籤＋控制項）——v125 有量測斷言
+ *   （幣別列整行＝列內只有標籤與下拉、下拉佔滿剩餘寬度），圖示因此放在標籤內。
+ */
 .frow {
   display: flex;
   align-items: center;
@@ -511,17 +598,42 @@ function removeImage(im: ImageRef) {
 }
 .frow__lb {
   flex: none;
-  width: 74px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 96px;
   font-size: 13px;
   font-weight: 650;
   color: var(--text-2);
 }
+/* 圖示＝小圓角色塊（美化用；純裝飾，不影響任何斷言與點擊） */
+.frow__ic {
+  flex: none;
+  box-sizing: content-box;
+  width: 15px;
+  height: 15px;
+  padding: 4px;
+  border-radius: 9px;
+  background: var(--surface-3);
+  color: var(--text-3);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .frow__in {
   flex: 1;
   min-width: 0;
-  height: 38px;
-  padding: 0 10px;
+  height: 40px;
+  padding: 0 11px;
   font-size: 16px;
+  border-radius: 11px;
+}
+.frow__in:focus,
+.frow__in:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 /*
  * 0.1.49：日期時間＝「輸入框（數字或完整時間）＋單位下拉＋方向下拉」。
@@ -543,9 +655,10 @@ function removeImage(im: ImageRef) {
 .daterow__n {
   flex: 1 1 100%;
   min-width: 0;
-  height: 38px;
-  padding: 0 10px;
+  height: 40px;
+  padding: 0 11px;
   font-size: 16px;
+  border-radius: 11px;
 }
 .daterow__sel {
   flex: 1 1 0;
@@ -564,17 +677,18 @@ function removeImage(im: ImageRef) {
   flex: 1;
   display: flex;
   gap: 4px;
-  padding: 3px;
+  padding: 4px;
   background: var(--surface-3);
-  border-radius: 10px;
+  border-radius: 13px;
 }
 .seg3__b {
   flex: 1;
-  height: 30px;
-  border-radius: 8px;
+  height: 32px;
+  border-radius: 10px;
   font-size: 12.5px;
   font-weight: 600;
   color: var(--text-2);
+  transition: background 0.15s ease, color 0.15s ease;
 }
 .seg3__b.is-on {
   background: var(--surface);
@@ -633,7 +747,7 @@ function removeImage(im: ImageRef) {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 9px;
+  border-radius: 12px;
   border: 1px solid var(--line);
 }
 .imgs__x {
@@ -655,18 +769,25 @@ function removeImage(im: ImageRef) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  width: 56px;
-  height: 56px;
-  border-radius: 9px;
+  gap: 3px;
+  width: 60px;
+  height: 60px;
+  border-radius: 12px;
   border: 1px dashed var(--line-strong);
   background: var(--surface-2);
   color: var(--text-3);
-  font-size: 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.imgs__add:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .imgs__add svg {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;

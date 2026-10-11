@@ -139,10 +139,11 @@ onBeforeUnmount(close)
   justify-content: space-between;
   gap: 4px;
   width: 100%;
-  height: 38px;
-  padding: 0 8px;
+  /* 0.1.52：跟同頁的輸入框（.frow__in／.daterow__n 40px）等高，整排看起來才齊 */
+  height: 40px;
+  padding: 0 9px;
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
+  border-radius: 11px;
   background: var(--surface);
   font-size: 14px;
   font-weight: 600;

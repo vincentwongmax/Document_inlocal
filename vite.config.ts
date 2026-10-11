@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite'
+import type { Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
 import { fileURLToPath, URL } from 'node:url'
@@ -29,11 +30,38 @@ function resolveBase(): string {
   return '/'
 }
 
+/**
+ * 0.1.52：建置時產生 `version.json`（版本檢查檔）。
+ *
+ * 使用者原話：「用戶檢查更新時，可以在 github 中建立一個版本的 File（這個 FILE 必備每次打開
+ * 都馬上更新、不受快取影響）…平時用戶網頁必須要離線使用的」。
+ *
+ * 所以：
+ *  - 這個檔**只放版本號與建置時間**，由 `package.json` 的 version 產生（唯一來源，不會走鐘）
+ *  - 前端抓它時帶 `?t=時間戳` 且 `cache: 'no-store'` → 一定走網路，不受 HTTP／Service Worker 快取影響
+ *  - ⚠ workbox 的 `globPatterns` 有 `json`，所以**必須**用 `globIgnores` 把 version.json
+ *    排除在預快取之外——被預快取的話就永遠拿到舊的那份，「不受快取影響」就破功了
+ *  - 其餘資源照舊預快取，App 平時仍然完全離線可用
+ */
+function versionFilePlugin(): Plugin {
+  return {
+    name: 'emit-version-json',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'version.json',
+        source: `${JSON.stringify({ version: pkg.version, builtAt: new Date().toISOString() }, null, 2)}\n`,
+      })
+    },
+  }
+}
+
 export default defineConfig({
   base: resolveBase(),
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   plugins: [
     vue(),
+    versionFilePlugin(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icons/*.png'],
@@ -60,6 +88,9 @@ export default defineConfig({
       workbox: {
         // 語言包與 wasm 核心也一併預快取，確保離線可 OCR
         globPatterns: ['**/*.{js,css,html,svg,png,ico,json,gz,wasm}'],
+        // ⚠ 0.1.52：version.json 是「檢查更新」用的，**絕不能被預快取**
+        //   （被快取就永遠拿到舊版本號）；它只走網路，其餘資源照舊可離線
+        globIgnores: ['**/version.json'],
         maximumFileSizeToCacheInBytes: 32 * 1024 * 1024,
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,

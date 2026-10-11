@@ -127,3 +127,22 @@ export async function askUpdate(): Promise<boolean> {
   })
   return res.isConfirmed
 }
+
+/**
+ * 0.1.52：設定頁「檢查更新」比對線上 version.json 後的詢問。
+ *
+ * 使用者原話：「彈出提示，版本號不一致，當前 X.Y.Z，將自動更新 A.B.C」。
+ * 按「立即更新」＝交給呼叫端執行 updateSW(true)（套用新版並重新載入）。
+ */
+export async function askRemoteUpdate(current: string, remote: string): Promise<boolean> {
+  const res = await Swal.fire({
+    title: '發現新版本',
+    html: `版本號不一致：當前 <b class="num">${current}</b>，將自動更新 <b class="num">${remote}</b>。`,
+    icon: 'info',
+    showCancelButton: true,
+    confirmButtonText: '立即更新',
+    cancelButtonText: '稍後',
+    reverseButtons: true,
+  })
+  return res.isConfirmed
+}

@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { QUICK_NOTE_MAX, useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
-import { notify, confirmDialog } from '@/lib/alerts'
+import { notify, confirmDialog, askRemoteUpdate } from '@/lib/alerts'
 import CategoryManageModal from '@/components/CategoryManageModal.vue'
 import QuickAmountSheet from '@/components/QuickAmountSheet.vue'
 import HomeDefaultSheet from '@/components/HomeDefaultSheet.vue'
@@ -248,6 +248,46 @@ const layoutItems: { n: number; label: string; icon: string }[] = [
 
 /** 「預設值」子頁面（0.1.46）：隱藏區塊提交時要用的預設內容 */
 const hdOpen = ref(false)
+
+/**
+ * 0.1.52：設定頁「檢查更新」。
+ *
+ * 使用者原話：「用戶檢查更新時，可以在 github 中建立一個版本的 File（這個 FILE 必備每次打開
+ * 都馬上更新、不受快取影響）…如果用戶按下檢查更新按鈕時，彈出提示，版本號不一致，
+ * 當前 X.Y.Z，將自動更新 A.B.C，或目前版本 X.Y.Z 已是最新了」。
+ *
+ * 做法：抓 `version.json`（vite 建置時產生，內含 version＋builtAt）
+ *  - **帶 `?t=時間戳`＋`cache:'no-store'`** → 不吃 HTTP 快取，也不吃 Service Worker 預快取
+ *    （version.json 已在 vite.config 的 globIgnores 排除，雙重保險）
+ *  - 版本不同 → 問「將自動更新」；同意就 `updateSW(true)`（立即套用新版並重載）
+ *  - 版本相同 → Toast「目前版本 X.Y.Z 已是最新了」
+ *  - 抓不到（離線等）→ Toast 說明失敗原因，什麼都不動
+ */
+const checkingUpdate = ref(false)
+async function checkUpdate() {
+  if (checkingUpdate.value) return
+  checkingUpdate.value = true
+  try {
+    const url = `${import.meta.env.BASE_URL}version.json?t=${Date.now()}`
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = (await res.json()) as { version?: unknown }
+    const remote = typeof data?.version === 'string' ? data.version : ''
+    if (!remote) throw new Error('版本檔格式不正確')
+    if (remote !== APP_VERSION) {
+      if (await askRemoteUpdate(APP_VERSION, remote)) {
+        await updateSW(true) // 套用新版（會重新載入）
+      }
+    } else {
+      notify(`目前版本 ${APP_VERSION} 已是最新了`, 'ok')
+    }
+  } catch (e) {
+    console.warn('[settings] 檢查更新失敗', e)
+    notify('檢查更新失敗——請確認網路連線後再試一次', 'warn')
+  } finally {
+    checkingUpdate.value = false
+  }
+}
 
 /** 點方塊：已排＝取消；沒排＝加到排序最後 */
 function toggleLayout(n: number) {
@@ -1305,11 +1345,14 @@ const activeWalletName = computed(() => settings.activeWallet.name)
           <div class="row">
             <span>
               版本
-              <small class="tiny muted">收到更新提示時可立即套用</small>
+              <small class="tiny muted">比對線上的版本檔（不受快取影響），需要時一鍵更新</small>
             </span>
             <div class="ver">
               <span class="ver__no num">v{{ APP_VERSION }}</span>
-              <button class="btn btn--sm" @click="updateSW(true)">檢查更新</button>
+              <!-- 0.1.52：檢查更新＝比對線上的 version.json（不受快取影響） -->
+              <button class="btn btn--sm" :disabled="checkingUpdate" @click="checkUpdate">
+                {{ checkingUpdate ? '檢查中…' : '檢查更新' }}
+              </button>
             </div>
           </div>
         </div>
