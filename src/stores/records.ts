@@ -131,8 +131,16 @@ export const useRecordsStore = defineStore('records', () => {
     if (!r) return
     Object.assign(r, patch, { updatedAt: new Date().toISOString() })
     if (patch.amount !== undefined || patch.currency !== undefined || patch.rate !== undefined) {
-      const rate = r.currency === r.baseCurrency ? 1 : r.rate
-      r.rate = patch.rate !== undefined ? patch.rate : rate
+      // 0.1.53：rate 一律正規化成數字——RecordSheet 的匯率輸入框過去會把字串 "2"
+      //   原封不動存進 localStorage（明細改匯率後 baseAmount 算得出、顯示卻不更新，
+      //   就是那條 bug 的一半）；換幣別成主幣時 rate 固定是 1。
+      const nextRate =
+        patch.rate !== undefined
+          ? Number(patch.rate)
+          : r.currency === r.baseCurrency
+            ? 1
+            : Number(r.rate)
+      r.rate = Number.isFinite(nextRate) && nextRate > 0 ? nextRate : settings.rate(r.currency)
       r.amount = Number(r.amount.toFixed(2))
       r.baseAmount = Number((r.amount * r.rate).toFixed(2))
     }
@@ -198,7 +206,8 @@ export const useRecordsStore = defineStore('records', () => {
   /**
    * 某個旅行的摘要（結束前的確認視窗、TravelSheet 的即時小計與「過去的旅行」都用它）。
    * 只算**當前錢包**的記錄（旅行是跟著錢包走的）。
-   * 金額與清單同一套：即時換算成目前的顯示幣別（0.1.36 起旅行中＝旅行貨幣）。
+   * 金額與清單同一套：0.1.53 起用記錄自己凍結的匯率換算成顯示幣別
+   * （0.1.36 起旅行中＝旅行貨幣；已記錄數據的匯率固定）。
    * ⚠ 結束過的旅行也查得到（標記保留，0.1.36）——「過去的旅行」列表就靠它。
    */
   function tripSummary(tripId: string): { count: number; expense: number; income: number } {
@@ -208,7 +217,7 @@ export const useRecordsStore = defineStore('records', () => {
     for (const r of records.value) {
       if (r.tripId !== tripId) continue
       count++
-      const v = settings.toDisplay(r.amount, r.currency)
+      const v = settings.displayOf(r)
       if (r.type === 'expense') expense += v
       else income += v
     }

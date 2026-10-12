@@ -72,6 +72,72 @@
 
 ---
 
+## [0.1.53] — 2026-10-11（記錄改以凍結匯率顯示：修匯率改了記錄不更新＋更新匯率不動舊數據＋切主幣保留 A→B；圖片只顯示「圖片+」不顯示張數；記錄頁分頁：PWA 每 X 筆下拉即刷新、電腦版四頁鈕＋每頁筆數下拉）
+
+### 使用者需求（原話）
+
+> 1.「匯率 bug，用戶修改匯率後無法更新記錄中的金額」  
+> 2.「在設定頁中，用戶按更新匯率的按鈕，不應該變動已經記錄的數據，已記錄的數據的匯率是固定的，  
+>    如果用戶切換主幣別時，也要記得保留當前的 A 貨幣轉 B 貨幣的匯率，因為這是當時原始匯率的數據，  
+>    而且因為當用戶切換回來的時候會用得上」  
+> 3.「記錄中，圖片的 icon，如果有多張圖片，不要圖片*2，不要顯示多少張圖片的數字，  
+>    『圖片+』就好，+號的左邊不要有空格」  
+> 4.「在記錄的頁面中，PWA 時，每 X 筆下拉才接著刷新記錄，在電腦版中加入，上一頁下一頁第一頁  
+>    最後一頁，用戶選擇顯示多少頁的下拉清單」
+
+### 拍板
+
+- **記錄顯示改走「該筆自己凍結的匯率」**（需求 1＋2 的核心決定）：  
+  每筆記錄除了 `amount`／`currency`，還帶著記帳當下的匯率快照（`rate`＝1 record.currency = rate record.baseCurrency）。  
+  顯示時用 `recRate(r)` 把這個**凍結值**經現行匯率表換算成顯示幣別，不再用即時（live）匯率。  
+  - 新增 `recRate(r)`／`displayOf(r)`／`displayRateOf(r)`（`src/stores/settings.ts`）：  
+    - `recRate`：`own = Number(r.rate)`；`hasOwn` 時 `base = r.baseCurrency`（否則現行 baseCurrency）；  
+      `mult = hasOwn ? own : rate(r.currency)`；`base === 顯示幣別` 時直接回 `mult`（完全不碰匯率表），  
+      否則 `(mult × rate(base)) / rate(顯示幣別)`；除錯保護：算出來非有限或 ≤0 就回退 `mult`。  
+    - `displayOf(r)`＝金額 × `recRate(r)`（無效回 0）；`displayRateOf(r)`＝同一個數字當「× N」顯示。  
+  - 舊資料（`rate` 缺／字串）自動回退即時匯率表 → **升級零行為變化**。
+- **需求 1（明細改匯率→列表更新）**：根因是顯示一律走 live `toDisplay`，加上匯率被存成字串  
+  （RecordSheet 的 v-model 沒掛 `.number`）。修法：  
+  - `RecordRow.vue`：`shownAmount`／`shownRate` 改用 `displayOf`／`displayRateOf`。  
+  - `RecordList.vue` 的 `totalsOf`、`RecordsView.vue` 的 `catGroups`／`expense`／`income`、  
+    `useStats.ts`、`StatsView`、`HomeView` 通知 label、`records.ts` 的 `tripSummary()`  
+    ——全部改 `displayOf(r)`。  
+  - `RecordSheet.vue`：新增 `rateNum` computed（無效回退即時匯率）；`watch(() => props.record)`  
+    載入時有凍結值就用凍結值；`watch(currencyCode)` 加守衛「改回原本幣別不蓋掉凍結值」；  
+    `save()` 送 `rate: showRate ? rateNum : 1`。  
+  - `records.ts` 的 `update()`：`rate` 正規化（有限且 >0 才收，否則回退即時匯率；  
+    幣別＝＝baseCurrency 時沒帶 rate 就當 1）。
+- **需求 2（更新匯率不動舊數據＋切主幣保留 A→B）**：  
+  - 「更新匯率」只寫 `rates`（未來新記錄的快照），舊記錄顯示完全不受影響 —— 由凍結模型自動達成。  
+  - 切主幣：`setBaseCurrency` 的 `conv` 改 fallback —— `oldRates[code]` 有效才當換算係數，  
+    否則當 1（舊值原封不動）。修正了自訂貨幣當主幣時，匯率被 `defaultRates` 覆蓋成預設值的問題  
+    （0.1.49 起自訂貨幣可當主幣，其 A→B 匯率來回切都算得回來）。  
+  - `toDisplay` 保留但註明「0.1.53 起只給當下輸入用（記帳頁預覽、明細 ≈）」。
+- **需求 3（圖片「圖片+」）**：`RecordRow.vue` 的 `.imtag` 改文案 —— 多張顯示「圖片+」、單張顯示「圖片」；  
+  移除張數 `.imtag__n`（`+` 號左邊無空格）。`.smoke/v97.mjs` 斷言改抓整串文字比對 `'圖片+'`。  
+  （`.smoke/v101.mjs` 的 `startsWith('圖')` 對新文案仍成立，無須改。）
+- **需求 4（記錄頁分頁）**：  
+  - 狀態：`pageSize`（20/50/100/全部＝0，預設 50）＋`page`；`pagedRows` 給 `RecordList`。  
+  - `rows.length > 20` 才出現 pager（短列表不佔位）；切篩選／搜尋自動回第 1 頁；  
+    換每頁筆數或刪記錄後 `pageCount` watcher 做 clamp（不越界）。  
+  - **電腦版（≥520px）**：每頁筆數下拉＋頁碼＋上一頁／下一頁／第一頁／最後一頁四鈕。  
+  - **PWA（≤519px）**：只保留「每 X 筆」下拉＋「顯示更多（還有 N 筆）」鈕（符合  
+    「PWA 時每 X 筆下拉才接著刷新記錄」）。  
+  - ⚠ 陷阱：`<select v-model="pageSize">` 預設送字串，「全部」的 0 會變 `'0'` 使 `=== 0` 永遠 false  
+    → 掛 `v-model.number`。  
+  - ⚠⚠ 實戰修掉的版性 bug（v128 ⑥ 抓到）：分頁列的 `<div v-if="showPager">` 一開始直接插在  
+    `RecordList` 與「依分類」的 `<template v-else>` 中間 —— `v-else` 改黏到 `showPager` 上，  
+    **≤20 筆時逐筆＋依分類兩種檢視同時渲染**（同一筆記錄出現兩次）。  
+    解法：用 `<template v-if="!byCat">` 把 RecordList＋分頁列包起來，`v-else` 才黏回 `!byCat`。
+- **測試**：新增 `.smoke/v128.mjs`（**0.1.53 守門員，42 項全過**）：  
+  ① 明細改匯率→列表金額與凍結值同步更新（種子刻意讓現行表與凍結值不同）  
+  ② 只改金額、匯率不動 ③ 按更新匯率：表定換、舊記錄顯示不動  
+  ④ 切主幣 MOP→HKD→MOP round-trip，A→B 匯率保留（數值逐一推估斷言）  
+  ⑤ 多圖只顯示「圖片+」 ⑥ 分頁：桌面四鈕＋PWA 顯示更多＋選「全部」＋搜尋回第 1 頁。  
+- **回歸**：`v70～v128` 全套 59 支全過。
+
+---
+
 ## [0.1.52] — 2026-10-11（預設值頁面美化＋移除 7＝清空＋記錄說明＋檢查更新改比對線上 version.json）
 
 ### 使用者需求（原話）

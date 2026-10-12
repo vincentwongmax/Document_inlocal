@@ -261,8 +261,8 @@ const catGroups = computed<CatGroup[]>(() => {
       const per = new Map<string, { exp: number; inc: number }>()
       for (const r of sorted) {
         const cur = per.get(r.categoryId) ?? { exp: 0, inc: 0 }
-        // 0.1.28：即時換算成目前的主幣別（不用記帳當下凍結的 baseAmount）
-        const v = settings.toDisplay(r.amount, r.currency)
+        // 0.1.53：用記錄自己凍結的匯率（已記錄數據的匯率固定）
+        const v = settings.displayOf(r)
         if (r.type === 'expense') cur.exp += v
         else cur.inc += v
         per.set(r.categoryId, cur)
@@ -314,16 +314,59 @@ function visibleCat(row: CatGroup): TxRecord[] {
 }
 
 // 換範圍／篩選／關鍵字／時間基準／旅行過濾時把展開狀態清掉，免得殘留不相關的分類
+// 0.1.53：同時回到第 1 頁（不然可能停在一筆都沒有的頁碼上）
 watch([range, typeFilter, kw, recent, viewFilter], () => {
   byCatOpen.value.clear()
+  page.value = 1
 })
 
-// 0.1.28：即時換算成目前的主幣別（使用者：主幣別改了，記錄也要跟著變）
+/* ── 0.1.53：逐筆檢視的分頁 ─────────────────────────────────
+ * 使用者原話：「在記錄的頁面中，PWA 時，每X 筆下拉才接著刷新記錄，
+ * 在電腦版中加入，上一頁下一頁第一頁 最後一頁 用戶選擇顯示多少頁的下拉清單」。
+ *
+ * 拍板的設計：
+ * - `pageSize`：20 / 50 / 100 / 全部（0），預設 50——剛好蓋住大多數人一個月的量，
+ *   又不會一次渲染幾百列。
+ * - 只有「逐筆檢視」套用；「依分類檢視」維持原本的組內展開（每組前 3 筆＋顯示全部）。
+ * - 超過 20 筆才出現分頁列（更少根本沒有翻頁的必要）。
+ * - 電腦版（≥520px）：第一頁／上一頁／第 X / Y 頁／下一頁／最後一頁。
+ * - PWA（≤519px）：一顆「顯示更多（還有 N 筆）」——跟統計頁／分類組的同名按鈕一致。
+ * - 下拉清單兩邊都有（使用者兩邊都要求「每 X 筆」的下拉）。
+ */
+const PAGE_SIZES = [20, 50, 100, 0]
+const pageSize = ref(50)
+const page = ref(1)
+
+/** 分頁列要不要出現：逐筆檢視＋真的超過一頁的量 */
+const showPager = computed(() => !byCat.value && rows.value.length > PAGE_SIZES[0])
+
+const pageCount = computed(() => {
+  if (pageSize.value === 0) return 1
+  return Math.max(1, Math.ceil(rows.value.length / pageSize.value))
+})
+
+/** 頁數縮減時（換篩選後記錄變少）把頁碼夾回來，避免停在一筆都沒有的頁 */
+watch(pageCount, (n) => {
+  if (page.value > n) page.value = n
+})
+
+/** 目前這一頁要顯示的記錄（全部＝不分） */
+const pagedRows = computed(() => {
+  if (pageSize.value === 0) return rows.value
+  const start = (page.value - 1) * pageSize.value
+  return rows.value.slice(start, start + pageSize.value)
+})
+
+function gotoPage(n: number) {
+  page.value = Math.min(Math.max(1, n), pageCount.value)
+}
+
+// 0.1.53：用記錄自己凍結的匯率換算成顯示幣別（即時換算是 0.1.28 的舊行為）
 const expense = computed(() =>
-  rows.value.filter((r) => r.type === 'expense').reduce((s, r) => s + settings.toDisplay(r.amount, r.currency), 0),
+  rows.value.filter((r) => r.type === 'expense').reduce((s, r) => s + settings.displayOf(r), 0),
 )
 const income = computed(() =>
-  rows.value.filter((r) => r.type === 'income').reduce((s, r) => s + settings.toDisplay(r.amount, r.currency), 0),
+  rows.value.filter((r) => r.type === 'income').reduce((s, r) => s + settings.displayOf(r), 0),
 )
 const net = computed(() => income.value - expense.value)
 
@@ -617,17 +660,45 @@ function removeEditing(id: string) {
       </template>
     </div>
 
-    <!-- 逐筆（依日期分組） -->
-    <RecordList
-      v-if="!byCat"
-      :records="rows"
-      :show-time="true"
-      :empty-text="emptyText"
-      :highlight="kw"
-      :date-basis="recent ? 'created' : 'occurred'"
-      @edit="editingId = $event"
-      @remove="removeEditing($event)"
-    />
+    <!-- 逐筆（依日期分組）；0.1.53：只渲染目前這一頁 -->
+    <!-- ⚠ 一定要用 <template v-if> 包住 RecordList＋分頁列：
+         早各自的 v-if／v-else 會讓「依分類」的 v-else 改黏到分頁列的 v-if 上，
+         ≤20 筆（showPager=false）時兩種檢視會同時渲染（同一筆記錄出現兩次） -->
+    <template v-if="!byCat">
+      <RecordList
+        :records="pagedRows"
+        :show-time="true"
+        :empty-text="emptyText"
+        :highlight="kw"
+        :date-basis="recent ? 'created' : 'occurred'"
+        @edit="editingId = $event"
+        @remove="removeEditing($event)"
+      />
+
+      <!-- 0.1.53：分頁列（只有逐筆檢視、且超過 20 筆才出現） -->
+      <div v-if="showPager" class="pager">
+        <label class="pager__size">
+          <span class="pager__lb">每頁</span>
+          <!-- ⚠ 一定要 .number：<select> 的 v-model 預設送字串，「全部」的 0 會變 '0'，
+               沒有修飾詞時 `pageSize === 0` 永遠是 false → 選「全部」會變成「每頁 0 筆」 -->
+          <select v-model.number="pageSize" class="field pager__sel">
+            <option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ n === 0 ? '全部' : `${n} 筆` }}</option>
+          </select>
+        </label>
+        <span class="pager__info num">第 {{ page }} / {{ pageCount }} 頁</span>
+        <!-- 電腦版：四顆頁鈕 -->
+        <div class="pager__nav">
+          <button class="btn btn--ghost btn--sm" :disabled="page <= 1" @click="gotoPage(1)">第一頁</button>
+          <button class="btn btn--ghost btn--sm" :disabled="page <= 1" @click="gotoPage(page - 1)">上一頁</button>
+          <button class="btn btn--ghost btn--sm" :disabled="page >= pageCount" @click="gotoPage(page + 1)">下一頁</button>
+          <button class="btn btn--ghost btn--sm" :disabled="page >= pageCount" @click="gotoPage(pageCount)">最後一頁</button>
+        </div>
+        <!-- PWA（≤519px）：一顆「顯示更多」 -->
+        <button v-if="page < pageCount" class="btn btn--ghost btn--sm pager__more" @click="gotoPage(page + 1)">
+          顯示更多（還有 {{ Math.max(0, rows.length - page * pageSize) }} 筆）
+        </button>
+      </div>
+    </template>
 
     <!-- 依分類分組：每組顯示筆數與收支小計，預設只露前幾筆 -->
     <template v-else>
@@ -1232,5 +1303,70 @@ function removeEditing(id: string) {
 }
 .seg2 .seg2--inc.is-on {
   color: var(--income);
+}
+
+/* ── 0.1.53：分頁列 ──────────────────────────────────────
+ * 版面：［每頁 ▾］［第 X / Y 頁］………［第一頁］［上一頁］［下一頁］［最後一頁］
+ * PWA（≤519px）把四顆頁鈕收起來，換成一顆靠右的「顯示更多」；
+ * 電腦版反過來藏起「顯示更多」。下拉清單兩邊都保留（使用者兩邊都要求）。 */
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.pager__size {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.pager__lb {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+}
+.pager__sel {
+  width: auto;
+  height: 30px;
+  padding: 0 26px 0 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.pager__info {
+  font-size: 12.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.pager__nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.pager__nav .btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.pager__more {
+  margin-left: auto;
+}
+@media (max-width: 519px) {
+  .pager__nav {
+    display: none;
+  }
+}
+@media (min-width: 520px) {
+  .pager__more {
+    display: none;
+  }
 }
 </style>

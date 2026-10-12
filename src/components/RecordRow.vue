@@ -48,11 +48,13 @@ const isExpense = computed(() => props.record.type === 'expense')
  * 使用者原話（0.1.28）：「當主幣別設定做其他的貨幣時，記錄頁和統計頁中的記錄也要更改做
  * 用戶指定的貨幣…（即使原記錄是用 MOP 記錄的就用匯率算出數字）」。
  *
- * ⚠ 以前用 `record.baseAmount`／`record.baseCurrency`——那是記帳當下凍結的值，
- *   主幣別後來改了它也不會變，這正是使用者看到的問題。
+ * 0.1.53：改用**這筆記錄自己凍結的匯率**（`displayOf`）——
+ * 使用者原話：「已記錄的數據的匯率是固定的」；而在明細裡改匯率會改到自己的 rate，
+ * 列表金額立刻跟著更新（過去一律走即時匯率表，明細改了列表卻不變，就是那個 bug）。
+ *
  * ⚠ 只換顯示；存的資料（amount／rate／baseAmount）完全不動。
  */
-const shownAmount = computed(() => settings.toDisplay(props.record.amount, props.record.currency))
+const shownAmount = computed(() => settings.displayOf(props.record))
 
 /**
  * 時間標籤的文字。
@@ -62,12 +64,12 @@ const timeText = computed(() => relativeTime(props.record.occurredAt))
 
 /** 記錄的幣別跟「現在的顯示幣別」不同才要顯示換算說明（0.1.36：旅行中＝跟旅行貨幣比） */
 const converted = computed(() => props.record.currency !== settings.displayCurrency)
-/** 換算說明的乘數＝這筆換成顯示幣別實際用的倍率（平時＝兌主幣的匯率；旅行中再除以旅行貨幣匯率） */
-const shownRate = computed(() => {
-  const r = settings.rate(props.record.currency)
-  const dc = settings.displayCurrency
-  return dc === settings.baseCurrency ? r : r / settings.rate(dc)
-})
+/**
+ * 換算說明的乘數＝這筆換成顯示幣別實際用的倍率。
+ * 0.1.53 起用**記錄自己凍結的匯率**（`displayRateOf`）——跟 `shownAmount` 同一套數字，
+ * 不再直接讀即時匯率表（明細改匯率 → 這邊的倍率也跟著變，兩邊才對得上）。
+ */
+const shownRate = computed(() => settings.displayRateOf(props.record))
 /**
  * 換算說明的匯率只顯示到兩位小數（0.1.37）。
  * 使用者原話：「在記錄的頁面和統計的頁面的記錄中，匯率只顯示兩位數，
@@ -205,8 +207,13 @@ watch(
             <circle cx="6.1" cy="6.9" r="1.15" />
             <path d="M3.6 11.9 6.6 9l2.1 1.9 2-1.8 2.2 2.5" />
           </svg>
-          <span>圖</span>
-          <span v-if="imgCount > 1" class="imtag__n">· {{ imgCount }}</span>
+          <!--
+            0.1.53（使用者原話）：「如果有多張圖片，不要圖片*2，不要顯示多少張圖片的數字，
+            『圖片+』就好，+號的左邊不要有空格」。
+            → 多張＝「圖片+」（不顯示張數）；單張＝「圖片」。
+            ⚠ 刻意用**一個** span 包住整個字串：中間不能有空格，「+」才會緊貼在「片」後面。
+          -->
+          <span>{{ imgCount > 1 ? '圖片+' : '圖片' }}</span>
         </span>
         <span v-else-if="record.source === 'image'" class="imtag imtag--plain">收據</span>
       </span>
@@ -427,10 +434,6 @@ watch(
 .imtag__ic circle {
   fill: var(--accent);
   stroke: none;
-}
-.imtag__n {
-  color: var(--text-3);
-  font-weight: 700;
 }
 .imtag--plain {
   border-color: var(--line);

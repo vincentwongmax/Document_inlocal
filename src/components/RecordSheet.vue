@@ -84,11 +84,22 @@ const numeric = computed(() => {
   return isFinite(n) ? n : 0
 })
 const showRate = computed(() => currencyCode.value !== settings.baseCurrency)
+/**
+ * 0.1.53：匯率輸入框的**正規化數值**。
+ * `v-model` 綁的是字串（inputmode=decimal 的手機鍵盤），過去 `rate` 會是 "2" 這種字串，
+ * 一路存進 localStorage（明細改匯率 → 列表不更新的 bug 的一半就在這裡）。
+ * 現在所有讀取（預覽、儲存）都走這個 computed；無效值（空白／0／NaN）回退成
+ * 目前匯率表裡那個幣別的匯率。
+ */
+const rateNum = computed(() => {
+  const n = Number(rate.value)
+  return isFinite(n) && n > 0 ? n : settings.rate(currencyCode.value)
+})
 /** 算式只在金額沒被改過時才成立；改了就自動隱藏，儲存時也一併清掉 */
 const exprValid = computed(
   () => !!expr.value && Number(numeric.value.toFixed(2)) === Number(loadedAmount.value.toFixed(2)),
 )
-const preview = computed(() => fmtMoney(numeric.value * rate.value, settings.baseCurrency))
+const preview = computed(() => fmtMoney(numeric.value * rateNum.value, settings.baseCurrency))
 const cat = computed(() => settings.category(categoryId.value))
 const catName = computed(() => cat.value?.name ?? '未分類')
 
@@ -276,7 +287,9 @@ watch(
     categoryId.value = r.categoryId
     occurredAt.value = toLocalInput(r.occurredAt)
     note.value = r.note ?? ''
-    rate.value = r.rate
+    // 0.1.53：載入**這筆自己凍結的匯率**（舊資料可能是字串 "2"或缺欄位，
+    //   一併正規化；真的沒有才回退到目前匯率表）
+    rate.value = Number(r.rate) > 0 ? Number(r.rate) : settings.rate(r.currency)
     tripId.value = r.tripId ?? ''
     expr.value = r.expr ?? ''
     loadedAmount.value = r.amount
@@ -287,7 +300,14 @@ watch(
   { immediate: true },
 )
 
+/**
+ * 0.1.53：只有「使用者真的切了幣別」才把匯率重設成目前表定的值。
+ * ⚠ 判斷方式是「跟目前這筆記錄的幣別不同」——**載入記錄時不重置**
+ *   （舊 code 是 `watch(currencyCode)` 無條件重設，開啟明細會把記錄凍結的匯率
+ *    蓋成表定值，儲存時就悄悄改掉已記錄數據的匯率，正是需求②要防的）。
+ */
 watch(currencyCode, (c) => {
+  if (c === props.record?.currency) return
   rate.value = settings.rate(c)
 })
 
@@ -365,7 +385,8 @@ function save() {
     type: type.value,
     amount: numeric.value,
     currency: currencyCode.value,
-    rate: showRate.value ? rate.value : 1,
+    // 0.1.53：送正規化後的數字（過去直接送 v-model 的字串）
+    rate: showRate.value ? rateNum.value : 1,
     categoryId: categoryId.value,
     occurredAt: fromLocalInput(occurredAt.value),
     note: note.value.trim(),

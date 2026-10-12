@@ -477,6 +477,8 @@ export const useSettingsStore = defineStore('settings', () => {
    * ⚠⚠ 為什麼不用 `record.baseAmount`：那是**記帳當下**用當時的主幣別凍結的
    *   （`records.ts` 建立時寫死），主幣別後來改了它也不會跟著變 ——
    *   這正是使用者看到的問題。顯示一律用這裡即時換算。
+   *   （0.1.53 起：已存在記錄的顯示改用 `displayOf`——記錄自己凍結的 rate；
+   *     這裡留給「當下輸入」的換算預覽用。）
    *
    * ⚠ **只換「顯示」，不改任何存的資料**：`amount`／`rate`／`baseAmount` 都保持原樣
    *   （那是歷史事實：當時用什麼幣別、當時換算成多少）。換回去也算得回來。
@@ -504,12 +506,76 @@ export const useSettingsStore = defineStore('settings', () => {
    *
    * ⚠ 一樣**只換顯示，不改任何存的資料**；`RecordSheet` 的「詳細資訊」與匯出檔
    *   維持記帳當下的歷史事實（`baseAmount`／`baseCurrency`），刻意不換。
+   * ⚠ 0.1.53 起**只給「當下輸入」用**（記帳頁的金額換算預覽、明細裡的 `≈` 預覽）——
+   *   已存在的記錄顯示一律改用下面的 `displayOf`（用記錄自己凍結的匯率）。
    */
   function toDisplay(amount: number, code: string): number {
     const dc = state.value.activeTrip?.currency
     if (!dc || dc === state.value.baseCurrency) return toBase(amount, code)
     const v = toBase(amount, code) / rate(dc)
     return Number.isFinite(v) ? v : 0
+  }
+
+  /**
+   * 0.1.53：一筆記錄「自己凍結的匯率」→ 換算成**目前顯示幣別**的倍率。
+   *
+   * 使用者原話：「已記錄的數據的匯率是固定的」——每筆記錄在記帳當下就把
+   * `rate`（1 原幣 = ? 當時主幣）與 `baseCurrency` 凍結在記錄上（見 `records.add`）。
+   * 之後無論匯率表怎麼變（設定頁手改、按「更新匯率」線上更新），
+   * **已記錄數據的顯示都以自己凍結的 rate 為準**——這就是需求②：
+   * 「按更新匯率不應變動已記錄的數據」。
+   * 而在明細裡改匯率會改到這筆自己的 rate → 列表金額立刻跟著更新——需求①的 bug
+   * 正是過去顯示一律走即時匯率表（`toDisplay`），明細改了 rate 列表卻不變。
+   *
+   * 回傳「1 單位記錄原幣 = ? 顯示幣別」：
+   * - 記錄自己的 baseCurrency 就是顯示幣別（最常見：沒旅行、主幣別沒換過）
+   *   → 直接用凍結的 rate，**完全不碰匯率表**（按更新匯率也不會動它）。
+   * - 否則（旅行中＝旅行貨幣，或記帳後換過主幣別）→ 凍結的 rate 先換到當時的主幣，
+   *   再經現行匯率表換到顯示幣別（`rate(base) ÷ rate(dc)`）。
+   *   ⚠ 換主幣別時 `setBaseCurrency` 會整組保留 A→B 的相對匯率（見下），
+   *     所以切來切回算得回來（需求②後半）。
+   * - 舊資料沒有有效的 rate（或 baseCurrency）→ 回退成即時匯率表（升級前的行為）。
+   *
+   * @param r 只要有 `currency`；`rate`／`baseCurrency` 可為舊資料的字串／缺欄位
+   */
+  function recRate(r: {
+    currency: string
+    rate?: number | string | null
+    baseCurrency?: string
+  }): number {
+    const own = Number(r.rate)
+    const hasOwn = Number.isFinite(own) && own > 0
+    const base = hasOwn && r.baseCurrency ? r.baseCurrency : state.value.baseCurrency
+    const dc = state.value.activeTrip?.currency || state.value.baseCurrency
+    const mult = hasOwn ? own : rate(r.currency)
+    if (base === dc) return mult
+    const v = (mult * rate(base)) / rate(dc)
+    return Number.isFinite(v) && v > 0 ? v : mult
+  }
+
+  /**
+   * 0.1.53：記錄金額 → 顯示幣別（凍結匯率版，取代記錄顯示用的 `toDisplay`）。
+   * 記錄頁／統計頁／旅行摘要／分組小計…全部改用它。
+   */
+  function displayOf(r: {
+    amount: number
+    currency: string
+    rate?: number | string | null
+    baseCurrency?: string
+  }): number {
+    const a = Number(r.amount)
+    const v = (Number.isFinite(a) ? a : 0) * recRate(r)
+    return Number.isFinite(v) ? v : 0
+  }
+
+  /** 0.1.53：記錄列表上「× N」顯示的那個匯率（1 原幣 = ? 顯示幣別） */
+  function displayRateOf(r: {
+    currency: string
+    rate?: number | string | null
+    baseCurrency?: string
+  }): number {
+    const v = recRate(r)
+    return Number.isFinite(v) && v > 0 ? v : 1
   }
 
   async function setBaseCurrency(code: string) {
@@ -521,13 +587,15 @@ export const useSettingsStore = defineStore('settings', () => {
      * 但整組換算不需要——用「舊 base 下各幣別的匯率」除以「舊 base 下新主幣的匯率」，
      * 就得到新 base 下的全套匯率（自訂幣別也一起換算，rates[新主幣] 自然變 1）。
      * 舊 rates 補不到的（例如剛加的自訂幣別還沒有匯率）就用 defaultRates 的內建值。
+     *
+     * 0.1.53：`conv` 取不到時（新主幣完全沒有匯率，例如加自訂幣別時亂填被拒）
+     * **回退成 1**而不是跳過整組換算——除以 1 ＝舊值原封不動，
+     * 這樣自訂幣別的匯率不會被 `defaultRates`（只有內建 12 種）吃掉。
      */
-    const conv = oldRates[code]
-    if (typeof conv === 'number' && conv > 0) {
-      for (const [c, r] of Object.entries(oldRates)) {
-        const v = Number((r / conv).toFixed(6))
-        if (v > 0 && isFinite(v)) rates[c] = v
-      }
+    const conv = typeof oldRates[code] === 'number' && oldRates[code] > 0 ? oldRates[code] : 1
+    for (const [c, r] of Object.entries(oldRates)) {
+      const v = Number((r / conv).toFixed(6))
+      if (v > 0 && isFinite(v)) rates[c] = v
     }
     state.value.rates = rates
     state.value.ratesUpdatedAt = null
@@ -995,6 +1063,9 @@ export const useSettingsStore = defineStore('settings', () => {
     toBase,
     displayCurrency,
     toDisplay,
+    recRate,
+    displayOf,
+    displayRateOf,
     preferredCurrency,
     setPreferredCurrency,
     setBaseCurrency,

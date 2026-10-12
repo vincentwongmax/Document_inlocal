@@ -69,6 +69,7 @@ function keyOf(r: TxRecord): string {
  * ⚠ 0.1.28：金額一律即時換算成「目前的主幣別」（`settings.toBase`），
  *   不是用記帳當下凍結的 `baseAmount` —— 主幣別改了，標題也要跟著變。
  * ⚠ 0.1.36：改成「顯示幣別」（旅行中＝旅行貨幣）；分組標題的小計與幣別符號都跟著。
+ * ⚠ 0.1.53：改用記錄自己凍結的匯率（`displayOf`）——已記錄數據的匯率是固定的。
  */
 const totalsOf = computed(() => {
   const src = props.totalsFrom ?? props.records
@@ -76,7 +77,7 @@ const totalsOf = computed(() => {
   for (const r of src) {
     const k = keyOf(r)
     const cur = m.get(k) ?? { exp: 0, inc: 0, count: 0 }
-    const v = settings.toDisplay(r.amount, r.currency)
+    const v = settings.displayOf(r)
     if (r.type === 'expense') cur.exp += v
     else cur.inc += v
     cur.count += 1

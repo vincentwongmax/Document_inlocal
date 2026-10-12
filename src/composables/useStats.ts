@@ -42,10 +42,11 @@ export function useStats(range: Ref<DateRange>) {
    * 0.1.36：改成「目前的**顯示幣別**」——旅行進行中＝旅行貨幣
    * （使用者：「打開旅行模式時，記帳頁面和統計頁面以旅行中的貨幣顯示」）；
    * 沒有旅行時與舊行為完全相同（＝主幣別）。
+   * 0.1.53：改用記錄自己凍結的匯率（`displayOf`）——已記錄數據的匯率是固定的。
    * ⚠ 以前用 `r.baseAmount`（記帳當下凍結的值），主幣別改了它不會跟著變。
    * ⚠ 只換顯示；存的資料完全不動。下面的 computed 都依賴 settings，會自動重算。
    */
-  const amt = (r: { amount: number; currency: string }) => settings.toDisplay(r.amount, r.currency)
+  const amt = (r: TxRecord) => settings.displayOf(r)
 
   /** 落在選取區間內的記錄 */
   const rows = computed(() => {

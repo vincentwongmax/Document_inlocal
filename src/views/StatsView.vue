@@ -725,7 +725,7 @@ watch([mode, range], () => {
             <span class="top__rank num">{{ i + 1 }}</span>
             <span class="top__cat">{{ settings.category(r.categoryId)?.name ?? '未分類' }}</span>
             <span class="top__note tiny muted">{{ r.note }}</span>
-            <span class="top__amt num">{{ fmtMoney(settings.toDisplay(r.amount, r.currency), settings.displayCurrency) }}</span>
+            <span class="top__amt num">{{ fmtMoney(settings.displayOf(r), settings.displayCurrency) }}</span>
           </li>
         </ul>
         <p v-if="!st.topRecords.value.length" class="muted tiny">沒有支出記錄</p>
