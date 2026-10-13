@@ -340,6 +340,22 @@ watch([range, typeFilter, kw, recent, viewFilter], () => {
  */
 const PAGE_SIZES = [20, 50, 100, 0]
 const FEED_SIZES = [10, 20, 50, 0]
+/**
+ * 哨兵的「提前載入」距離（px）：哨兵還在視窗下方這麼多像素時就开始載下一批，
+ * 滑到底時下一批通常已經備好了，才會有「無縫」的感覺。
+ *
+ * ⚠⚠ 0.1.54.1 修的 bug 就在這個數字身上：
+ *   原本 IntersectionObserver 的 rootMargin 寫 400px，但 `pump()` 的停止條件卻寫
+ *   `top > window.innerHeight`（**沒有**加這個提前量）→ 兩個判定不一致，
+ *   中間出現一段「IO 說相交、pump 卻直接 return」的死區：
+ *     慢慢往下滑，哨兵進到「視窗下方 0~400px」時 IO 回呼 → pump 什麼都不載就結束；
+ *     而 IntersectionObserver **只在相交狀態改變時回呼**，
+ *     之後哨兵一直停在視窗裡、狀態再也沒變 → **永遠不會再載** →
+ *     使用者看到的就是「轉圈一直轉、卻沒有 11~20」。
+ *   （之前的測試是用「一次跳到最底」觸發，剛好跳過這段死區，所以沒抓到。）
+ *   所以這兩個地方**必須共用同一個常數**，之後要調也只改這裡。
+ */
+const FEED_SLACK = 200
 
 /** 窄螢幕（PWA）：跟 CSS 的 `@media (max-width: 519px)` 同一個斷點 */
 const NARROW_Q = '(max-width: 519px)'
@@ -353,11 +369,16 @@ onMounted(() => {
   mq = window.matchMedia(NARROW_Q)
   onNarrow(mq)
   mq.addEventListener('change', onNarrow)
+  // 餵食模式的滑動備援（只有 PWA 會真的做事，`pump()` 自己會判斷是否餵食模式）
+  window.addEventListener('scroll', onFeedScroll, { passive: true })
   void pump()
 })
 onBeforeUnmount(() => {
   mq?.removeEventListener('change', onNarrow)
   mq = null
+  window.removeEventListener('scroll', onFeedScroll)
+  if (feedScrollRaf) cancelAnimationFrame(feedScrollRaf)
+  feedScrollRaf = 0
   feedIo?.disconnect()
   feedIo = null
 })
@@ -428,8 +449,8 @@ watch(sentinelEl, (el) => {
     (entries) => {
       if (entries.some((e) => e.isIntersecting)) void pump()
     },
-    // 提前 400px 就開始載：滑到底時下一批通常已經備好了，才會「無縫」
-    { rootMargin: '400px 0px' },
+    // ⚠ rootMargin 必須跟 `pump()` 裡的停止條件用同一個 `FEED_SLACK`（見該常數的註解）
+    { rootMargin: `${FEED_SLACK}px 0px` },
   )
   feedIo.observe(el)
 })
@@ -443,27 +464,51 @@ function loadMore() {
 }
 
 /**
- * 一直補到「哨兵被推出畫面」或「全部載完」為止。
+ * 一直補到「哨兵被推出（視窗 + FEED_SLACK）」或「全部載完」為止。
  *
  * ⚠ 為什麼需要這個迴圈：IntersectionObserver 只在**相交狀態改變**時回呼。
  *   第一批 10 筆可能連一屏都填不滿（哨兵還在畫面裡），那時狀態沒有「改變」→
  *   不會再叫一次 → 使用者就卡在 10 筆。這裡主動補到填滿為止。
- *   `guard` 是保險絲（正常情況 2~3 次就停）。
+ *   `guard` 是保險絲（正常情況 1~3 次就停）。
+ *
+ * ⚠⚠ 停止條件一定要用 `innerHeight + FEED_SLACK`，不能只寫 `innerHeight`：
+ *   只寫 `innerHeight` 會跟 IO 的 rootMargin 不一致，產生「叫了卻不載」的死區
+ *   （0.1.54.1 修的就是這個，詳細說明見 `FEED_SLACK` 的註解）。
  */
+let pumping = false
 async function pump() {
-  await nextTick()
-  for (let guard = 0; guard < 60; guard += 1) {
-    if (!feedMode.value) return
-    const el = sentinelEl.value
-    if (!el) return
-    // ⚠ 這裡刻意**不加** rootMargin：一批 10 筆裝得下一屏就不再補，
-    //   使用者看到的就是「1…10」，往下滑才變「1…20」（0.1.54 的原話）。
-    if (el.getBoundingClientRect().top > window.innerHeight) return
-    const before = feedCount.value
-    loadMore()
-    if (feedCount.value === before) return
+  // 保險鎖：scroll 備援與 IO 可能同時叫進來，避免同一次重複加好幾批
+  if (pumping) return
+  pumping = true
+  try {
     await nextTick()
+    for (let guard = 0; guard < 60; guard += 1) {
+      if (!feedMode.value) return
+      const el = sentinelEl.value
+      if (!el) return
+      if (el.getBoundingClientRect().top > window.innerHeight + FEED_SLACK) return
+      const before = feedCount.value
+      loadMore()
+      if (feedCount.value === before) return
+      await nextTick()
+    }
+  } finally {
+    pumping = false
   }
+}
+
+/**
+ * 備援：真機（尤其 PWA／iOS）有時 IntersectionObserver 的時機就是不穩，
+ * 這裡在滑動時照樣用同一套判定再檢查一次（rAF 節流，成本極低）。
+ * `pump()` 自己會判斷位置、不在範圍就直接結束，所以不會多載。
+ */
+let feedScrollRaf = 0
+function onFeedScroll() {
+  if (!feedMode.value || feedScrollRaf) return
+  feedScrollRaf = requestAnimationFrame(() => {
+    feedScrollRaf = 0
+    void pump()
+  })
 }
 
 // 換篩選／搜尋／範圍後從頭開始（不然會停在上一次已經載了很多筆的狀態）

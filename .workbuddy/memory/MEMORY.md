@@ -3,13 +3,14 @@
 Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\Desktop\AI`。
 
 ## 版本
-- 只加 Z（目前 0.1.54）；改 package.json ＋ CHANGELOG（插最前面 --- 後）
+- 只加 Z（目前 0.1.55）；改 package.json ＋ CHANGELOG（插最前面 --- 後）
 
 ## 開發/驗證
 - preview :4173（改完先 build）；dev :5173（ls 分開）
-- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v129（53 支）
-- ⚠⚠ 回歸跑著時**不要編輯 run-regress.sh**｜升版後必先 build｜冷啟 goto 30s＝**假紅**（單獨重跑）｜守門員 v119~v129；RecordSheet＝`.mask > .sheet.card`
+- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v130（54 支）
+- ⚠⚠ 回歸跑著時**不要編輯 run-regress.sh**｜升版後必先 build｜冷啟 goto 30s＝**假紅**（單獨重跑）｜守門員 v119~v130；RecordSheet＝`.mask > .sheet.card`
 - ⚠⚠ **本地回歸 dist 不能帶 VITE_BASE**（preview 在根目錄伺服，帶了全 404 → App 空白假紅）；部署前才帶 base 重建
+- ⚠⚠ **測「無限滾動/餵食」不能用 `scrollTo(0, scrollHeight)` 一次跳到底**（會跳過死區、掩蓋卡死 bug）→ 一律 `scrollBy` 一小段一小段滑模擬手指
 
 ## Git/部署
 - Pages＝gh-pages；線上 `vincentwongmax.github.io/Document_inlocal/`；線上驗證＝**內容特徵**
@@ -48,6 +49,10 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - `fmtCompact`（K/M/B，q<10 兩位小數、<100 一位，trimZeros）；統計三卡＋`title` 完整數字；子頁面維持 fmtMoney
 - ⚠⚠ **Vue 模板 HTML 註解內不能用「--＞」箭頭**（註解提前結束→文字外洩到頁面）；註解一律用「→」
 - v86 Toast 吃觸控＝時序偶發（SW 快取完成才彈）→ `reset()` 每節補 `settleToast()`
+
+## 0.1.55（修 PWA 餵食卡死）
+- 死區 bug：IO rootMargin(400) ≠ pump 停止條件(innerHeight) → 哨兵在「視窗下方 0~400」時 IO 叫了 pump 卻不載，且 IO 只在狀態改變時回呼 → 永遠卡住
+- 修：共用 `FEED_SLACK=200`（IO rootMargin ＋ pump `top > innerHeight + FEED_SLACK`）；pump 加 `pumping` 鎖；加 window scroll 備援(rAF)
 
 ## 全站約定（細節在 CONVENTIONS.md，勿回退）
 1~5. body `min-height:100%`｜日期一律 DateField/DateTimeField｜彈層開背景不能滑｜可編輯元素 16px｜點/雙擊空白不能動
