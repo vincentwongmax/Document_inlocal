@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
@@ -320,25 +320,68 @@ watch([range, typeFilter, kw, recent, viewFilter], () => {
   page.value = 1
 })
 
-/* ── 0.1.53：逐筆檢視的分頁 ─────────────────────────────────
- * 使用者原話：「在記錄的頁面中，PWA 時，每X 筆下拉才接著刷新記錄，
+/* ── 0.1.53：逐筆檢視的分頁（0.1.54：PWA 改成「滑到底無縫載入」）──────────────
+ * 使用者原話（0.1.53）：「在記錄的頁面中，PWA 時，每X 筆下拉才接著刷新記錄，
  * 在電腦版中加入，上一頁下一頁第一頁 最後一頁 用戶選擇顯示多少頁的下拉清單」。
+ * 使用者原話（0.1.54）：「PWA 時，每 10 筆（用戶可設置）下拉才接著刷新記錄，
+ * **不是按鈕**，要無縫刷新，即原數據 1,2,3 ... 10，下拉後 1,2,3 ... 10 ... 20，
+ * 如果太多內容也要回收上方的記錄（用戶看不到的畫面），當用戶往回滑的時候，
+ * 又再刷新顯示，要做到 Facebook 那種往上往下滑貼文的效果」。
  *
  * 拍板的設計：
- * - `pageSize`：20 / 50 / 100 / 全部（0），預設 50——剛好蓋住大多數人一個月的量，
- *   又不會一次渲染幾百列。
- * - 只有「逐筆檢視」套用；「依分類檢視」維持原本的組內展開（每組前 3 筆＋顯示全部）。
- * - 超過 20 筆才出現分頁列（更少根本沒有翻頁的必要）。
- * - 電腦版（≥520px）：第一頁／上一頁／第 X / Y 頁／下一頁／最後一頁。
- * - PWA（≤519px）：一顆「顯示更多（還有 N 筆）」——跟統計頁／分類組的同名按鈕一致。
- * - 下拉清單兩邊都有（使用者兩邊都要求「每 X 筆」的下拉）。
+ * - **電腦版（≥520px）**：維持 0.1.53 的分頁列（20/50/100/全部，預設 50）
+ *   ＋第一頁／上一頁／第 X / Y 頁／下一頁／最後一頁。
+ * - **PWA（≤519px）**：沒有任何按鈕。
+ *   ① 一次載入 `pageSize`（**預設 10 筆**，就是使用者講的「每 10 筆」）；
+ *   ② 列表最下面有一顆看不見的哨兵，滑到它就**自動**再加一批（無縫，
+ *      1…10 → 1…20，舊的都還在上面，不是換頁）；
+ *   ③ 畫面外的記錄由 `RecordList` 的視窗化回收（見 RecordList 的 `virtual`）。
+ * - 「每 X 筆」的下拉清單兩邊都保留（使用者兩邊都要求「用戶可設置」）。
  */
 const PAGE_SIZES = [20, 50, 100, 0]
-const pageSize = ref(50)
+const FEED_SIZES = [10, 20, 50, 0]
+
+/** 窄螢幕（PWA）：跟 CSS 的 `@media (max-width: 519px)` 同一個斷點 */
+const NARROW_Q = '(max-width: 519px)'
+const narrow = ref(false)
+let mq: MediaQueryList | null = null
+function onNarrow(e: MediaQueryListEvent | MediaQueryList) {
+  narrow.value = e.matches
+}
+onMounted(() => {
+  if (typeof window === 'undefined' || !window.matchMedia) return
+  mq = window.matchMedia(NARROW_Q)
+  onNarrow(mq)
+  mq.addEventListener('change', onNarrow)
+  void pump()
+})
+onBeforeUnmount(() => {
+  mq?.removeEventListener('change', onNarrow)
+  mq = null
+  feedIo?.disconnect()
+  feedIo = null
+})
+
+/** 電腦版與 PWA 各自記一份每頁筆數（切換時才不會把對方的設定蓋掉） */
+const pageSizeDesk = ref(50)
+const pageSizeFeed = ref(FEED_SIZES[0])
+const pageSize = computed({
+  get: () => (narrow.value ? pageSizeFeed.value : pageSizeDesk.value),
+  set: (v: number) => {
+    if (narrow.value) pageSizeFeed.value = v
+    else pageSizeDesk.value = v
+  },
+})
+const sizeOptions = computed(() => (narrow.value ? FEED_SIZES : PAGE_SIZES))
+/** PWA 的「餵食模式」：無限載入 ＋ 視窗化（沒有頁碼、沒有按鈕） */
+const feedMode = computed(() => narrow.value)
+
 const page = ref(1)
 
 /** 分頁列要不要出現：逐筆檢視＋真的超過一頁的量 */
-const showPager = computed(() => !byCat.value && rows.value.length > PAGE_SIZES[0])
+const showPager = computed(
+  () => !byCat.value && rows.value.length > (narrow.value ? FEED_SIZES[0] : PAGE_SIZES[0]),
+)
 
 const pageCount = computed(() => {
   if (pageSize.value === 0) return 1
@@ -360,6 +403,78 @@ const pagedRows = computed(() => {
 function gotoPage(n: number) {
   page.value = Math.min(Math.max(1, n), pageCount.value)
 }
+
+/* ── 0.1.54：PWA 的「無限載入」（滑到底自動加一批，沒有按鈕）────────────── */
+/** 目前已載入幾筆（只餵食模式用；電腦版走 `page`） */
+const feedCount = ref(FEED_SIZES[0])
+/** 這次要餵給 RecordList 的資料；「全部」＝不分批 */
+const feedRows = computed(() => {
+  if (pageSize.value === 0) return rows.value
+  return rows.value.slice(0, feedCount.value)
+})
+/** 全部都載完了（→ 不再顯示哨兵，改顯示「已顯示全部 N 筆」） */
+const feedDone = computed(() => feedRows.value.length >= rows.value.length)
+/** 逐筆檢視實際要渲染的資料：PWA 走餵食、電腦版走分頁 */
+const listRows = computed(() => (feedMode.value ? feedRows.value : pagedRows.value))
+
+const sentinelEl = ref<HTMLElement | null>(null)
+let feedIo: IntersectionObserver | null = null
+/** 哨兵要掛不掛會一直變（載完就收掉），所以用 watch 跟著它走 */
+watch(sentinelEl, (el) => {
+  feedIo?.disconnect()
+  feedIo = null
+  if (!el || typeof IntersectionObserver === 'undefined') return
+  feedIo = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((e) => e.isIntersecting)) void pump()
+    },
+    // 提前 400px 就開始載：滑到底時下一批通常已經備好了，才會「無縫」
+    { rootMargin: '400px 0px' },
+  )
+  feedIo.observe(el)
+})
+
+/** 加一批（每次 `pageSize` 筆；「全部」時不會走到這裡） */
+function loadMore() {
+  if (!feedMode.value) return
+  const step = pageSize.value || FEED_SIZES[0]
+  if (feedCount.value >= rows.value.length) return
+  feedCount.value = Math.min(rows.value.length, feedCount.value + step)
+}
+
+/**
+ * 一直補到「哨兵被推出畫面」或「全部載完」為止。
+ *
+ * ⚠ 為什麼需要這個迴圈：IntersectionObserver 只在**相交狀態改變**時回呼。
+ *   第一批 10 筆可能連一屏都填不滿（哨兵還在畫面裡），那時狀態沒有「改變」→
+ *   不會再叫一次 → 使用者就卡在 10 筆。這裡主動補到填滿為止。
+ *   `guard` 是保險絲（正常情況 2~3 次就停）。
+ */
+async function pump() {
+  await nextTick()
+  for (let guard = 0; guard < 60; guard += 1) {
+    if (!feedMode.value) return
+    const el = sentinelEl.value
+    if (!el) return
+    // ⚠ 這裡刻意**不加** rootMargin：一批 10 筆裝得下一屏就不再補，
+    //   使用者看到的就是「1…10」，往下滑才變「1…20」（0.1.54 的原話）。
+    if (el.getBoundingClientRect().top > window.innerHeight) return
+    const before = feedCount.value
+    loadMore()
+    if (feedCount.value === before) return
+    await nextTick()
+  }
+}
+
+// 換篩選／搜尋／範圍後從頭開始（不然會停在上一次已經載了很多筆的狀態）
+watch([range, typeFilter, kw, recent, viewFilter], () => {
+  feedCount.value = pageSize.value || FEED_SIZES[0]
+  void pump()
+})
+// 改「每 X 筆」：已載入的筆數直接對齊新的設定（選「全部」時 feedRows 本來就全部）
+watch(pageSize, (n) => {
+  feedCount.value = n || FEED_SIZES[0]
+})
 
 // 0.1.53：用記錄自己凍結的匯率換算成顯示幣別（即時換算是 0.1.28 的舊行為）
 const expense = computed(() =>
@@ -666,7 +781,8 @@ function removeEditing(id: string) {
          ≤20 筆（showPager=false）時兩種檢視會同時渲染（同一筆記錄出現兩次） -->
     <template v-if="!byCat">
       <RecordList
-        :records="pagedRows"
+        :records="listRows"
+        :virtual="feedMode"
         :show-time="true"
         :empty-text="emptyText"
         :highlight="kw"
@@ -675,28 +791,50 @@ function removeEditing(id: string) {
         @remove="removeEditing($event)"
       />
 
-      <!-- 0.1.53：分頁列（只有逐筆檢視、且超過 20 筆才出現） -->
+      <!--
+        0.1.54：PWA 的哨兵 —— 滑到它（提前 400px）就自動再加一批。
+        ⚠ 它**不是按鈕**（使用者：「不是按鈕，要無縫刷新」），
+          只是給 IntersectionObserver 量位置用的一條細線；載完就換成下面的「已顯示全部」。
+      -->
+      <div
+        v-if="feedMode && !byCat && !feedDone && rows.length"
+        :ref="(el) => (sentinelEl = el as HTMLElement | null)"
+        class="feed__sentinel"
+        aria-hidden="true"
+      >
+        <span class="feed__spin"></span>
+        <span class="tiny muted">載入更多…</span>
+      </div>
+      <p v-else-if="feedMode && !byCat && rows.length" class="feed__end tiny muted">
+        已顯示全部 {{ rows.length }} 筆
+      </p>
+
+      <!-- 0.1.53：分頁列（只有逐筆檢視、且超過一頁的量才出現） -->
       <div v-if="showPager" class="pager">
         <label class="pager__size">
           <span class="pager__lb">每頁</span>
           <!-- ⚠ 一定要 .number：<select> 的 v-model 預設送字串，「全部」的 0 會變 '0'，
                沒有修飾詞時 `pageSize === 0` 永遠是 false → 選「全部」會變成「每頁 0 筆」 -->
           <select v-model.number="pageSize" class="field pager__sel">
-            <option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ n === 0 ? '全部' : `${n} 筆` }}</option>
+            <option v-for="n in sizeOptions" :key="n" :value="n">
+              {{ n === 0 ? '全部' : `${n} 筆` }}
+            </option>
           </select>
         </label>
-        <span class="pager__info num">第 {{ page }} / {{ pageCount }} 頁</span>
-        <!-- 電腦版：四顆頁鈕 -->
-        <div class="pager__nav">
-          <button class="btn btn--ghost btn--sm" :disabled="page <= 1" @click="gotoPage(1)">第一頁</button>
-          <button class="btn btn--ghost btn--sm" :disabled="page <= 1" @click="gotoPage(page - 1)">上一頁</button>
-          <button class="btn btn--ghost btn--sm" :disabled="page >= pageCount" @click="gotoPage(page + 1)">下一頁</button>
-          <button class="btn btn--ghost btn--sm" :disabled="page >= pageCount" @click="gotoPage(pageCount)">最後一頁</button>
-        </div>
-        <!-- PWA（≤519px）：一顆「顯示更多」 -->
-        <button v-if="page < pageCount" class="btn btn--ghost btn--sm pager__more" @click="gotoPage(page + 1)">
-          顯示更多（還有 {{ Math.max(0, rows.length - page * pageSize) }} 筆）
-        </button>
+        <!-- PWA：沒有頁碼也沒有按鈕，只告訴使用者目前載到第幾筆 -->
+        <span v-if="feedMode" class="pager__info num">
+          已顯示 {{ Math.min(feedRows.length, rows.length) }} / {{ rows.length }} 筆
+        </span>
+        <template v-else>
+          <span class="pager__info num">第 {{ page }} / {{ pageCount }} 頁</span>
+          <!-- 電腦版：四顆頁鈕 -->
+          <div class="pager__nav">
+            <button class="btn btn--ghost btn--sm" :disabled="page <= 1" @click="gotoPage(1)">第一頁</button>
+            <button class="btn btn--ghost btn--sm" :disabled="page <= 1" @click="gotoPage(page - 1)">上一頁</button>
+            <button class="btn btn--ghost btn--sm" :disabled="page >= pageCount" @click="gotoPage(page + 1)">下一頁</button>
+            <button class="btn btn--ghost btn--sm" :disabled="page >= pageCount" @click="gotoPage(pageCount)">最後一頁</button>
+          </div>
+        </template>
       </div>
     </template>
 
@@ -1356,17 +1494,40 @@ function removeEditing(id: string) {
   opacity: 0.45;
   cursor: default;
 }
-.pager__more {
-  margin-left: auto;
+
+/* ── 0.1.54：PWA 的哨兵（滑到底自動載入下一批）─────────────────────
+ * ⚠ 它不是按鈕、也不該看起來像可以按的東西：只是一條「正在載入」的狀態列。
+ *   高度刻意留 56px：它消失（換成「已顯示全部」）時畫面不會突然往上縮一截。 */
+.feed__sentinel,
+.feed__end {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 10px 0 4px;
 }
-@media (max-width: 519px) {
-  .pager__nav {
-    display: none;
+.feed__spin {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
+  animation: feed-spin 0.7s linear infinite;
+}
+@keyframes feed-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
-@media (min-width: 520px) {
-  .pager__more {
-    display: none;
+/* 系統開「減少動態效果」時不要轉（無障礙） */
+@media (prefers-reduced-motion: reduce) {
+  .feed__spin {
+    animation: none;
   }
+}
+.feed__end {
+  color: var(--text-3);
 }
 </style>

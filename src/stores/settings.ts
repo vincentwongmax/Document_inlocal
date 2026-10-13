@@ -528,6 +528,7 @@ export const useSettingsStore = defineStore('settings', () => {
    * 正是過去顯示一律走即時匯率表（`toDisplay`），明細改了 rate 列表卻不變。
    *
    * 回傳「1 單位記錄原幣 = ? 顯示幣別」：
+   * - **0.1.54** 記錄幣別＝顯示幣別 → **直接回 1**（不換算，見函式內註解）。
    * - 記錄自己的 baseCurrency 就是顯示幣別（最常見：沒旅行、主幣別沒換過）
    *   → 直接用凍結的 rate，**完全不碰匯率表**（按更新匯率也不會動它）。
    * - 否則（旅行中＝旅行貨幣，或記帳後換過主幣別）→ 凍結的 rate 先換到當時的主幣，
@@ -543,10 +544,25 @@ export const useSettingsStore = defineStore('settings', () => {
     rate?: number | string | null
     baseCurrency?: string
   }): number {
+    const dc = state.value.activeTrip?.currency || state.value.baseCurrency
+    /**
+     * 0.1.54（使用者原話）：「記錄的幣別等於主幣別時…不會有任何匯率，
+     * 直接顯示用戶記錄的原幣別金額」。
+     *
+     * 例：原主幣 MOP、記錄幣別 CNY；使用者把主幣切成 CNY → 顯示幣別與記錄幣別都是 CNY
+     * → **倍率就是 1**，直接用記錄上的原始金額，不看凍結 rate、也不看現行匯率表。
+     *
+     * ⚠ 為什麼不能靠下面的 round-trip 自己算回 1（這正是 0.1.53 的實際 bug）：
+     * `mult × rate(base) ÷ rate(dc)` 只在「匯率表與凍結 rate 完全一致」時才剛好等於 1；
+     * 使用者一旦按「更新匯率」（或手改匯率），round-trip 就會散掉 ——
+     * 例：凍結 1 CNY = 1.136 MOP，切主幣成 CNY 後再更新匯率（1 MOP = 0.8696 CNY），
+     * 算出來是 1.136 × 0.8696 = 0.9879 → ¥100 顯示成 ¥98.79。
+     * 「CNY → CNY」本質上永遠是 1，跟任何匯率無關，所以在最前面直接短路。
+     */
+    if (r.currency === dc) return 1
     const own = Number(r.rate)
     const hasOwn = Number.isFinite(own) && own > 0
     const base = hasOwn && r.baseCurrency ? r.baseCurrency : state.value.baseCurrency
-    const dc = state.value.activeTrip?.currency || state.value.baseCurrency
     const mult = hasOwn ? own : rate(r.currency)
     if (base === dc) return mult
     const v = (mult * rate(base)) / rate(dc)

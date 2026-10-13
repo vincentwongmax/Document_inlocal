@@ -509,7 +509,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           </div>
 
           <!-- 2＝輸入金額＋快速金額 -->
-          <div v-else-if="b === 2" class="amountbox">
+          <div v-else-if="b === 2" class="amountbox" :class="{ 'is-missing': !calc.tokens.length }">
             <div v-if="presetRows.length" class="qamt">
               <button
                 v-for="row in presetRows"
@@ -552,7 +552,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           </div>
 
           <!-- 3＝分類 -->
-          <div v-else-if="b === 3" class="catbox">
+          <div v-else-if="b === 3" class="catbox" :class="{ 'is-missing': !categoryId }">
             <span class="catbox__label">分類</span>
             <CategoryPicker
               v-model="categoryId"
@@ -711,7 +711,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   height: 34px;
   padding: 0 8px;
   border-radius: 9px;
-  border: 1px solid transparent;
+  /* 0.1.54：非必填的輸入框一律**淺灰**外框（原本是 transparent，白底上看不出框） */
+  border: 1px solid var(--line-strong);
   background: var(--surface);
   font-size: 13px;
   font-weight: 600;
@@ -919,6 +920,29 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .btn--clear {
   min-width: 72px;
   height: 42px;
+}
+
+/*
+ * 0.1.54（使用者原話）：「記帳的頁面中，如果用戶未填寫的輸入框，金額和分類，
+ * 強制填寫外框粉紅色，其他不強制填寫的輸入框，外框變淺灰色」。
+ *
+ * - **必填＝金額與分類**：還沒填（金額沒有任何輸入／分類沒選）時外框改**粉紅**
+ *   （沿用設計系統裡「已選分類」的玫瑰粉 `--pick`，對比 4.5:1 達 AA）；填了回到原本的色。
+ * - **非必填**（備註／日期時間／收據圖片／幣別）：一律**淺灰** `--line-strong`。
+ *   `.field` 本來就是這個色；這裡補上收據圖片 `.rec`（原本是更淡的 `--line`）與幣別選單。
+ * ⚠ `.amountbox:hover` 會把框改成墨綠，所以「必填未填」要多寫一條 :hover 壓回去，
+ *   不然滑過去粉紅就消失了（特異度 `.amountbox.is-missing:hover` > `.amountbox:hover`）。
+ */
+.amountbox.is-missing,
+.catbox.is-missing {
+  border-color: var(--pick);
+}
+.amountbox.is-missing:hover {
+  border-color: var(--pick);
+}
+/* ⚠ :deep()：.rec 是 ReceiptImages 自己的 class，不會帶到這一頁的 scope id */
+.card--ledger :deep(.rec) {
+  border-color: var(--line-strong);
 }
 
 @media (min-width: 1024px) {

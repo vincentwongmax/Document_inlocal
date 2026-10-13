@@ -3,12 +3,13 @@
 Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\Desktop\AI`。
 
 ## 版本
-- 只加 Z（目前 0.1.53）；改 package.json ＋ CHANGELOG（插最前面 --- 後）
+- 只加 Z（目前 0.1.54）；改 package.json ＋ CHANGELOG（插最前面 --- 後）
 
 ## 開發/驗證
 - preview :4173（改完先 build）；dev :5173（ls 分開）
-- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v128（52 支）
-- ⚠⚠ 回歸跑著時**不要編輯 run-regress.sh**｜升版後必先 build｜冷啟 goto 30s＝**假紅**（單獨重跑）｜守門員 v119~v128；RecordSheet＝`.mask > .sheet.card`
+- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v129（53 支）
+- ⚠⚠ 回歸跑著時**不要編輯 run-regress.sh**｜升版後必先 build｜冷啟 goto 30s＝**假紅**（單獨重跑）｜守門員 v119~v129；RecordSheet＝`.mask > .sheet.card`
+- ⚠⚠ **本地回歸 dist 不能帶 VITE_BASE**（preview 在根目錄伺服，帶了全 404 → App 空白假紅）；部署前才帶 base 重建
 
 ## Git/部署
 - Pages＝gh-pages；線上 `vincentwongmax.github.io/Document_inlocal/`；線上驗證＝**內容特徵**
@@ -39,6 +40,14 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - 記錄頁分頁：`pageSize` 20/50/100/全部(0) 預設 50＋`page`；>20 筆出 pager；切篩選/搜尋回第 1 頁；桌面四鈕＋頁碼／PWA「顯示更多」
 - ⚠⚠ `v-if`/`v-else` 陷阱：分頁列 `v-if="showPager"` 插在 RecordList 與「依分類」`<template v-else>` 中間→v-else 改黏 showPager，≤20 筆兩種檢視同時渲染→`<template v-if="!byCat">` 包住
 - ⚠ `<select v-model>` 送字串→「全部」0 變 '0'→掛 `.number`；攔 er-api 要自帶 CORS header；setViewport 切 isMobile **會重載**
+
+## 0.1.54（主幣＝記錄幣別不換算＋PWA 餵食＋必填外框＋K/M）
+- `recRate()` 最前面短路 `r.currency===dc → return 1`（不能靠 round-trip：更新匯率後會散成 0.9879）
+- PWA(≤519px)=餵食模式（IO 哨兵、無按鈕、10/20/50/全部）；桌面維持 0.1.53 分頁。RecordList `virtual` prop：一天=`.dayblk`，IO(rootMargin 1000px)+RO，離開視窗換等高空白 div；坑：子元件 onMounted 較早→`ensureObservers()` 一律建＋watch 補種；**`vis` key 只能是日期**（高度 key 才是 `日期|筆數`）；`pump()` 用 `top > innerHeight` 不加 rootMargin
+- 必填未填＝`--pick` #b85773（金額/分類 `.is-missing`）；非必填＝`--line-strong` #d6d1c7；`:hover` 壓回；`.rec` 要 `:deep()`
+- `fmtCompact`（K/M/B，q<10 兩位小數、<100 一位，trimZeros）；統計三卡＋`title` 完整數字；子頁面維持 fmtMoney
+- ⚠⚠ **Vue 模板 HTML 註解內不能用「--＞」箭頭**（註解提前結束→文字外洩到頁面）；註解一律用「→」
+- v86 Toast 吃觸控＝時序偶發（SW 快取完成才彈）→ `reset()` 每節補 `settleToast()`
 
 ## 全站約定（細節在 CONVENTIONS.md，勿回退）
 1~5. body `min-height:100%`｜日期一律 DateField/DateTimeField｜彈層開背景不能滑｜可編輯元素 16px｜點/雙擊空白不能動

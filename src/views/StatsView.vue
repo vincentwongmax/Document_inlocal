@@ -5,7 +5,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
 import { notify } from '@/lib/alerts'
 import { useStats, type DateRange } from '@/composables/useStats'
-import { fmtMoney, fmtNum } from '@/lib/currency'
+import { fmtCompact, fmtMoney } from '@/lib/currency'
 import {
   addDays,
   dayKey,
@@ -588,9 +588,22 @@ watch([mode, range], () => {
         ⚠ 不要再把任何箭頭／提示加回來。
     -->
     <div class="sums">
+      <!--
+        0.1.54（使用者原話）：「統計的頁面中，分類佔比的上方，支出、收入、結餘，
+        用 K(千) → 1000 → 1K，M(百萬) → 1,000,000 → 1M 等等顯示
+        （在主頁，子頁面要詳細）」。
+        ⚠⚠ HTML 註解裡不能出現「兩個連字號加右箭頭」的字樣 ——
+          第一次寫的時候把使用者原話的箭頭寫成「--＞」（兩個減號），
+          結果註解在那裡提前結束，後半段變成頁面上看得到的文字（線下截圖抓到）。
+          註解內一律用「→」。
+        → 卡片上的數字走 `fmtCompact`（縮寫）；`title` 與點開後的子頁面
+          （SumDetailSheet／`sumDetail.amount`）維持 `fmtMoney` 的完整數字。
+      -->
       <button class="card sum" type="button" @click="sumOpen = 'expense'">
         <span class="tiny muted">支出</span>
-        <strong class="num sum__exp">{{ fmtNum(st.expense.value) }}</strong>
+        <strong class="num sum__exp" :title="fmtMoney(st.expense.value, base)">
+          {{ fmtCompact(st.expense.value) }}
+        </strong>
         <span
           v-if="mom !== null"
           class="tiny"
@@ -603,13 +616,19 @@ watch([mode, range], () => {
       </button>
       <button class="card sum" type="button" @click="sumOpen = 'income'">
         <span class="tiny muted">收入</span>
-        <strong class="num sum__inc">{{ fmtNum(st.income.value) }}</strong>
+        <strong class="num sum__inc" :title="fmtMoney(st.income.value, base)">
+          {{ fmtCompact(st.income.value) }}
+        </strong>
         <span class="tiny muted">{{ st.incomeByCat.value.length }} 個來源</span>
       </button>
       <button class="card sum" type="button" @click="sumOpen = 'balance'">
         <span class="tiny muted">結餘</span>
-        <strong class="num" :class="st.balance.value < 0 ? 'sum__exp' : 'sum__inc'">
-          {{ fmtNum(st.balance.value) }}
+        <strong
+          class="num"
+          :class="st.balance.value < 0 ? 'sum__exp' : 'sum__inc'"
+          :title="fmtMoney(st.balance.value, base)"
+        >
+          {{ fmtCompact(st.balance.value) }}
         </strong>
         <span class="tiny muted">{{ st.rows.value.length }} 筆</span>
       </button>

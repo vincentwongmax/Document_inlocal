@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { TxRecord } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { fmtMoney } from '@/lib/currency'
@@ -36,6 +36,16 @@ const props = withDefaults(
      *   否則標題上的金額只會加那 2 筆，看起來像「這個月只花了這樣」。
      */
     totalsFrom?: TxRecord[]
+    /**
+     * 0.1.54：開「視窗化」（Facebook 那種貼文牆）。
+     *
+     * 使用者原話：「如果太多內容也要回收上方的記錄（用戶看不到的畫面），
+     * 當用戶往回滑的時候，又再刷新顯示，要做到 Facebook 那種往上往下滑貼文的效果」。
+     *
+     * 只有**記錄頁的 PWA（窄螢幕）**會開；統計頁／電腦版維持原本的全部渲染
+     * （預設 false ＝ 零行為變化）。做法見下面的 `vis`／`heights`。
+     */
+    virtual?: boolean
   }>(),
   {
     showTime: true,
@@ -45,6 +55,7 @@ const props = withDefaults(
     dateBasis: 'occurred',
     groupBy: 'day',
     totalsFrom: undefined,
+    virtual: false,
   },
 )
 const emit = defineEmits<{ edit: [id: string]; remove: [id: string] }>()
@@ -145,6 +156,162 @@ watch(
     showAll.value = false
   },
 )
+
+/* ── 0.1.54：視窗化（只有 `virtual` 為 true 時才動）───────────────────────
+ *
+ * 以「**一天**」為一個區塊（`.dayblk`）：
+ * - 在視窗附近（rootMargin 1000px）的區塊 → 正常渲染；
+ * - 離開的區塊 → 換成一個**等高**的空白 div（高度＝上次量到的真實高度）
+ *   → **文件總高不變**，捲動位置不會跳，DOM 節點則被回收（這就是「回收上方記錄」）；
+ * - 往回滑時它又進入範圍 → 重新渲染（「又再刷新顯示」）。
+ *
+ * ⚠ 高度為什麼要用「量過的」而不是估算：
+ *   上方區塊的時間一定**已經被渲染過**（使用者是滑過去的）→ 有精確高度 →
+ *   換成空白 div 後文件總高完全不變 → 不會抖。
+ *   還沒量過的區塊一定在**視窗下方**，用估算高度撐著；它後來被渲染時高度才變準，
+ *   而那個變化發生在視窗下方，不會推動使用者正在看的內容。
+ * ⚠ 高度的 key 刻意帶上筆數（`日期|N`）：換篩選後同一天可能只剩 3 筆，
+ *   沒帶的話會用到 20 筆時量到的高度，上方就會出現一大塊空白。
+ */
+/** 還沒量過時的估算高度：日期標題 48 ＋ 每列 56 ＋ 區塊間距 16 */
+const EST_HEAD = 48
+const EST_ROW = 56
+const EST_GAP = 16
+/** 視窗前後各多算 1000px：離開這麼遠才回收，滑回來時已經渲染好了 */
+const IO_MARGIN = '1000px 0px'
+
+const vis = ref<Set<string>>(new Set())
+const heights = ref<Record<string, number>>({})
+const blkEls = new Map<string, HTMLElement>()
+let io: IntersectionObserver | null = null
+let ro: ResizeObserver | null = null
+
+/**
+ * `vis`（「這一區塊現在要不要渲染」）的 key ＝ **只有日期**。
+ *
+ * ⚠⚠ 不能用「日期|筆數」當 vis 的 key（v85 抓到的實戰 bug）：
+ *   `v-for` 的 `:key` 是日期，所以**同一個 DOM 元素會被重複使用**；
+ *   切到「最近」檢視時同一天從 1 筆變 2 筆 → vis 的 key 變了 → 程式以為它是「新的、
+ *   還沒看過」的區塊 → 換成空白。但 IntersectionObserver 對**已經觀察過、狀態沒變**
+ *   的元素不會再回呼一次（它還在視窗裡，`isIntersecting` 一直是 true），
+ *   於是一整天就這樣永遠空白。
+ *   → vis 只認日期（切換檢視／篩選後同一天照樣認得）；**高度**才用「日期|筆數」
+ *     （同一天換了內容，高度當然要分開記）。
+ */
+function hKeyOf(g: { key: string; list: unknown[] }): string {
+  return `${g.key}|${g.list.length}`
+}
+function estOf(g: { list: unknown[] }): number {
+  return EST_HEAD + g.list.length * EST_ROW + EST_GAP
+}
+/** 沒在視窗附近 → 用「量過的高度」或估算值把區塊撐成空白；在視窗內 → 交給內容自己長 */
+function blockStyle(g: { key: string; list: TxRecord[] }) {
+  if (!props.virtual) return undefined
+  if (vis.value.has(g.key)) return undefined
+  return { height: `${heights.value[hKeyOf(g)] ?? estOf(g)}px` }
+}
+function isVis(g: { key: string }): boolean {
+  return !props.virtual || vis.value.has(g.key)
+}
+
+/** 把目前看得到的區塊量一次（量完寫回 heights，回收時才撐得出正確高度） */
+async function measure() {
+  await nextTick()
+  if (!props.virtual) return
+  const byKey = new Map(visibleGroups.value.map((g) => [g.key, g]))
+  for (const k of vis.value) {
+    const el = blkEls.get(k)
+    const g = byKey.get(k)
+    if (!el || !g) continue
+    const h = el.offsetHeight
+    // 直接改 ref 物件的屬性就會觸發更新（Vue 3 的 ref 物件是深層響應式）
+    if (h > 0 && heights.value[hKeyOf(g)] !== h) heights.value[hKeyOf(g)] = h
+  }
+}
+
+function onIntersect(entries: IntersectionObserverEntry[]) {
+  const next = new Set(vis.value)
+  let changed = false
+  for (const e of entries) {
+    const k = (e.target as HTMLElement).dataset.k
+    if (!k) continue
+    if (e.isIntersecting) {
+      if (!next.has(k)) {
+        next.add(k)
+        changed = true
+      }
+    } else if (next.delete(k)) changed = true
+  }
+  if (changed) vis.value = next
+}
+
+function bindBlk(k: string, el: unknown) {
+  const e = (el as HTMLElement | null) ?? null
+  const old = blkEls.get(k)
+  if (old && old !== e) {
+    io?.unobserve(old)
+    ro?.unobserve(old)
+    blkEls.delete(k)
+  }
+  if (e) {
+    blkEls.set(k, e)
+    io?.observe(e)
+    ro?.observe(e)
+  }
+}
+
+/**
+ * 建立觀察器。
+ * ⚠⚠ 不能在 `onMounted` 裡用 `props.virtual` 當開關就 return：
+ *   **子元件的 onMounted 比父元件早** —— 記錄頁的 `narrow`（決定 virtual）是在
+ *   RecordsView 自己的 onMounted 才量出來的，那時這裡看到的 `virtual` 還是 false
+ *   → 觀察器永遠沒建立、種子也沒種 → 整份列表一片空白（v129 抓到的）。
+ *   改成：觀察器一律建立（virtual 為 false 時它只是空轉），`virtual` 由樣式與
+ *   `isVis` 自己判斷；`virtual` 事後翻成 true 時再補種一次。
+ */
+function ensureObservers() {
+  if (io || typeof IntersectionObserver === 'undefined') return
+  io = new IntersectionObserver(onIntersect, { rootMargin: IO_MARGIN })
+  if (typeof ResizeObserver !== 'undefined') ro = new ResizeObserver(() => void measure())
+  for (const el of blkEls.values()) {
+    io.observe(el)
+    ro?.observe(el)
+  }
+}
+/** 先把最前面幾組直接點亮：IO 的第一次回呼是下一幀才來，沒種的話第一眼是空白 */
+function seedVis() {
+  const seed = new Set<string>()
+  for (const g of visibleGroups.value.slice(0, 3)) seed.add(g.key)
+  vis.value = seed
+}
+
+onMounted(() => {
+  ensureObservers()
+  if (props.virtual) {
+    seedVis()
+    void measure()
+  }
+})
+// 從「沒開視窗化」變成「開」時（例如記錄頁量完螢幕寬度）要補種
+watch(
+  () => props.virtual,
+  (v) => {
+    if (!v) return
+    ensureObservers()
+    seedVis()
+    void measure()
+  },
+)
+onBeforeUnmount(() => {
+  io?.disconnect()
+  ro?.disconnect()
+  io = null
+  ro = null
+  blkEls.clear()
+})
+// 區塊進出視窗、換資料之後都要重量一次（高度會寫進回收用的 heights）
+watch(vis, () => void measure())
+watch(() => visibleGroups.value.length, () => void measure())
 </script>
 
 <template>
@@ -154,46 +321,61 @@ watch(
     </div>
 
     <template v-else>
-      <div v-for="g in visibleGroups" :key="g.key" class="day">
-        <div class="day__head">
-          <!-- 日檢視：日曆小卡（日數大、月份小） -->
-          <span v-if="groupBy === 'day'" class="day__cal">
-            <b class="day__num num">{{ g.parts.num }}</b>
-            <span class="day__mon">{{ g.parts.mon }}</span>
-          </span>
-          <!-- 月檢視（統計頁的「年」）：月標題（月大、年小），跟日曆小卡同一個位置與尺寸 -->
-          <span v-else class="day__cal day__cal--mon">
-            <b class="day__num num">{{ g.month?.m }}月</b>
-            <span class="day__mon">{{ g.month?.y }}</span>
-          </span>
-          <span class="day__tag" :class="{ 'is-today': g.isThisMonth }">
-            {{ groupBy === 'month' ? (g.isThisMonth ? '本月' : `${g.count} 筆`) : g.parts.tag }}
-          </span>
-          <span class="day__rule"></span>
-          <span class="day__amt">
-            <span v-if="g.inc > 0" class="day__chip is-inc num">
-              +{{ fmtMoney(g.inc, settings.displayCurrency) }}
+      <!--
+        0.1.54：每一天包一層 `.dayblk`。
+        視窗化時這一層會被撐成「等高空白」回收掉裡面的 DOM（見 script 的 `blockStyle`）；
+        沒開視窗化時它只是單純的包層（`.day` 的 margin-bottom 搬到這一層的 padding-bottom，
+        間距完全一樣）。
+      -->
+      <div
+        v-for="g in visibleGroups"
+        :key="g.key"
+        class="dayblk"
+        :data-k="g.key"
+        :style="blockStyle(g)"
+        :ref="(el) => bindBlk(g.key, el)"
+      >
+        <div v-if="isVis(g)" class="day">
+          <div class="day__head">
+            <!-- 日檢視：日曆小卡（日數大、月份小） -->
+            <span v-if="groupBy === 'day'" class="day__cal">
+              <b class="day__num num">{{ g.parts.num }}</b>
+              <span class="day__mon">{{ g.parts.mon }}</span>
             </span>
-            <span v-if="g.exp > 0" class="day__chip is-exp num">
-              −{{ fmtMoney(g.exp, settings.displayCurrency) }}
+            <!-- 月檢視（統計頁的「年」）：月標題（月大、年小），跟日曆小卡同一個位置與尺寸 -->
+            <span v-else class="day__cal day__cal--mon">
+              <b class="day__num num">{{ g.month?.m }}月</b>
+              <span class="day__mon">{{ g.month?.y }}</span>
             </span>
-            <span v-if="g.inc === 0 && g.exp === 0" class="day__chip num">
-              {{ fmtMoney(0, settings.displayCurrency) }}
+            <span class="day__tag" :class="{ 'is-today': g.isThisMonth }">
+              {{ groupBy === 'month' ? (g.isThisMonth ? '本月' : `${g.count} 筆`) : g.parts.tag }}
             </span>
-          </span>
-        </div>
-        <div class="card day__card">
-          <template v-for="(r, i) in g.list" :key="r.id">
-            <hr v-if="i > 0" class="divider" />
-            <RecordRow
-              :record="r"
-              :show-time="showTime"
-              :highlight="highlight"
-              :time-recent="dateBasis === 'created'"
-              @edit="emit('edit', $event)"
-              @remove="emit('remove', $event)"
-            />
-          </template>
+            <span class="day__rule"></span>
+            <span class="day__amt">
+              <span v-if="g.inc > 0" class="day__chip is-inc num">
+                +{{ fmtMoney(g.inc, settings.displayCurrency) }}
+              </span>
+              <span v-if="g.exp > 0" class="day__chip is-exp num">
+                −{{ fmtMoney(g.exp, settings.displayCurrency) }}
+              </span>
+              <span v-if="g.inc === 0 && g.exp === 0" class="day__chip num">
+                {{ fmtMoney(0, settings.displayCurrency) }}
+              </span>
+            </span>
+          </div>
+          <div class="card day__card">
+            <template v-for="(r, i) in g.list" :key="r.id">
+              <hr v-if="i > 0" class="divider" />
+              <RecordRow
+                :record="r"
+                :show-time="showTime"
+                :highlight="highlight"
+                :time-recent="dateBasis === 'created'"
+                @edit="emit('edit', $event)"
+                @remove="emit('remove', $event)"
+              />
+            </template>
+          </div>
         </div>
       </div>
 
@@ -212,8 +394,18 @@ watch(
 </template>
 
 <style scoped>
+/*
+ * 0.1.54：每一天的包層。
+ * - `.day` 原本的 `margin-bottom: 16px` 搬到這裡的 `padding-bottom`
+ *   （margin 會跟父層摺疊、量不到，視窗化要靠 `offsetHeight` 量高度，一定要用 padding）。
+ * - 視窗化時這一層被 inline style 撐成固定高度、內容清空 → 回收 DOM；
+ *   高度用的是「同一個 key 上次量到的真實高度」，所以文件總高不變、捲動不跳。
+ */
+.dayblk {
+  padding-bottom: 16px;
+}
 .day {
-  margin-bottom: 16px;
+  margin-bottom: 0;
 }
 .day__head {
   display: flex;
