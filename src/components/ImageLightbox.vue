@@ -2,13 +2,43 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 /**
+ * 導覽狀態（0.1.57）。
+ * 只有「看得到上下張／上下筆」的情境才需要給（記錄頁的記錄明細會給）；
+ * 不給就是原本單純的放大檢視（記帳頁、查看頁都還是舊行為）。
+ */
+export interface LightboxNav {
+  /** 這一筆記錄**沒有圖片**（導覽到沒圖的記錄時會走到）→ 顯示「無圖」佔位 */
+  empty?: boolean
+  hasPrevImg: boolean
+  hasNextImg: boolean
+  hasPrevRec: boolean
+  hasNextRec: boolean
+  /** 要不要顯示「上一筆／下一筆記錄」那一組（沒有清單就不要顯示空殼） */
+  rec?: boolean
+  /** 「2 / 3」這一筆裡的第幾張（只有一張就不用顯示） */
+  pos?: string
+  /** 「3 / 12」在整份清單裡的第幾筆（沒有清單就不用顯示） */
+  recPos?: string
+}
+
+/**
  * 圖片放大檢視（點黑色背景關閉、可縮放、放大後可拖曳）。
  *
  * 給定 `src`（object URL）就開啟；關閉時 emit `close`，由呼叫端把 src 設回 null。
  * 縮放／拖曳的細節見下面 `measureFit()` 的註解。
+ *
+ * 0.1.57：多了導覽（`nav`）與「點圖片本身也關閉」：
+ *   - `nav` 有給 → 底部多一列 ICON（上一張／下一張圖片、上一筆／下一筆記錄）
+ *   - 點圖片＝關閉（跟右上角 ✕ 同一招；但拖曳不算，見 `onImgClick`）
  */
-const props = defineProps<{ src: string | null }>()
-const emit = defineEmits<{ close: [] }>()
+const props = defineProps<{ src: string | null; nav?: LightboxNav | null }>()
+const emit = defineEmits<{
+  close: []
+  'prev-image': []
+  'next-image': []
+  'prev-record': []
+  'next-record': []
+}>()
 
 /** 1 = 原始大小（已等比縮進畫面），往上每階 ×1.4 */
 const zoom = ref(1)
@@ -111,7 +141,19 @@ function onBgDown(e: PointerEvent) {
   bgFrom.x = e.clientX
   bgFrom.y = e.clientY
 }
+/** 有導覽列時，燈箱也可能處於「這一筆沒圖」的狀態 → 判斷要不要顯示 */
+const opened = computed(() => !!props.src || !!props.nav)
+
 function onBgClick(e: MouseEvent) {
+  if (Math.hypot(e.clientX - bgFrom.x, e.clientY - bgFrom.y) > 8) return
+  close()
+}
+/**
+ * 點圖片本身也關閉（0.1.57 使用者原話：「用戶可以點擊圖片一下，關閉圖片」）。
+ * ⚠ 一樣要判斷位移：放大後使用者是在圖片上拖著看細節，放開時瀏覽器可能補一個 click，
+ *   不擋的話「滑兩下」就把檢視關掉了（跟點背景同一個保護）。
+ */
+function onImgClick(e: MouseEvent) {
   if (Math.hypot(e.clientX - bgFrom.x, e.clientY - bgFrom.y) > 8) return
   close()
 }
@@ -129,12 +171,90 @@ defineExpose({ stageEl })
 </script>
 
 <template>
-  <!-- 圖片放大：點黑色背景關閉；圖片本身不關閉，才能安心放大慢慢看。
-       放大後可上下左右拖曳查看（原生捲動），所以點背景要判斷是拖曳還是點一下 -->
+  <!-- 圖片放大：點黑色背景**或點圖片本身**都關閉（0.1.57）；放大後可上下左右拖曳查看
+       （原生捲動），所以關閉前要判斷是拖曳還是點一下。
+       ⚠ 開場條件是 `opened`（src 或 nav 任一個有）：導覽到「這一筆沒圖」時 src 是 null，
+          靠 nav 撐住，使用者才看得見「無圖」而且還能繼續按下一筆。 -->
   <Transition name="fade">
-    <div v-if="src" class="lightbox" @pointerdown="onBgDown" @click="onBgClick">
+    <div v-if="opened" class="lightbox" @pointerdown="onBgDown" @click="onBgClick">
       <div ref="stageEl" class="lightbox__stage">
-        <img ref="zoomImg" :src="src" alt="" :style="zoomStyle" @load="measureFit" @click.stop />
+        <div v-if="nav?.empty" class="lightbox__empty">無圖</div>
+        <img
+          v-else
+          ref="zoomImg"
+          :src="src ?? ''"
+          alt=""
+          :style="zoomStyle"
+          @load="measureFit"
+          @click.stop="onImgClick"
+        />
+      </div>
+
+      <!--
+        導覽列（0.1.57 使用者原話：「加入按鈕可以支持查看上一張圖片和下一張圖片，
+        另外再加按鈕可以查看上一筆記錄的圖片和下一筆記錄的圖片按鈕」）。
+        刻意放在**獨立一列**、不放進 `.lightbox__bar`：那一列是「縮小／倍率／放大」三顆，
+        既有操作與測試都認那個數量，混在一起會互相干擾。
+      -->
+      <div v-if="nav" class="lightbox__nav" @click.stop>
+        <div class="lbnav__grp">
+          <button
+            class="lbbtn lbbtn--nav"
+            type="button"
+            title="上一張圖片"
+            aria-label="上一張圖片"
+            :disabled="!nav.hasPrevImg"
+            @click="emit('prev-image')"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M14.4 5.6 8 12l6.4 6.4" />
+            </svg>
+          </button>
+          <span v-if="nav.pos" class="lbnav__pos num">{{ nav.pos }}</span>
+          <button
+            class="lbbtn lbbtn--nav"
+            type="button"
+            title="下一張圖片"
+            aria-label="下一張圖片"
+            :disabled="!nav.hasNextImg"
+            @click="emit('next-image')"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9.6 5.6 16 12l-6.4 6.4" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- 記錄組：只有真的有清單（記錄頁）才出現 -->
+        <div v-if="nav.rec" class="lbnav__grp">
+          <button
+            class="lbbtn lbbtn--nav"
+            type="button"
+            title="上一筆記錄"
+            aria-label="上一筆記錄"
+            :disabled="!nav.hasPrevRec"
+            @click="emit('prev-record')"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12.6 5.6 6.2 12l6.4 6.4" />
+              <path d="M18.4 5.6 12 12l6.4 6.4" />
+            </svg>
+          </button>
+          <span v-if="nav.recPos" class="lbnav__pos num">{{ nav.recPos }}</span>
+          <button
+            class="lbbtn lbbtn--nav"
+            type="button"
+            title="下一筆記錄"
+            aria-label="下一筆記錄"
+            :disabled="!nav.hasNextRec"
+            @click="emit('next-record')"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M11.4 5.6 17.8 12l-6.4 6.4" />
+              <path d="M5.6 5.6 12 12l-6.4 6.4" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div class="lightbox__bar" @click.stop>
@@ -208,6 +328,49 @@ defineExpose({ stageEl })
   border-radius: 10px;
   /* 放大／縮小改的是版面尺寸，過場就跟著放在 width/height 上 */
   transition: width 0.14s ease, height 0.14s ease;
+}
+/* ── 導覽列（0.1.57）：上一張／下一張圖片 ‧ 上一筆／下一筆記錄 ──
+   獨立一列放在縮放工具列上方；兩群中間留較大的間隔，看得出「圖片」與「記錄」是兩組 */
+.lightbox__nav {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 0 12px 8px;
+}
+.lbnav__grp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lbnav__pos {
+  min-width: 46px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 650;
+  color: rgba(255, 255, 255, 0.9);
+}
+.lbbtn--nav {
+  width: 38px;
+  height: 38px;
+}
+.lbbtn--nav svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2;
+}
+/* 這一筆沒有圖片（導覽到沒圖的記錄）：給一個看得見的佔位，
+   而不是讓畫面全黑 —— 全黑會讓使用者以為圖片壞了或 App 卡住 */
+.lightbox__empty {
+  margin: auto;
+  padding: 24px 32px;
+  border: 1px dashed rgba(255, 255, 255, 0.32);
+  border-radius: 14px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
 }
 /* 工具列固定在底部，不隨圖片捲動 */
 .lightbox__bar {

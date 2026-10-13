@@ -14,7 +14,7 @@ import ClearableInput from '@/components/ClearableInput.vue'
 import CategorySearchPicker from '@/components/CategorySearchPicker.vue'
 import CategoryIcon from '@/components/CategoryIcon.vue'
 import HighlightText from '@/components/HighlightText.vue'
-import { fmtMoney } from '@/lib/currency'
+import { currency, fmtCompact, fmtMoney } from '@/lib/currency'
 import { iconForCategory } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
 import {
@@ -530,6 +530,16 @@ const income = computed(() =>
 )
 const net = computed(() => income.value - expense.value)
 
+/**
+ * 0.1.57：區間總覽的數字＝**幣別符號 + K/M 縮寫**。
+ * ⚠ 為什麼這邊要帶符號、統計頁（0.1.54）不用：記錄頁這三格本來就是 `fmtMoney`
+ *   （`JP¥4,000.00` 這種帶幣別的完整數字），直接換成純數字會把幣別資訊弄丟 ——
+ *   旅行貨幣、換過主幣別時特別容易誤讀。統計頁那三張卡當初就是拍板成純數字，
+ *   那邊維持原樣不動。
+ */
+const sumSym = computed(() => currency(settings.displayCurrency).symbol)
+const sumText = (v: number) => `${sumSym.value}${fmtCompact(v)}`
+
 function shiftUnit(delta: number) {
   if (unit.value === 'day') key.value = addDays(key.value, delta)
   else if (unit.value === 'month') key.value = shiftMonthKey(key.value, delta)
@@ -582,6 +592,13 @@ const presets = computed(() => [
 /* ── 單筆明細 ───────────────────────────────────────────── */
 const editingId = ref<string | null>(null)
 const editing = computed(() => records.records.find((r) => r.id === editingId.value) ?? null)
+/**
+ * 0.1.57：放大檢視裡「上一筆／下一筆記錄」的順序。
+ * 用 `rows`（**已套用日期／收支／搜索的完整結果**）而不是「目前已載入的那幾筆」——
+ * 使用者原話是「目前用戶搜索的上一筆記錄和下一筆記錄」，搜索出來的整份才是他要的範圍；
+ * 餵食模式只是延後載入，不該改變導覽範圍（跳過去時明細一樣開得起來）。
+ */
+const navIds = computed(() => rows.value.map((r) => r.id))
 
 function saveEdit(patch: Partial<TxRecord>) {
   if (editingId.value) records.update(editingId.value, patch)
@@ -657,21 +674,40 @@ function removeEditing(id: string) {
       <span class="tripfilter__hint tiny muted">這趟的全部記錄（不限日期）</span>
     </div>
 
-    <!-- 區間總覽 -->
+    <!--
+      區間總覽。
+      0.1.57（使用者原話）：「支出，收入，結餘，如果是超出框框，即平時超出時用... 的，
+      用 K(千) → 1000 → 1K，M(百萬) → 1,000,000 → 1M 等等顯示」。
+      → 卡片上的數字走 `fmtCompact`（跟統計頁 0.1.54 同一套：不到 1000 完全維持原樣，
+        1000 起才是 1.23K／1.2M），`title` 保留 `fmtMoney` 的完整數字。
+      ⚠ 為什麼不「量測到真的超出才壓」：卡片寬度隨裝置、字級、幣別長度變，
+        量測要綁 ResizeObserver 且每次數字變動都要重新量，容易在換頁那一瞬間閃一下；
+        而會「超出到被截成 …」的數字本來就是四位數以上（框框寬度固定），
+        壓成 K/M 剛好落在同一批情境，行為也跟統計頁一致。
+      ⚠ 註解內一律用「→」：寫成兩個減號會讓 HTML 註解提前結束（0.1.54 踩過）。
+    -->
     <div class="card sum">
       <div class="sum__grid">
         <div class="sum__col">
           <span class="sum__label"><i class="sum__dot sum__dot--exp"></i>支出</span>
-          <span class="sum__val num is-exp">{{ fmtMoney(expense, settings.displayCurrency) }}</span>
+          <span class="sum__val num is-exp" :title="fmtMoney(expense, settings.displayCurrency)">
+            {{ sumText(expense) }}
+          </span>
         </div>
         <div class="sum__col">
           <span class="sum__label"><i class="sum__dot sum__dot--inc"></i>收入</span>
-          <span class="sum__val num is-inc">{{ fmtMoney(income, settings.displayCurrency) }}</span>
+          <span class="sum__val num is-inc" :title="fmtMoney(income, settings.displayCurrency)">
+            {{ sumText(income) }}
+          </span>
         </div>
         <div class="sum__col">
           <span class="sum__label">結餘</span>
-          <span class="sum__val num" :class="net >= 0 ? 'is-inc' : 'is-exp'">
-            {{ fmtMoney(net, settings.displayCurrency) }}
+          <span
+            class="sum__val num"
+            :class="net >= 0 ? 'is-inc' : 'is-exp'"
+            :title="fmtMoney(net, settings.displayCurrency)"
+          >
+            {{ sumText(net) }}
           </span>
         </div>
       </div>
@@ -949,10 +985,12 @@ function removeEditing(id: string) {
     <RecordSheet
       :open="!!editing"
       :record="editing"
+      :nav-ids="navIds"
       @close="editingId = null"
       @save="saveEdit"
       @remove="removeEditing"
       @search-cat="searchCat"
+      @goto-record="editingId = $event"
     />
   </div>
 </template>

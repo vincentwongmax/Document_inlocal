@@ -24,13 +24,24 @@ import DateTimeField from './DateTimeField.vue'
 import ImageLightbox from './ImageLightbox.vue'
 import { usePasteImages } from '@/composables/usePasteImages'
 
-const props = defineProps<{ open: boolean; record: TxRecord | null }>()
+const props = defineProps<{
+  open: boolean
+  record: TxRecord | null
+  /**
+   * 0.1.57：可導覽的記錄 id 清單（**依目前記錄頁的順序**：已套用日期／收支／搜索等篩選）。
+   * 有給 → 放大檢視裡多「上一筆／下一筆記錄」兩顆鈕；沒給（例如統計頁開的明細）就只有
+   * 「上一張／下一張圖片」，不會出現永遠按不到的空殼。
+   */
+  navIds?: string[] | null
+}>()
 const emit = defineEmits<{
   close: []
   save: [patch: Partial<TxRecord>]
   remove: [id: string]
   /** 0.1.44：點摘要區塊 → 跳到記錄搜索頁搜尋這筆的分類 */
   'search-cat': [name: string]
+  /** 0.1.57：在放大檢視裡按了「上一筆／下一筆記錄」→ 請父層把明細換成那一筆 */
+  'goto-record': [id: string]
 }>()
 
 const settings = useSettingsStore()
@@ -125,9 +136,103 @@ const typeLabel = computed(() => (isExpense.value ? '支出' : '收入'))
 const urls = ref<Record<string, string>>({})
 const lightbox = ref<string | null>(null)
 
-/** 關閉圖片（縮放與拖曳的狀態都在 ImageLightbox 裡面，這裡只要把 src 收掉） */
+/**
+ * 0.1.57：放大檢視的導覽位置＝「正在看哪一筆的第幾張」。
+ * null＝沒在看圖；有值時放大檢視底部會多一列導覽鈕。
+ */
+const lbNav = ref<{ id: string; idx: number } | null>(null)
+/** 目前導覽到的這一筆**沒有圖片**（要顯示「無圖」佔位） */
+const navEmpty = ref(false)
+
+/** 使用者主動關圖（✕／點圖／點背景）→ 導覽結束 */
 function closeLightbox() {
   lightbox.value = null
+  lbNav.value = null
+  navEmpty.value = false
+}
+
+/** 放大檢視底部那一列的狀態（給 ImageLightbox 的 `nav`） */
+const lbNavInfo = computed(() => {
+  const nav = lbNav.value
+  if (!nav) return null
+  const ids = props.navIds ?? []
+  const at = ids.indexOf(nav.id)
+  const n = images.value.length
+  const hasImg = !navEmpty.value && n > 0
+  return {
+    empty: !hasImg,
+    hasPrevImg: hasImg && nav.idx > 0,
+    hasNextImg: hasImg && nav.idx < n - 1,
+    hasPrevRec: at > 0,
+    hasNextRec: at >= 0 && at < ids.length - 1,
+    rec: ids.length > 0,
+    pos: hasImg && n > 1 ? `${nav.idx + 1} / ${n}` : '',
+    recPos: at >= 0 ? `${at + 1} / ${ids.length}` : '',
+  }
+})
+
+/**
+ * 顯示「目前這一筆的第 idx 張」。
+ * 開圖、上下張、上下筆切換後重新載入，全部都走這裡，行為才會一致。
+ * ⚠ 沒圖／讀不到 blob 時**不要直接關掉**：要留著「無圖」佔位，
+ *   使用者才能繼續按「下一筆記錄」（0.1.57 使用者原話）。
+ */
+async function showNavImage(idx: number) {
+  const r = props.record
+  if (!r) return
+  const list = images.value
+  const at = Math.min(Math.max(idx, 0), Math.max(list.length - 1, 0))
+  lbNav.value = { id: r.id, idx: at }
+  if (!list.length) {
+    navEmpty.value = true
+    lightbox.value = null
+    return
+  }
+  const im = list[at]
+  if (!urls.value[im.id]) {
+    const blob = await getImage(im.id)
+    if (!blob) {
+      notify('圖片已不存在（可能已被清除）', 'warn')
+      navEmpty.value = true
+      lightbox.value = null
+      return
+    }
+    urls.value[im.id] = URL.createObjectURL(blob)
+  }
+  navEmpty.value = false
+  lightbox.value = urls.value[im.id]
+}
+
+/** 點縮圖開圖（順便記住這是第幾張，導覽才有起點） */
+async function openImage(im: ImageRef) {
+  await showNavImage(Math.max(0, images.value.findIndex((x) => x.id === im.id)))
+}
+
+/** 同一筆裡往前／往後一張 */
+function lbPrevImage() {
+  if (lbNav.value) void showNavImage(lbNav.value.idx - 1)
+}
+function lbNextImage() {
+  if (lbNav.value) void showNavImage(lbNav.value.idx + 1)
+}
+
+/**
+ * 跳到清單裡上／下一筆記錄（delta = -1 或 +1）。
+ * ⚠ 這裡**不自己換記錄**：明細的記錄是父層給的（`props.record`），
+ *   所以 emit 出去請父層把 `editingId` 換掉；props 一變下面的 watch 會接手把圖開回來。
+ *   這樣關掉圖片時停在的就是「最後看圖的那一筆」（0.1.57 使用者原話）。
+ */
+function lbGotoRecord(delta: number) {
+  const ids = props.navIds
+  const nav = lbNav.value
+  if (!ids?.length || !nav) return
+  const at = ids.indexOf(nav.id)
+  if (at < 0) return
+  const to = at + delta
+  if (to < 0 || to >= ids.length) return
+  lbNav.value = { id: ids[to], idx: 0 }
+  navEmpty.value = false
+  emit('goto-record', ids[to])
 }
 
 /** 明細中可編輯的圖片（含本次新上傳、尚未儲存的） */
@@ -139,23 +244,16 @@ const addedIds = new Set<string>()
 const busyImg = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 
+/**
+ * 收掉所有 object URL。
+ * ⚠ 0.1.57：這裡**不清導覽狀態**（`lbNav`）—— 換記錄時 watch 會先呼叫這裡，
+ *   導覽位置還要用來把新記錄的那一張圖重新開回來；
+ *   「使用者主動關圖」才走 `closeLightbox()`（那邊才清）。
+ */
 function releaseUrls() {
   for (const u of Object.values(urls.value)) URL.revokeObjectURL(u)
   urls.value = {}
-  closeLightbox()
-}
-
-async function openImage(im: ImageRef) {
-  if (!urls.value[im.id]) {
-    const blob = await getImage(im.id)
-    if (!blob) {
-      notify('圖片已不存在（可能已被清除）', 'warn')
-      return
-    }
-    urls.value[im.id] = URL.createObjectURL(blob)
-  }
-  // 每次開圖都回到原始大小，不會被上一張的縮放狀態影響（倍率歸位在 ImageLightbox 裡）
-  lightbox.value = urls.value[im.id]
+  lightbox.value = null
 }
 
 function pickImages() {
@@ -278,9 +376,15 @@ onBeforeUnmount(() => {
 watch(
   () => props.record,
   (r) => {
+    // ⚠ 0.1.57：先記住導覽位置再收 URL —— `releaseUrls()` 會把 lightbox 收掉，
+    //   但「正在看哪一筆的第幾張」要留著，下面才能把新記錄的那一張重新開回來。
+    const nav = lbNav.value
     releaseUrls()
     discardPending()
-    if (!r) return
+    if (!r) {
+      lbNav.value = null
+      return
+    }
     type.value = r.type
     amount.value = String(r.amount)
     currencyCode.value = r.currency
@@ -296,6 +400,10 @@ watch(
     images.value = [...(r.images ?? [])]
     originalImages = [...(r.images ?? [])]
     busyImg.value = false
+    // 0.1.57：導覽中換到別的記錄 → 立刻把它那一張開回來（這筆沒圖就顯示「無圖」）；
+    // 若是使用者自己改看別筆（不是導覽過來的）就結束導覽。
+    if (nav && nav.id === r.id) void showNavImage(nav.idx)
+    else if (nav) lbNav.value = null
   },
   { immediate: true },
 )
@@ -614,8 +722,18 @@ function save() {
     </div>
   </Transition>
 
-  <!-- 圖片放大（縮放／拖曳／點背景關閉都在 ImageLightbox 裡，記帳頁與明細共用同一份） -->
-  <ImageLightbox ref="lbEl" :src="lightbox" @close="closeLightbox" />
+  <!-- 圖片放大（縮放／拖曳／點背景關閉都在 ImageLightbox 裡，記帳頁與明細共用同一份）。
+       0.1.57：明細這邊多給 `nav` → 底部多一列導覽（上下張圖／上下筆記錄）。 -->
+  <ImageLightbox
+    ref="lbEl"
+    :src="lightbox"
+    :nav="lbNavInfo"
+    @close="closeLightbox"
+    @prev-image="lbPrevImage"
+    @next-image="lbNextImage"
+    @prev-record="lbGotoRecord(-1)"
+    @next-record="lbGotoRecord(1)"
+  />
 </template>
 
 <style scoped>
