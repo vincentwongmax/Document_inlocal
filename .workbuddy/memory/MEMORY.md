@@ -18,6 +18,10 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - ⚠ push/deploy 要使用者明說「上傳」才做；`git add -A -- . ':!ddd.txt'`；PAT：grep audit-log `ghp_…`（**不寫進任何檔案**）
 - ⚠⚠ **git push 常被代理截斷**（fetch 也可能掛）→ 走 **REST API**：`.smoke/api-push.mjs`（main）＋`.smoke/deploy-api.mjs`（gh-pages）；對齊＝`fetch`＋`reset <sha>`（樹同才安全）
 - ⚠ 走 API 推完後**本地 remote-tracking ref 一定是舊的**（`git fetch` 也常被截斷，且遠端 commit 物件不在本地）→ 這是**正常現象不用修**；`.smoke/api-push.mjs` 以遠端 tree 當 base，**不依賴本地 ref**。要確認遠端狀態就用 `curl .../commits/<branch>` 或看線上 `version.json`
+- ⚠⚠ **api-push.mjs 會讀 `.smoke/show.txt`（單一 commit 的 diff 清單）**——忘記重新產生就會推到**舊清單**（0.1.57 實慘：推到 RecordList.vue、四個真正改動的檔沒上去）→ **以後一律改用 `.smoke/api-sync.mjs`**：比對「遠端 recursive tree vs 本機 tracked 檔案的 blob sha」，把所有不同的檔案補上去 → 遠端必然等於本機
+  - 產生本機清單：`git ls-files | while IFS= read -r p; do [ -f "$p" ] && printf '%s\t%s\n' "$(git hash-object "$p")" "$p"; done > .smoke/local-hash.txt`
+  - ⚠ node 在這個環境叫 `cmd.exe` 會 **EBUSY** → 清單要在 bash 端生好再讓 node 讀，不要 spawn
+  - deploy 前後各跑一次（第二次應該印「遠端已與本機一致，不用推」）當驗證
 - ⚠⚠ Git Bash 的 `VITE_BASE=/Document_inlocal/` 被 **MSYS 路徑轉換**改掉→線上 404；加 `MSYS_NO_PATHCONV=1`
 
 ## 資料
