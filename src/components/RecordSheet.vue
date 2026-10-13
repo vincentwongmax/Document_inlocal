@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, toRef, watch } from 'vue'
 import { useScrollLock } from '@/composables/useScrollLock'
 import { usePullToClose } from '@/composables/usePullToClose'
-import type { ImageRef, TxRecord, TxType } from '@/types'
+import type { ImageRef, TodoItem, TxRecord, TxType } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
 import { notify } from '@/lib/alerts'
@@ -22,6 +22,7 @@ import ClearableInput from './ClearableInput.vue'
 import QuickNotePicker from './QuickNotePicker.vue'
 import DateTimeField from './DateTimeField.vue'
 import ImageLightbox from './ImageLightbox.vue'
+import TodoSheet from './TodoSheet.vue'
 import { usePasteImages } from '@/composables/usePasteImages'
 
 const props = defineProps<{
@@ -89,6 +90,44 @@ const tripId = ref('')
 const expr = ref('')
 /** 載入時的金額：用來判斷使用者有沒有在明細裡改過金額 */
 const loadedAmount = ref(0)
+
+/**
+ * 0.1.58：代辦事項。
+ * 明細裡只顯示摘要（`todoSummary`／`todoPreview`），完整編輯在 `TodoSheet` 子頁面；
+ * ⚠ 變更**即時**寫進記錄（見 `onTodosChange`）——勾選是勾選型操作，
+ *   要求使用者記得回來按一次「儲存」太容易漏（0.1.58 使用者原話的場景）。
+ */
+const todos = ref<TodoItem[]>([])
+/** 代辦事項子頁面開著嗎 */
+const todoOpen = ref(false)
+const todoTotal = computed(() => todos.value.length)
+const todoDone = computed(() => todos.value.filter((t) => t.done).length)
+const todoLeft = computed(() => todoTotal.value - todoDone.value)
+const todoSummary = computed(() => {
+  if (!todoTotal.value) return '新增代辦事項'
+  return todoLeft.value > 0 ? `${todoLeft.value} 項未完成` : '全部完成'
+})
+/**
+ * 明細裡的「簡單顯示」：最多前三項，格式照使用者範例 `1.xxx 2.yyy 3.zzz`。
+ * 使用者原話：「這個部份文字佔的空間要小，只是做簡單的顯示」→ 單列、兩行截斷，
+ * 完整內容到子頁面看。
+ */
+const todoPreview = computed(() => {
+  const all = todos.value
+  if (!all.length) return ''
+  const shown = all.slice(0, 3).map((t, i) => `${i + 1}.${t.text || '…'}`)
+  const rest = all.length - shown.length
+  return rest > 0 ? `${shown.join(' ')} …還有 ${rest} 項` : shown.join(' ')
+})
+
+/** 代辦事項子頁面回來的變更：本地狀態 ＋ 即時寫檔 */
+function onTodosChange(next: TodoItem[]) {
+  todos.value = next
+  const r = props.record
+  if (!r) return
+  // 清空時存 undefined（JSON 序列化會整個丢掉這個鍵），不要留一個空陣列佔空間
+  records.update(r.id, { todos: next.length ? next : undefined })
+}
 
 const numeric = computed(() => {
   const n = Number(amount.value)
@@ -397,6 +436,8 @@ watch(
     tripId.value = r.tripId ?? ''
     expr.value = r.expr ?? ''
     loadedAmount.value = r.amount
+    // 0.1.58：代辦事項（舊資料沒有這個欄位 → 當沒有）
+    todos.value = [...(r.todos ?? [])]
     images.value = [...(r.images ?? [])]
     originalImages = [...(r.images ?? [])]
     busyImg.value = false
@@ -418,6 +459,18 @@ watch(currencyCode, (c) => {
   if (c === props.record?.currency) return
   rate.value = settings.rate(c)
 })
+
+/**
+ * 0.1.58：明細本體收掉時，代辦子頁面也要一起收。
+ * ⚠ `TodoSheet` 是獨立的模板根節點（不在明細那個 `v-if` 裡），
+ *   只把 props.open 關掉並不會卸載它 → 代辦面板會留在畫面上。
+ */
+watch(
+  () => props.open,
+  (open) => {
+    if (!open) todoOpen.value = false
+  },
+)
 
 /* ── 旅行模式（0.1.35；0.1.36 改成下拉選單）──────────────── */
 /**
@@ -499,6 +552,10 @@ function save() {
     occurredAt: fromLocalInput(occurredAt.value),
     note: note.value.trim(),
     images: images.value,
+    // 0.1.58：代辦事項。正常情況 `onTodosChange` 已經即時寫過了，
+    //   這裡再帶一次是為了「開著明細 → 改代辦 → 按儲存」這條路也不會漏
+    //   （例：子頁面改完的當下 props.record 還沒被 watch 重載的極端情況）。
+    ...(todoTotal.value ? { todos: todos.value } : {}),
     // 旅行標記：跟著這一欄的狀態走（空＝解除）
     tripId: tripId.value || undefined,
     ...(amountChanged ? { expr: undefined } : {}),
@@ -618,6 +675,34 @@ function save() {
             </ClearableInput>
           </label>
 
+          <!--
+            0.1.58：代辦事項（使用者原話：「在備注輸入框的下方增加，代辨事項的欄位，
+            顯示 x未完成 / x已完成 之類的，也用文字的方式顯示代辦的事項，例: 1.xxx 2.yyy 3.zzz
+            （但這個部份文字佔的空間要小…）；用戶再按下這個欄位後，再彈出一個子頁面」）。
+            → 摘要列（幾項完成／未完成 ＋ 前三項文字）按下去開 TodoSheet 子頁面。
+          -->
+          <button class="todorow" type="button" @click="todoOpen = true">
+            <span class="todorow__hd">
+              <span class="flat__label">代辦事項</span>
+              <span class="todorow__chev" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" /></svg>
+              </span>
+            </span>
+            <span class="todorow__sum">
+              <svg class="todorow__ic" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m3.6 7.4 2.4 2.4L11 4.8" />
+                <path d="M14.2 9.2h6.2" />
+                <path d="m3.6 16.6 2.4 2.4L11 14" />
+                <path d="M14.2 18.4h6.2" />
+              </svg>
+              <strong v-if="todoTotal" class="todorow__n num">{{ todoDone }}/{{ todoTotal }}</strong>
+              <span class="todorow__t" :class="{ 'is-done': todoTotal > 0 && todoLeft === 0 }">
+                {{ todoSummary }}
+              </span>
+            </span>
+            <span v-if="todoPreview" class="todorow__list tiny muted">{{ todoPreview }}</span>
+          </button>
+
           <!-- 詳細資訊 -->
           <section class="meta">
             <div class="meta__row">
@@ -734,6 +819,11 @@ function save() {
     @prev-record="lbGotoRecord(-1)"
     @next-record="lbGotoRecord(1)"
   />
+
+  <!-- 0.1.58：代辦事項子頁面（底部彈層，幾何跟記錄明細同一套：下拉關閉／✕／背景鎖）。
+       ⚠ 它是獨立的模板根節點：明細本體 v-if 收掉時它不會自動消失，
+       所以下面用 watch 在 props.open 轉假時把 todoOpen 一起收掉。 -->
+  <TodoSheet :open="todoOpen" :todos="todos" @close="todoOpen = false" @change="onTodosChange" />
 </template>
 
 <style scoped>
@@ -1096,6 +1186,96 @@ function save() {
   grid-column: 1 / -1;
   font-size: 13px;
   color: var(--accent);
+}
+
+/* ── 0.1.58：代辦事項摘要列（按下去開 TodoSheet 子頁面）──────────────
+   長得像一個欄位（淺底細框），但整列都是點擊目標——使用者原話：
+   「用戶再按下這個欄位後，再彈出一個子頁面」。 */
+.todorow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 13px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.todorow:hover {
+  border-color: var(--line-strong);
+  background: var(--surface);
+}
+.todorow:active {
+  filter: brightness(0.98);
+}
+.todorow__hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.todorow__chev {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+}
+.todorow__chev svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.todorow__sum {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.todorow__ic {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.todorow__n {
+  font-size: 13px;
+  font-weight: 750;
+  color: var(--text);
+}
+.todorow__t {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+/* 全部完成＝墨綠（跟 TodoSheet 的進度長條同一套顏色語彙） */
+.todorow__t.is-done {
+  color: var(--income);
+}
+/* 簡單顯示：最多兩行、超出刪節——使用者原話「文字佔的空間要小」 */
+.todorow__list {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  word-break: break-all;
 }
 
 .meta {

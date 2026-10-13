@@ -83,6 +83,24 @@ export interface OcrInfo {
   pickedCurrency?: string
 }
 
+/**
+ * 代辦事項（0.1.58）：記錄明細裡的簡易待辦清單（一筆記錄掛一串小事）。
+ *
+ * 使用者原話：「在備注輸入框的下方增加，代辨事項的欄位，顯示 x未完成 / x已完成 之類的，
+ * 也用文字的方式顯示代辦的事項，例: 1.xxx 2.yyy 3.zzz（但這個部份文字佔的空間要小，
+ * 只是做簡單的顯示，用戶可以到子子頁面中詳細）」。
+ *
+ * - 明細頁只顯示「摘要＋前幾項」，完整編輯在 `TodoSheet` 子頁面
+ * - 舊資料沒有這個欄位 → 顯示層一律當「沒有代辦」
+ */
+export interface TodoItem {
+  id: string
+  /** 事項文字；空白字串視為「還沒填」，關閉子頁面時會被清掉 */
+  text: string
+  /** 已完成（清單上會劃線） */
+  done: boolean
+}
+
 export interface TxRecord {
   id: string
   /**
@@ -127,6 +145,12 @@ export interface TxRecord {
   expr?: string
   source: RecordSource
   images: ImageRef[]
+  /**
+   * 代辦事項（0.1.58）：這筆記錄掛的待辦清單。
+   * ⚠ **勾選是即時存檔的**（不等明細頁按「儲存」）—— 這是勾選型操作，
+   *   要求使用者記得回來按儲存太容易漏。舊資料沒有這個欄位。
+   */
+  todos?: TodoItem[]
   ocr?: OcrInfo
 }
 

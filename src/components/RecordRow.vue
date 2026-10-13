@@ -149,6 +149,7 @@ watch(
   () => [
     props.record.tripId,
     props.record.images?.length,
+    props.record.todos?.length,
     props.record.source,
     props.showTime,
     props.timeRecent,
@@ -182,6 +183,23 @@ watch(
           title="旅行記錄"
           :style="tripTagStyle"
         >旅</span>
+        <!--
+          0.1.58：代辦事項標籤「記」（使用者原話：「另外有筆記的記錄，在記錄的頁面的
+          記錄中也要顯示 記的文字和ICON(小型)」）。
+          - 只在這筆真的有掛代辦時出現（`todos?.length`；舊資料沒有這個欄位）
+          - 墨綠軟底：跟 TodoSheet 的進度長條、明細頁代辦列的 icon 同一套顏色語彙
+          - ⚠ 已加進下面 watch 的依賴清單：標籤出現／消失會改變 .row__top 的寬度，
+            不重測的話「標籤過多就整排上移」（0.1.38）會拿舊資料判斷。
+        -->
+        <span v-if="record.todos?.length" class="ttodo" title="有代辦事項">
+          <svg class="ttodo__ic" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="m2.6 4.6 1.7 1.7L7.7 2.9" />
+            <path d="M9.6 4.7h3.8" />
+            <path d="m2.6 11 1.7 1.7 3.4-3.4" />
+            <path d="M9.6 11.1h3.8" />
+          </svg>
+          <span>記</span>
+        </span>
         <span
           v-if="showTime"
           class="ttag"
@@ -436,6 +454,36 @@ watch(
 .imtag__ic circle {
   fill: var(--accent);
   stroke: none;
+}
+/*
+ * 0.1.58：代辦事項標籤「記」——墨綠（--income）細框＋軟底，icon 是小小的工作清單。
+ * 尺寸比「旅」再收一階（使用者要「小型」）：高度 18px、字 10.5px。
+ */
+.ttodo {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-soft);
+  background: var(--accent-soft);
+  color: var(--income);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.ttodo__ic {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .imtag--plain {
   border-color: var(--line);

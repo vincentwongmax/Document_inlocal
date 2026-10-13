@@ -3,12 +3,12 @@
 Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\Desktop\AI`。
 
 ## 版本
-- 只加 Z（目前 0.1.57）；改 package.json ＋ CHANGELOG（插最前面 --- 後）
+- 只加 Z（目前 0.1.58）；改 package.json ＋ CHANGELOG（插最前面 --- 後）
 - ⚠ `.smoke/` 在 .gitignore（測試檔**不會**進 commit）→ 版本 commit 只含 src/、CHANGELOG、package.json、.workbuddy/memory
 
 ## 開發/驗證
 - preview :4173（改完先 build）；dev :5173（ls 分開）
-- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v132（56 支）
+- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v133（57 支）
 - ⚠⚠ 回歸跑著時**不要編輯 run-regress.sh**｜升版後必先 build｜冷啟 goto 30s＝**假紅**（單獨重跑）｜守門員 v119~v130；RecordSheet＝`.mask > .sheet.card`
 - ⚠⚠ **本地回歸 dist 不能帶 VITE_BASE**（preview 在根目錄伺服，帶了全 404 → App 空白假紅）；部署前才帶 base 重建
 - ⚠⚠ **測「無限滾動/餵食」不能用 `scrollTo(0, scrollHeight)` 一次跳到底**（會跳過死區、掩蓋卡死 bug）→ 一律 `scrollBy` 一小段一小段滑模擬手指
@@ -59,6 +59,14 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 ## 0.1.55（修 PWA 餵食卡死）
 - 死區 bug：IO rootMargin(400) ≠ pump 停止條件(innerHeight) → 哨兵在「視窗下方 0~400」時 IO 叫了 pump 卻不載，且 IO 只在狀態改變時回呼 → 永遠卡住
 - 修：共用 `FEED_SLACK=200`（IO rootMargin ＋ pump `top > innerHeight + FEED_SLACK`）；pump 加 `pumping` 鎖；加 window scroll 備援(rAF)
+
+## 0.1.58（代辦事項）
+- 資料：`TodoItem {id,text,done}`；`TxRecord.todos?`；**勾選即時存檔**（`records.update`，不等按儲存；清空存 `undefined` 不存 `[]`）；save patch 也帶 todos 雙保險
+- 明細摘要列 `.todorow`（備註下方）：`x/y`＋`x 項未完成`/`全部完成`（墨綠）＋前三項 `1.xxx 2.yyy 3.zzz`（line-clamp 2，超過補「…還有 N 項」）；沒有＝「新增代辦事項」；整列可點
+- 子頁面 `TodoSheet.vue`＝bsheet 幾何（下拉關閉/✕/背景鎖/pop）；進度長條＋編號/勾選圈/input/✕；Enter 新增；空白項 blur 自動移除；清除已完成/全部完成(取消)；完成＝劃線淡出；**每次開啟從 props 重拿**（無殘影）
+- ⚠⚠ `TodoSheet` 是 RecordSheet 模板**第三個根節點**（不在明細 `v-if` 內）→ 加 `watch(props.open)` 收 `todoOpen`，否則關明細後代辦面板留在畫面
+- 記錄列「記」標籤＝`.ttodo`（墨綠軟底、18px 高、清單 icon）；`todos?.length` 才出現；**已加進 0.1.38 stacked 重測的 watch 依賴**
+- 守門員 v133（37/37）＋v133-live；截圖 shot-1058-{records,sheet,todo}.png
 
 ## 0.1.57（記錄頁 K/M＋圖片標籤改「圖」＋放大檢視導覽＋點圖關閉）
 - 記錄頁 sum 三格＝`currency().symbol + fmtCompact()`（**帶幣別符號**）；`title` 留完整數字。**沒**做「量測到超出才壓」（要 ResizeObserver、會閃），因為會被截成 … 的數字本來就 ≥1000
