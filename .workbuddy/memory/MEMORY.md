@@ -3,11 +3,11 @@
 Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\Desktop\AI`。
 
 ## 版本
-- 只加 Z（目前 0.1.55）；改 package.json ＋ CHANGELOG（插最前面 --- 後）
+- 只加 Z（目前 0.1.56）；改 package.json ＋ CHANGELOG（插最前面 --- 後）
 
 ## 開發/驗證
 - preview :4173（改完先 build）；dev :5173（ls 分開）
-- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v130（54 支）
+- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v131（55 支）
 - ⚠⚠ 回歸跑著時**不要編輯 run-regress.sh**｜升版後必先 build｜冷啟 goto 30s＝**假紅**（單獨重跑）｜守門員 v119~v130；RecordSheet＝`.mask > .sheet.card`
 - ⚠⚠ **本地回歸 dist 不能帶 VITE_BASE**（preview 在根目錄伺服，帶了全 404 → App 空白假紅）；部署前才帶 base 重建
 - ⚠⚠ **測「無限滾動/餵食」不能用 `scrollTo(0, scrollHeight)` 一次跳到底**（會跳過死區、掩蓋卡死 bug）→ 一律 `scrollBy` 一小段一小段滑模擬手指
@@ -53,6 +53,9 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 ## 0.1.55（修 PWA 餵食卡死）
 - 死區 bug：IO rootMargin(400) ≠ pump 停止條件(innerHeight) → 哨兵在「視窗下方 0~400」時 IO 叫了 pump 卻不載，且 IO 只在狀態改變時回呼 → 永遠卡住
 - 修：共用 `FEED_SLACK=200`（IO rootMargin ＋ pump `top > innerHeight + FEED_SLACK`）；pump 加 `pumping` 鎖；加 window scroll 備援(rAF)
+
+## 0.1.56（回收要積極）
+- RecordList 視窗化保留範圍 `VIRTUAL_SLACK=200`（原 1000 太寬＝幾乎沒回收）；區塊高約 410px → 300 仍不回收、200 才收；上下同一 rootMargin → 對稱回收；回收後＝上次量到的真實高度（不跳）
 
 ## 全站約定（細節在 CONVENTIONS.md，勿回退）
 1~5. body `min-height:100%`｜日期一律 DateField/DateTimeField｜彈層開背景不能滑｜可編輯元素 16px｜點/雙擊空白不能動
