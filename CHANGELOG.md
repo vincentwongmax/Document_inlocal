@@ -72,6 +72,63 @@
 
 ---
 
+## [0.1.60] — 2026-10-14（PWA 離線可靠性加固：Google Fonts 進 Service Worker 快取＋主動請求持久化儲存＋manifest 預快取）
+
+### 使用者需求（原話）
+
+> 「請檢查，確保用戶在 PWA 模式(iphone)下，只要第一次連線後，之後永久可以離線使用，
+> 即使超過7天，14天等等以上沒網路，都不會出現訪問不到應用程序」
+
+---
+
+### 檢查結論（三個真問題＋一個平台事實）
+
+**平台事實（不用改程式，但要知道）**：iOS Safari 有「7 天無互動就清掉腳本儲存
+（localStorage／IndexedDB／Cache API／Service Worker）」的規則，**但 WebKit 明文
+豁免主畫面 PWA**（home screen web applications 的 first-party domain 不受
+ITP 7-day cap 管）。所以只要「加到主畫面＋第一次連線過」，14 天、30 天沒網路
+都開得起來——這條是蘋果保證的，不是我們做的。
+
+**① Google Fonts 完全沒進快取（真問題，已修）**
+- `index.html` 的 `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?...">`
+  是一條**渲染阻塞的外部樣式**，而它不在任何快取規則裡：離線冷啟動也要連一次 Google
+  才放行畫面（飛行模式雖然失敗得快，但訊號不穩時可以卡住數十秒，看起來就是「打不開」）。
+- 加了兩條 `runtimeCaching`（CacheFirst）。⚠⚠ 踩到一個 workbox 的坑：
+  `<link>` 樣式表是 **no-cors** 請求 → SW 拿到的是 **opaque response（status 0）**，
+  而這個 workbox 版本的 `cachePut` 在沒有 `cacheWillUpdate` 外掛時**只收 status === 200**
+  → 樣式表永遠進不了快取（字型檔是 cors 模式 status 200，所以只有字型進得去）。
+  解法：兩條路由都明確給 `cacheableResponse: { statuses: [0, 200] }`，
+  產生 `CacheableResponsePlugin` 放行 opaque 回應。這行不能刪。
+
+**② 儲存壓力驅逐（真問題，已加固）**
+- 主畫面 PWA 豁免 7 天規則，但裝置空間緊張時瀏覽器仍可能回收快取。
+  開機時主動呼叫 `navigator.storage.persist()`（`src/lib/pwa.ts`）：
+  支援的瀏覽器會把這個 origin 的儲存標記為「不可當 cache 回收」；
+  iOS Safari 不支援 → 靜默 no-op，不報錯。
+
+**③ manifest.webmanifest 沒被預快取（小問題，已修）**
+- `globPatterns` 原本沒有 `webmanifest` 副檔名 → manifest 只走網路。
+  離線安裝／離線啟動都會用到它，一併加入預快取。
+
+### 其餘檢查過、確認沒問題的
+
+- 版本檢查（`version.json`）只在設定頁按按鈕時發生，離線有 Toast 提示，不會擋開機。
+- 匯率 API 同樣只在設定頁手動觸發。
+- hash 路由 → 離線換頁不需要伺服器。
+- 記錄（localStorage）與收據圖片（IndexedDB）都在主畫面 PWA 的豁免範圍內。
+- OCR 語言包與 wasm 核心本來就預快取（離線可辨識）。
+
+### 測試與驗證
+
+- 新增 `.smoke/v135.mjs`（**14/14 通過**）＋ `.smoke/v135-live.mjs`（線上版）。
+  用 Chrome 模擬飛行模式驗證：第一次連線註冊 SW → 預快取 31 項（含 index.html）
+  → Google Fonts（1 樣式表＋10 字型檔）進 SW 快取 → 斷網重新載入 App 照常開機、
+  種子資料讀得到、頁面由 SW 提供、離線字型仍然讀得到（`document.fonts.check`）、
+  離線開明細／換頁照樣能用、`navigator.storage.persist()` 有被呼叫、零 JS 錯誤。
+- 回歸：`v70~v135`（59 支）全數 exit=0。
+
+---
+
 ## [0.1.59] — 2026-10-14（代辦事項四項修正：點欄位不彈鍵盤；明細每一項可點＋雙劃線；清除已完成要確認；「記」標籤移到時間標籤右邊並依完成度變色）
 
 ### 使用者需求（原話）

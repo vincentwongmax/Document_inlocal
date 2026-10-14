@@ -3,12 +3,12 @@
 Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\Desktop\AI`。
 
 ## 版本
-- 只加 Z（目前 0.1.59）；改 package.json ＋ CHANGELOG（插最前面 --- 後）
+- 只加 Z（目前 0.1.60）；改 package.json ＋ CHANGELOG（插最前面 --- 後）
 - ⚠ `.smoke/` 在 .gitignore（測試檔**不會**進 commit）→ 版本 commit 只含 src/、CHANGELOG、package.json、.workbuddy/memory
 
 ## 開發/驗證
 - preview :4173（改完先 build）；dev :5173（ls 分開）
-- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v134（58 支）
+- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v135（59 支）
 - ⚠⚠ 回歸跑著時**不要編輯 run-regress.sh**｜升版後必先 build｜冷啟 goto 30s＝**假紅**（單獨重跑）｜守門員 v119~v130；RecordSheet＝`.mask > .sheet.card`
 - ⚠⚠ **本地回歸 dist 不能帶 VITE_BASE**（preview 在根目錄伺服，帶了全 404 → App 空白假紅）；部署前才帶 base 重建
 - ⚠⚠ **測「無限滾動/餵食」不能用 `scrollTo(0, scrollHeight)` 一次跳到底**（會跳過死區、掩蓋卡死 bug）→ 一律 `scrollBy` 一小段一小段滑模擬手指
@@ -59,6 +59,14 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 ## 0.1.55（修 PWA 餵食卡死）
 - 死區 bug：IO rootMargin(400) ≠ pump 停止條件(innerHeight) → 哨兵在「視窗下方 0~400」時 IO 叫了 pump 卻不載，且 IO 只在狀態改變時回呼 → 永遠卡住
 - 修：共用 `FEED_SLACK=200`（IO rootMargin ＋ pump `top > innerHeight + FEED_SLACK`）；pump 加 `pumping` 鎖；加 window scroll 備援(rAF)
+
+## PWA 離線（0.1.60）
+- iOS 7 天驅逐：主畫面 PWA **明文豁免**（WebKit ITP）→「第一次連線＋放主畫面」就永久離線可用；Safari 分頁開啟的不豁免
+- **⚠⚠ workbox 坑**：`<link rel=stylesheet>` 是 no-cors → SW 拿到 opaque（status 0）；workbox `cachePut` 無 cacheWillUpdate 外掛時**只收 200** → 樣式表永遠不快取。兩條 font 路由都必須給 `cacheableResponse:{statuses:[0,200]}`（產生 CacheableResponsePlugin）
+- Google Fonts＝runtimeCaching CacheFirst（`gf-stylesheets`／`gf-webfonts`，maxAge 1 年）；globPatterns 加 `webmanifest`
+- `navigator.storage.persist()` 開機呼叫（pwa.ts；iOS 不支援＝no-op）防儲存壓力回收
+- 離線測試 v135：`page.emulateNetworkConditions({offline:true,download:-1,upload:-1,latency:0})`（puppeteer 25 **沒有** setOffline；鍵名是 download/upload 不是 Throughput）；**字型要第二次 reload 才進 SW 快取**（首次載入時 SW 還沒控制頁面）
+- 版检查（version.json）只在按鈕時觸發、離線有 Toast；匯率 API 同理；hash 路由離線換頁免伺服器
 
 ## 0.1.59（代辦四項修正）
 - **點欄位不彈鍵盤**：TodoSheet 開啟不 focus 輸入框（0.1.58 的 `lastInput.focus()` 拿掉）；只有按「新增事項」才 focus 新項

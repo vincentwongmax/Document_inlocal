@@ -87,7 +87,8 @@ export default defineConfig({
       },
       workbox: {
         // 語言包與 wasm 核心也一併預快取，確保離線可 OCR
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,json,gz,wasm}'],
+        // 0.1.60：加上 webmanifest——manifest 也該離線讀得到（安裝／離線啟動都會用到）
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,json,gz,wasm,webmanifest}'],
         // ⚠ 0.1.52：version.json 是「檢查更新」用的，**絕不能被預快取**
         //   （被快取就永遠拿到舊版本號）；它只走網路，其餘資源照舊可離線
         globIgnores: ['**/version.json'],
@@ -97,6 +98,49 @@ export default defineConfig({
         // 不比對開頭的 `/`：部署在 GitHub Pages 子路徑時 pathname 會是
         // `/＜repo＞/tessdata/...`，錨定 `^\/` 會失效而讓語言包被當成導覽請求
         navigateFallbackDenylist: [/\/tessdata\//, /\/tesseract-core\//],
+        /**
+         * 0.1.60：Google Fonts 也要進 Service Worker 快取。
+         *
+         * 使用者原話：「請檢查，確保用戶在 PWA 模式(iphone)下，只要第一次連線後，
+         * 之後永久可以離線使用，即使超過7天，14天等等以上沒網路，都不會出現訪問不到應用程序」。
+         *
+         * `index.html` 的 `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?...">`
+         * 是一條**渲染阻塞的外部樣式**，而它原本不在任何快取規則裡：
+         *   - 離線冷啟動時瀏覽器要連一次 Google 才放行畫面 —— 飛行模式／訊號不穩時
+         *     這個等待會被拉長（DNS 逾時最糟糕可以到數十秒），看起來就像「打不開」；
+         *   - 就算僥倖放行，字型也會整套退回系統字体，每次開機都不一樣。
+         * → 兩條 CacheFirst：第一次連線後，樣式表與字型檔全部留在 SW 快取，
+         *   之後一律本地讀、零網路等待（網址內容不變，快取一年很安全）。
+         */
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'gf-stylesheets',
+              expiration: { maxEntries: 8, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              /**
+               * ⚠⚠ 這行是關鍵，不能刪：
+               * `<link rel="stylesheet">` 是 **no-cors** 請求，SW 拿到的是
+               * **opaque response（status 0）**。workbox 的 `cachePut` 在沒有
+               * cacheWillUpdate 外掛時的預設規則是「只收 status === 200」——
+               * 不收 0 → 樣式表永遠進不了快取，離線冷啟動還是會去連 Google。
+               * 明確開放 0（與 200）才會把 opaque 樣式表快取下來。
+               */
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'gf-webfonts',
+              expiration: { maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              // 字型檔是 cors 模式（status 200）本來就收，這裡一併寫明，兩種模式都保險
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
       },
       devOptions: { enabled: false },
     }),
