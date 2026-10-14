@@ -100,6 +100,15 @@ ITP 7-day cap 管）。所以只要「加到主畫面＋第一次連線過」，
   解法：兩條路由都明確給 `cacheableResponse: { statuses: [0, 200] }`，
   產生 `CacheableResponsePlugin` 放行 opaque 回應。這行不能刪。
 
+- ⚠⚠ **補強（同版內）**：`runtimeCaching` 只在「頁面已被 SW 接管（controller 不是 null）」
+  之後發出的字型請求才會進快取。但第一次連線時頁面多半**還沒被接管**，那一批字型請求
+  直接走瀏覽器預設快取（HTTP disk cache），不會進 SW 快取——若使用者「只連線這一次」
+  就離線 14 天，字型只躺在 HTTP disk cache（不保證持久）裡，違反「第一次連線後永久離線」。
+  解法：在 `src/lib/pwa.ts` 加 `precacheGoogleFonts()`，`serviceWorker.ready` 之後主動
+  fetch 字型樣式表與 woff2，直接 `caches.put` 進 gf-stylesheets / gf-webfonts（與上面同名
+  快取），且只在第一線上連線做一次（已有內容就跳過）。這樣離線冷啟動由 SW 的 CacheFirst
+  直接命中字型，零網路等待且持久。
+
 **② 儲存壓力驅逐（真問題，已加固）**
 - 主畫面 PWA 豁免 7 天規則，但裝置空間緊張時瀏覽器仍可能回收快取。
   開機時主動呼叫 `navigator.storage.persist()`（`src/lib/pwa.ts`）：
@@ -122,9 +131,11 @@ ITP 7-day cap 管）。所以只要「加到主畫面＋第一次連線過」，
 
 - 新增 `.smoke/v135.mjs`（**14/14 通過**）＋ `.smoke/v135-live.mjs`（線上版）。
   用 Chrome 模擬飛行模式驗證：第一次連線註冊 SW → 預快取 31 項（含 index.html）
-  → Google Fonts（1 樣式表＋10 字型檔）進 SW 快取 → 斷網重新載入 App 照常開機、
+  → Google Fonts 進 SW 快取 → 斷網重新載入 App 照常開機、
   種子資料讀得到、頁面由 SW 提供、離線字型仍然讀得到（`document.fonts.check`）、
   離線開明細／換頁照樣能用、`navigator.storage.persist()` 有被呼叫、零 JS 錯誤。
+  ⚠ 線上版 v135-live 最初發現 ② 字型只進 HTTP disk cache（頁面首載未被 SW 接管），
+  加 `precacheGoogleFonts()` 主動塞 SW 快取後，v135-live 同樣 **14/14 通過**。
 - 回歸：`v70~v135`（59 支）全數 exit=0。
 
 ---
