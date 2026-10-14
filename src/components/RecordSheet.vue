@@ -108,17 +108,23 @@ const todoSummary = computed(() => {
   return todoLeft.value > 0 ? `${todoLeft.value} 項未完成` : '全部完成'
 })
 /**
- * 明細裡的「簡單顯示」：最多前三項，格式照使用者範例 `1.xxx 2.yyy 3.zzz`。
- * 使用者原話：「這個部份文字佔的空間要小，只是做簡單的顯示」→ 單列、兩行截斷，
- * 完整內容到子頁面看。
+ * 0.1.59：明細裡的「簡單顯示」改成**每一項各自一個可點的空位**。
+ * 使用者原話：「每一筆要留一個tap的空位，1.xxx 2.xxx 3.xxx，已完成的時候也要顯示雙劃線」。
+ * 最多列前三項（空間要小的原則不變），超出補「…還有 N 項」；完整內容到子頁面看。
  */
-const todoPreview = computed(() => {
-  const all = todos.value
-  if (!all.length) return ''
-  const shown = all.slice(0, 3).map((t, i) => `${i + 1}.${t.text || '…'}`)
-  const rest = all.length - shown.length
-  return rest > 0 ? `${shown.join(' ')} …還有 ${rest} 項` : shown.join(' ')
-})
+const todoShown = computed(() => todos.value.slice(0, 3))
+/** 0.1.59：開子頁面時要高亮哪一項（在明細裡點某個事項進來的）；null＝沒有特定目標 */
+const todoFocusIdx = ref<number | null>(null)
+
+/**
+ * 開代辦子頁面。
+ * ⚠ 0.1.59 使用者原話：「代辦事項欄位，用戶點擊時，不應該彈出鍵盤輸入框」
+ *   → TodoSheet 開啟時**不主動 focus 任何輸入框**（只有按「新增事項」才 focus 新的那一項）。
+ */
+function openTodo(idx: number | null) {
+  todoFocusIdx.value = idx
+  todoOpen.value = true
+}
 
 /** 代辦事項子頁面回來的變更：本地狀態 ＋ 即時寫檔 */
 function onTodosChange(next: TodoItem[]) {
@@ -468,7 +474,10 @@ watch(currencyCode, (c) => {
 watch(
   () => props.open,
   (open) => {
-    if (!open) todoOpen.value = false
+    if (!open) {
+      todoOpen.value = false
+      todoFocusIdx.value = null
+    }
   },
 )
 
@@ -679,29 +688,54 @@ function save() {
             0.1.58：代辦事項（使用者原話：「在備注輸入框的下方增加，代辨事項的欄位，
             顯示 x未完成 / x已完成 之類的，也用文字的方式顯示代辦的事項，例: 1.xxx 2.yyy 3.zzz
             （但這個部份文字佔的空間要小…）；用戶再按下這個欄位後，再彈出一個子頁面」）。
-            → 摘要列（幾項完成／未完成 ＋ 前三項文字）按下去開 TodoSheet 子頁面。
+            0.1.59 兩改（使用者原話）：
+            ① 「每一筆要留一個tap的空位，1.xxx 2.xxx 3.xxx，已完成的時候也要顯示雙劃線」
+               → 摘要列從「一整串文字」改成**每一項各自一個按鈕**（點哪項就開子頁面並高亮哪項）；
+                 已完成＝雙劃線（text-decoration-style: double）。
+            ② 「代辦事項欄位，用戶點擊時，不應該彈出鍵盤輸入框」
+               → 開啟子頁面不 focus 任何輸入框（見 openTodo 與 TodoSheet 的 focus-idx）。
           -->
-          <button class="todorow" type="button" @click="todoOpen = true">
-            <span class="todorow__hd">
+          <div class="todorow">
+            <!-- 標題列：整列可點（沒有代辦時右側就是「新增代辦事項」） -->
+            <button class="todorow__hd" type="button" @click="openTodo(null)">
               <span class="flat__label">代辦事項</span>
+              <span v-if="!todoTotal" class="todorow__add">新增代辦事項</span>
               <span class="todorow__chev" aria-hidden="true">
                 <svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" /></svg>
               </span>
-            </span>
-            <span class="todorow__sum">
-              <svg class="todorow__ic" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="m3.6 7.4 2.4 2.4L11 4.8" />
-                <path d="M14.2 9.2h6.2" />
-                <path d="m3.6 16.6 2.4 2.4L11 14" />
-                <path d="M14.2 18.4h6.2" />
-              </svg>
-              <strong v-if="todoTotal" class="todorow__n num">{{ todoDone }}/{{ todoTotal }}</strong>
-              <span class="todorow__t" :class="{ 'is-done': todoTotal > 0 && todoLeft === 0 }">
-                {{ todoSummary }}
-              </span>
-            </span>
-            <span v-if="todoPreview" class="todorow__list tiny muted">{{ todoPreview }}</span>
-          </button>
+            </button>
+
+            <template v-if="todoTotal">
+              <!-- 摘要：幾項完成 ＋ 未完成數 -->
+              <div class="todorow__sum">
+                <svg class="todorow__ic" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m3.6 7.4 2.4 2.4L11 4.8" />
+                  <path d="M14.2 9.2h6.2" />
+                  <path d="m3.6 16.6 2.4 2.4L11 14" />
+                  <path d="M14.2 18.4h6.2" />
+                </svg>
+                <strong class="todorow__n num">{{ todoDone }}/{{ todoTotal }}</strong>
+                <span class="todorow__t" :class="{ 'is-done': todoLeft === 0 }">{{ todoSummary }}</span>
+              </div>
+              <!-- 0.1.59：每一項一個 tap 空位 -->
+              <div class="todorow__items">
+                <button
+                  v-for="(t, i) in todoShown"
+                  :key="t.id"
+                  class="todorow__it"
+                  :class="{ 'is-done': t.done }"
+                  type="button"
+                  @click.stop="openTodo(i)"
+                >
+                  <span class="todorow__i num">{{ i + 1 }}.</span>
+                  <span class="todorow__tx">{{ t.text || '…' }}</span>
+                </button>
+                <p v-if="todoTotal > todoShown.length" class="todorow__more tiny muted">
+                  …還有 {{ todoTotal - todoShown.length }} 項
+                </p>
+              </div>
+            </template>
+          </div>
 
           <!-- 詳細資訊 -->
           <section class="meta">
@@ -821,9 +855,16 @@ function save() {
   />
 
   <!-- 0.1.58：代辦事項子頁面（底部彈層，幾何跟記錄明細同一套：下拉關閉／✕／背景鎖）。
+       0.1.59：`focus-idx`＝在明細裡點了某個事項 → 子頁面開著時高亮那一項（不 focus 輸入框）。
        ⚠ 它是獨立的模板根節點：明細本體 v-if 收掉時它不會自動消失，
-       所以下面用 watch 在 props.open 轉假時把 todoOpen 一起收掉。 -->
-  <TodoSheet :open="todoOpen" :todos="todos" @close="todoOpen = false" @change="onTodosChange" />
+       所以上面用 watch 在 props.open 轉假時把 todoOpen 一起收掉。 -->
+  <TodoSheet
+    :open="todoOpen"
+    :todos="todos"
+    :focus-idx="todoFocusIdx"
+    @close="todoOpen = false"
+    @change="onTodosChange"
+  />
 </template>
 
 <style scoped>
@@ -1188,40 +1229,45 @@ function save() {
   color: var(--accent);
 }
 
-/* ── 0.1.58：代辦事項摘要列（按下去開 TodoSheet 子頁面）──────────────
-   長得像一個欄位（淺底細框），但整列都是點擊目標——使用者原話：
-   「用戶再按下這個欄位後，再彈出一個子頁面」。 */
+/* ── 0.1.58：代辦事項欄位（按下去開 TodoSheet 子頁面）──────────────
+   0.1.59：外框只是容器（div），裡面「標題列」與「每一個事項」各自是獨立的按鈕
+   ——使用者原話：「每一筆要留一個tap的空位」。 */
 .todorow {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  width: 100%;
-  padding: 10px 13px 11px;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: var(--surface-2);
-  font: inherit;
-  text-align: left;
-  color: inherit;
-  cursor: pointer;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
+  transition: border-color 0.15s;
 }
 .todorow:hover {
   border-color: var(--line-strong);
-  background: var(--surface);
-}
-.todorow:active {
-  filter: brightness(0.98);
 }
 .todorow__hd {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
+  width: 100%;
+  padding: 10px 13px 8px;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.todorow__hd:active {
+  filter: brightness(0.98);
+}
+/* 沒有代辦時，右側那格就是「新增代辦事項」的提示（也是這顆按鈕的名字） */
+.todorow__add {
+  margin-left: auto;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-3);
 }
 .todorow__chev {
+  margin-left: auto;
   flex: none;
   width: 18px;
   height: 18px;
@@ -1243,6 +1289,7 @@ function save() {
   align-items: center;
   gap: 7px;
   min-width: 0;
+  padding: 0 13px;
 }
 .todorow__ic {
   width: 15px;
@@ -1268,14 +1315,55 @@ function save() {
 .todorow__t.is-done {
   color: var(--income);
 }
-/* 簡單顯示：最多兩行、超出刪節——使用者原話「文字佔的空間要小」 */
-.todorow__list {
-  margin: 0;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+/* 0.1.59：每一項各自一個可點的空位 */
+.todorow__items {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 6px 8px;
+}
+.todorow__it {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.todorow__it:hover,
+.todorow__it:active {
+  background: var(--surface-3);
+}
+.todorow__i {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3);
+}
+.todorow__tx {
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--text-2);
   overflow: hidden;
-  word-break: break-all;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 0.1.59：已完成＝雙劃線（使用者原話：「已完成的時候也要顯示雙劃線」） */
+.todorow__it.is-done .todorow__tx {
+  text-decoration-line: line-through;
+  text-decoration-style: double;
+  color: var(--text-3);
+}
+.todorow__more {
+  margin: 2px 0 0;
+  padding: 0 7px;
 }
 
 .meta {

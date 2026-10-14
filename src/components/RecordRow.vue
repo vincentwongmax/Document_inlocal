@@ -80,6 +80,17 @@ const shownRate = computed(() => settings.displayRateOf(props.record))
 const displayRate = computed(() => Number(shownRate.value.toFixed(2)))
 /** 舊資料可能沒有 images 欄位 */
 const imgCount = computed(() => props.record.images?.length ?? 0)
+/**
+ * 0.1.59：「記」標籤的色調。
+ * - `pending`＝還有未完成 → 紅（使用者原話：「未完成標籤紅色」）
+ * - `done`＝全部完成 → 綠（「已完成標籤綠色」）
+ * - `null`＝這筆沒有代辦（不出標籤）
+ */
+const todoTone = computed<'pending' | 'done' | null>(() => {
+  const list = props.record.todos
+  if (!list?.length) return null
+  return list.every((t) => t.done) ? 'done' : 'pending'
+})
 
 /**
  * 0.1.39：旅行標籤「旅」的顏色＝**這筆記錄所屬那趟旅行**的 color。
@@ -183,23 +194,6 @@ watch(
           title="旅行記錄"
           :style="tripTagStyle"
         >旅</span>
-        <!--
-          0.1.58：代辦事項標籤「記」（使用者原話：「另外有筆記的記錄，在記錄的頁面的
-          記錄中也要顯示 記的文字和ICON(小型)」）。
-          - 只在這筆真的有掛代辦時出現（`todos?.length`；舊資料沒有這個欄位）
-          - 墨綠軟底：跟 TodoSheet 的進度長條、明細頁代辦列的 icon 同一套顏色語彙
-          - ⚠ 已加進下面 watch 的依賴清單：標籤出現／消失會改變 .row__top 的寬度，
-            不重測的話「標籤過多就整排上移」（0.1.38）會拿舊資料判斷。
-        -->
-        <span v-if="record.todos?.length" class="ttodo" title="有代辦事項">
-          <svg class="ttodo__ic" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="m2.6 4.6 1.7 1.7L7.7 2.9" />
-            <path d="M9.6 4.7h3.8" />
-            <path d="m2.6 11 1.7 1.7 3.4-3.4" />
-            <path d="M9.6 11.1h3.8" />
-          </svg>
-          <span>記</span>
-        </span>
         <span
           v-if="showTime"
           class="ttag"
@@ -218,6 +212,32 @@ watch(
             <path d="M8 4.55v3.75l2.3 1.4" />
           </svg>
           <span>{{ timeText }}</span>
+        </span>
+        <!--
+          0.1.58：代辦事項標籤「記」（使用者原話：「另外有筆記的記錄，在記錄的頁面的
+          記錄中也要顯示 記的文字和ICON(小型)」）。
+          0.1.59 兩改（使用者原話）：
+          ① 「代辦事項的標籤，要在時間標籤的右手邊」→ 從「旅」旁邊搬到時間標籤後面。
+          ② 「未完成和已完成要不同的顏色，未完成標籤紅色，已完成標籤綠色，
+              字體大小和時間標籤的一樣就行」→ 11px／19px 高（跟 .ttag 相同尺寸）；
+              還有未完成＝紅（--expense），全部完成＝綠（--income）。
+          - 只在這筆真的有掛代辦時出現（`todos?.length`；舊資料沒有這個欄位）
+          - ⚠ 已加進下面 watch 的依賴清單：標籤出現／消失會改變 .row__top 的寬度，
+            不重測的話「標籤過多就整排上移」（0.1.38）會拿舊資料判斷。
+        -->
+        <span
+          v-if="record.todos?.length"
+          class="ttodo"
+          :class="todoTone === 'done' ? 'ttodo--done' : 'ttodo--pending'"
+          :title="todoTone === 'done' ? '代辦事項：全部完成' : '代辦事項：還有未完成'"
+        >
+          <svg class="ttodo__ic" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="m2.6 4.6 1.7 1.7L7.7 2.9" />
+            <path d="M9.6 4.7h3.8" />
+            <path d="m2.6 11 1.7 1.7 3.4-3.4" />
+            <path d="M9.6 11.1h3.8" />
+          </svg>
+          <span>記</span>
         </span>
         <span v-if="imgCount" class="imtag">
           <svg class="imtag__ic" viewBox="0 0 16 16" aria-hidden="true">
@@ -456,32 +476,39 @@ watch(
   stroke: none;
 }
 /*
- * 0.1.58：代辦事項標籤「記」——墨綠（--income）細框＋軟底，icon 是小小的工作清單。
- * 尺寸比「旅」再收一階（使用者要「小型」）：高度 18px、字 10.5px。
+ * 0.1.58：代辦事項標籤「記」——icon 是小小的工作清單。
+ * 0.1.59：尺寸改成跟時間標籤（.ttag）完全相同（11px／19px 高，使用者原話：
+ * 「字體大小和時間標籤的一樣就行」）；顏色依完成度：
+ *   還有未完成＝紅、全部完成＝綠（未完成紅色／已完成綠色）。
  */
 .ttodo {
   flex: none;
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  height: 18px;
-  padding: 0 6px;
+  height: 19px;
+  padding: 0 7px;
   border-radius: 999px;
-  border: 1px solid var(--accent-soft);
-  background: var(--accent-soft);
-  color: var(--income);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
+.ttodo--pending {
+  background: var(--expense-soft);
+  color: var(--expense);
+}
+.ttodo--done {
+  background: var(--accent-soft);
+  color: var(--income);
+}
 .ttodo__ic {
-  width: 11px;
-  height: 11px;
+  width: 12px;
+  height: 12px;
   flex: none;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.4;
+  stroke-width: 1.35;
   stroke-linecap: round;
   stroke-linejoin: round;
 }

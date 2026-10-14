@@ -3,12 +3,12 @@
 Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\Desktop\AI`。
 
 ## 版本
-- 只加 Z（目前 0.1.58）；改 package.json ＋ CHANGELOG（插最前面 --- 後）
+- 只加 Z（目前 0.1.59）；改 package.json ＋ CHANGELOG（插最前面 --- 後）
 - ⚠ `.smoke/` 在 .gitignore（測試檔**不會**進 commit）→ 版本 commit 只含 src/、CHANGELOG、package.json、.workbuddy/memory
 
 ## 開發/驗證
 - preview :4173（改完先 build）；dev :5173（ls 分開）
-- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v133（57 支）
+- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v134（58 支）
 - ⚠⚠ 回歸跑著時**不要編輯 run-regress.sh**｜升版後必先 build｜冷啟 goto 30s＝**假紅**（單獨重跑）｜守門員 v119~v130；RecordSheet＝`.mask > .sheet.card`
 - ⚠⚠ **本地回歸 dist 不能帶 VITE_BASE**（preview 在根目錄伺服，帶了全 404 → App 空白假紅）；部署前才帶 base 重建
 - ⚠⚠ **測「無限滾動/餵食」不能用 `scrollTo(0, scrollHeight)` 一次跳到底**（會跳過死區、掩蓋卡死 bug）→ 一律 `scrollBy` 一小段一小段滑模擬手指
@@ -59,6 +59,14 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 ## 0.1.55（修 PWA 餵食卡死）
 - 死區 bug：IO rootMargin(400) ≠ pump 停止條件(innerHeight) → 哨兵在「視窗下方 0~400」時 IO 叫了 pump 卻不載，且 IO 只在狀態改變時回呼 → 永遠卡住
 - 修：共用 `FEED_SLACK=200`（IO rootMargin ＋ pump `top > innerHeight + FEED_SLACK`）；pump 加 `pumping` 鎖；加 window scroll 備援(rAF)
+
+## 0.1.59（代辦四項修正）
+- **點欄位不彈鍵盤**：TodoSheet 開啟不 focus 輸入框（0.1.58 的 `lastInput.focus()` 拿掉）；只有按「新增事項」才 focus 新項
+- 明細欄位每一項各自一個按鈕 `.todorow__it`（`1.xxx` 格式）；點某項→開子頁面＋`.tdolist__row.is-focus` 高亮（**不 focus**，scrollIntoView center）；已完成＝**雙劃線**（`text-decoration:line-through double`）
+- 「清除已完成」走 `confirmDialog`（SweetAlert2，紅色清除鈕）——唯一會一次丟多項的操作
+- 記錄列「記」`.ttodo`：移到 `.ttag` **右邊**；`todoTone` computed：pending＝紅 `--expense-soft`底／done＝綠 `--accent-soft`底；**11px／19px 高＝跟 .ttag 相同**
+- RecordSheet 開子頁面改走 `openTodo(idx)`（帶 `todoFocusIdx`）；`.todorow` 外框改 div（裡面標題列與各項都是 button，按鈕不能巢狀）
+- 守門員 v134（24/24）＋v134-live；v133 跟著改讀取（`.todorow__it`）；截圖 shot-1059-{records,sheet,confirm}.png
 
 ## 0.1.58（代辦事項）
 - 資料：`TodoItem {id,text,done}`；`TxRecord.todos?`；**勾選即時存檔**（`records.update`，不等按儲存；清空存 `undefined` 不存 `[]`）；save patch 也帶 todos 雙保險

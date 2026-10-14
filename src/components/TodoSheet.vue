@@ -12,14 +12,27 @@
  *
  * ⚠ 變更一律**即時** emit `change`：RecordSheet 那邊會立刻寫進記錄
  *   （代辦是勾選型操作，不要求使用者再按一次「儲存」）。
+ * ⚠ 0.1.59：開啟時**不主動 focus 輸入框**（不彈鍵盤）——只有按「新增事項」才 focus
+ *   新的那一項；從明細點某個事項進來時改用高亮（見 `focusIdx`／`focusId`）。
  */
 import { computed, nextTick, ref, toRef, watch } from 'vue'
 import type { TodoItem } from '@/types'
 import { useScrollLock } from '@/composables/useScrollLock'
 import { usePullToClose } from '@/composables/usePullToClose'
+import { confirmDialog } from '@/lib/alerts'
 import { uid } from '@/lib/id'
 
-const props = defineProps<{ open: boolean; todos: TodoItem[] }>()
+const props = defineProps<{
+  open: boolean
+  todos: TodoItem[]
+  /**
+   * 0.1.59：開啟時要高亮哪一項（在明細裡點了某個事項進來的）。
+   * null／沒有＝沒有特定目標。
+   * ⚠ 只做**高亮**（捲到那項＋框線提示），不 focus 輸入框——
+   *   使用者原話：「代辦事項欄位，用戶點擊時，不應該彈出鍵盤輸入框」。
+   */
+  focusIdx?: number | null
+}>()
 const emit = defineEmits<{ close: []; change: [todos: TodoItem[]] }>()
 
 /** 可捲的內容區（鎖背景與下拉手勢都用得到） */
@@ -39,17 +52,27 @@ const {
 
 /** 最近一次用到的輸入框（新增時要 focus 它） */
 const lastInput = ref<HTMLInputElement | null>(null)
+/** 0.1.59：目前被高亮的項目 id（在明細裡點了某一項進來的） */
+const focusId = ref<string | null>(null)
 
 /** 本地清單（每次開啟都從 props 重拿，避免關掉再開看到殘影） */
 const list = ref<TodoItem[]>([])
 watch(
   () => props.open,
   async (open) => {
-    if (!open) return
+    if (!open) {
+      focusId.value = null
+      return
+    }
     list.value = (props.todos ?? []).map((t) => ({ ...t }))
-    await nextTick()
-    // 開著就直接把焦點放在最後一項／新增的那一項，少一次點擊
-    lastInput.value?.focus()
+    // ⚠ 0.1.59：開啟時**不 focus 任何輸入框**（不彈鍵盤）；只把「點進來的那一項」
+    //   捲到畫面中間並高亮，讓使用者知道剛按的是哪一個。
+    const at = props.focusIdx
+    focusId.value = at != null && at >= 0 && at < list.value.length ? list.value[at].id : null
+    if (focusId.value) {
+      await nextTick()
+      document.querySelector('.tdolist__row.is-focus')?.scrollIntoView({ block: 'center' })
+    }
   },
 )
 
@@ -99,8 +122,21 @@ function removeItem(it: TodoItem) {
   commit()
 }
 
-/** 清除全部已完成（只有真的有已完成才看得到這顆鈕） */
-function clearDone() {
+/**
+ * 清除全部已完成。
+ * ⚠ 0.1.59 使用者原話：「用戶按清除已完成時，要用戶再次確定」→ 先彈確認對話框；
+ *   這是唯一會**一次性丟掉多個項目**的操作，按錯就救不回來（沒有復原鈕）。
+ */
+async function clearDone() {
+  const n = list.value.filter((t) => t.done).length
+  if (!n) return
+  const r = await confirmDialog({
+    title: '清除已完成？',
+    message: `會移除 ${n} 個已完成的事項，這個動作無法復原。`,
+    confirmText: '清除',
+    danger: true,
+  })
+  if (r !== 'confirm') return
   list.value = list.value.filter((t) => !t.done)
   commit()
 }
@@ -156,7 +192,12 @@ function toggleAll() {
 
           <!-- 清單 -->
           <ul v-if="list.length" class="tdolist">
-            <li v-for="(t, i) in list" :key="t.id" class="tdolist__row" :class="{ 'is-done': t.done }">
+            <li
+              v-for="(t, i) in list"
+              :key="t.id"
+              class="tdolist__row"
+              :class="{ 'is-done': t.done, 'is-focus': t.id === focusId }"
+            >
               <span class="tdolist__i num">{{ i + 1 }}</span>
               <button
                 class="tdolist__cb"
@@ -321,6 +362,12 @@ function toggleAll() {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
+}
+/* 0.1.59：從明細裡點了某一項進來的 → 高亮那一項。
+   ⚠ 只高亮，不 focus 輸入框——使用者原話：「點擊時不應該彈出鍵盤輸入框」。 */
+.tdolist__row.is-focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 .tdolist__i {
   font-size: 11px;
