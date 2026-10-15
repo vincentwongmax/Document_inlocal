@@ -76,6 +76,16 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - RecordSheet 開子頁面改走 `openTodo(idx)`（帶 `todoFocusIdx`）；`.todorow` 外框改 div（裡面標題列與各項都是 button，按鈕不能巢狀）
 - 守門員 v134（24/24）＋v134-live；v133 跟著改讀取（`.todorow__it`）；截圖 shot-1059-{records,sheet,confirm}.png
 
+## 0.1.61（刪除確認／待辦篩選鈕／代辦→待辦）
+- **刪除先確認**：RecordSheet「刪除」鈕改走 `onDelete()` → `confirmDialog({danger:true, confirmText:'刪除'})`，只有 `'confirm'` 才 `emit('remove')`（移除＋復原吐司仍父層 `removeEditing`）
+- **待辦篩選鈕**（RecordsView 檢視列第 3 顆，「最近」右邊）：`todoFilter` off/has/done/pending 循環（TODO_CYCLE）；
+  has＝`todos.length>0`、done＝length>0 且全 done、pending＝有 `!t.done`；疊在 typeFilter 後；兩個 reset watch 都要加 todoFilter
+- 四檔 icon 兩兩不同（項目符號／勾選清單／打勾方框／空方框）；非 off 時 `.is-on` 墨綠底
+- **窄屏排版**：`.grp__row--view{flex-wrap:nowrap}`；「依新增時間」→「依實**時**」（⚠繁體「時」）；≤519px gap 6px＋padding 0 9px；
+  **≤374px 緊湊斷點**（gap 4px／padding 0 4px／font 12px／icon 14px）——不然 320px 四顆內容 312px > 列寬 254px 會溢出卡片
+- 「代辦事項」全站→「待辦事項」（RecordSheet/TodoSheet/RecordRow＋types.ts 註解）
+- 守門員 v136（28/28）＋v136-live（29/29）；v100 刪除流程加按 `.swal2-confirm`；v85/v94/v109 配合四顆＋依實時改斷言
+
 ## 0.1.58（代辦事項）
 - 資料：`TodoItem {id,text,done}`；`TxRecord.todos?`；**勾選即時存檔**（`records.update`，不等按儲存；清空存 `undefined` 不存 `[]`）；save patch 也帶 todos 雙保險
 - 明細摘要列 `.todorow`（備註下方）：`x/y`＋`x 項未完成`/`全部完成`（墨綠）＋前三項 `1.xxx 2.yyy 3.zzz`（line-clamp 2，超過補「…還有 N 項」）；沒有＝「新增代辦事項」；整列可點
