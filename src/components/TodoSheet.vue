@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 代辦事項子頁面（0.1.58）。
+ * 待辦事項子頁面（0.1.58）。
  *
  * 使用者原話：「用戶再按下這個欄位後，再彈出一個子頁面，這個子頁面的設計方式和記錄明細的
  * 頁面一樣，請跟據我之前跟你說做子頁面的所有動作和功能（下拉關閉、右上角關閉 icon、美觀等等）。
@@ -29,7 +29,7 @@ const props = defineProps<{
    * 0.1.59：開啟時要高亮哪一項（在明細裡點了某個事項進來的）。
    * null／沒有＝沒有特定目標。
    * ⚠ 只做**高亮**（捲到那項＋框線提示），不 focus 輸入框——
-   *   使用者原話：「代辦事項欄位，用戶點擊時，不應該彈出鍵盤輸入框」。
+   *   使用者原話：「待辦事項欄位，用戶點擊時，不應該彈出鍵盤輸入框」。
    */
   focusIdx?: number | null
 }>()
@@ -159,7 +159,7 @@ function toggleAll() {
         :style="pullStyle"
         role="dialog"
         aria-modal="true"
-        aria-label="代辦事項"
+        aria-label="待辦事項"
         @touchstart="onSheetTouchStart"
         @touchmove="onSheetTouchMove"
         @touchend="onSheetTouchEnd"
@@ -170,7 +170,7 @@ function toggleAll() {
 
         <div ref="boxEl" class="box bsheet__body">
           <div class="hd">
-            <span class="hd__t">代辦事項</span>
+            <span class="hd__t">待辦事項</span>
             <button class="hd__x" type="button" aria-label="關閉" @click="emit('close')">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M6 6l12 12M18 6L6 18" />
@@ -234,7 +234,7 @@ function toggleAll() {
               </button>
             </li>
           </ul>
-          <p v-else class="tiny muted tdolist__empty">還沒有代辦事項，按下面的按鈕新增。</p>
+          <p v-else class="tiny muted tdolist__empty">還沒有待辦事項，按下面的按鈕新增。</p>
 
           <!-- 動作列 -->
           <div class="acts">

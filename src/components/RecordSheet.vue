@@ -5,7 +5,7 @@ import { usePullToClose } from '@/composables/usePullToClose'
 import type { ImageRef, TodoItem, TxRecord, TxType } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
-import { notify } from '@/lib/alerts'
+import { confirmDialog, notify } from '@/lib/alerts'
 import { getImage, putImage, deleteImage } from '@/lib/imageDb'
 import { compressImage, makeThumb } from '@/lib/imaging'
 import { md5OfFile } from '@/lib/md5'
@@ -44,6 +44,23 @@ const emit = defineEmits<{
   /** 0.1.57：在放大檢視裡按了「上一筆／下一筆記錄」→ 請父層把明細換成那一筆 */
   'goto-record': [id: string]
 }>()
+
+/**
+ * 0.1.61：刪除前先跳確認對話框（使用者原話：「用戶按刪除的時候，要彈出alert 頁面確定」）。
+ * 按「刪除」不等於立刻刪——先用 confirmDialog 擋一道，只有按確認才 emit('remove')；
+ * 取消則什麼都不做、明細留著。真正移除與「復原」吐司由父層 `removeEditing` 負責。
+ */
+async function onDelete() {
+  if (!props.record) return
+  const r = await confirmDialog({
+    title: '刪除這筆記錄？',
+    message: '刪除後可以使用「復原」鈕救回，確認要刪除嗎？',
+    confirmText: '刪除',
+    danger: true,
+  })
+  if (r !== 'confirm') return
+  emit('remove', props.record.id)
+}
 
 const settings = useSettingsStore()
 const records = useRecordsStore()
@@ -92,19 +109,19 @@ const expr = ref('')
 const loadedAmount = ref(0)
 
 /**
- * 0.1.58：代辦事項。
+ * 0.1.58：待辦事項。
  * 明細裡只顯示摘要（`todoSummary`／`todoPreview`），完整編輯在 `TodoSheet` 子頁面；
  * ⚠ 變更**即時**寫進記錄（見 `onTodosChange`）——勾選是勾選型操作，
  *   要求使用者記得回來按一次「儲存」太容易漏（0.1.58 使用者原話的場景）。
  */
 const todos = ref<TodoItem[]>([])
-/** 代辦事項子頁面開著嗎 */
+/** 待辦事項子頁面開著嗎 */
 const todoOpen = ref(false)
 const todoTotal = computed(() => todos.value.length)
 const todoDone = computed(() => todos.value.filter((t) => t.done).length)
 const todoLeft = computed(() => todoTotal.value - todoDone.value)
 const todoSummary = computed(() => {
-  if (!todoTotal.value) return '新增代辦事項'
+  if (!todoTotal.value) return '新增待辦事項'
   return todoLeft.value > 0 ? `${todoLeft.value} 項未完成` : '全部完成'
 })
 /**
@@ -118,7 +135,7 @@ const todoFocusIdx = ref<number | null>(null)
 
 /**
  * 開代辦子頁面。
- * ⚠ 0.1.59 使用者原話：「代辦事項欄位，用戶點擊時，不應該彈出鍵盤輸入框」
+ * ⚠ 0.1.59 使用者原話：「待辦事項欄位，用戶點擊時，不應該彈出鍵盤輸入框」
  *   → TodoSheet 開啟時**不主動 focus 任何輸入框**（只有按「新增事項」才 focus 新的那一項）。
  */
 function openTodo(idx: number | null) {
@@ -126,7 +143,7 @@ function openTodo(idx: number | null) {
   todoOpen.value = true
 }
 
-/** 代辦事項子頁面回來的變更：本地狀態 ＋ 即時寫檔 */
+/** 待辦事項子頁面回來的變更：本地狀態 ＋ 即時寫檔 */
 function onTodosChange(next: TodoItem[]) {
   todos.value = next
   const r = props.record
@@ -442,7 +459,7 @@ watch(
     tripId.value = r.tripId ?? ''
     expr.value = r.expr ?? ''
     loadedAmount.value = r.amount
-    // 0.1.58：代辦事項（舊資料沒有這個欄位 → 當沒有）
+    // 0.1.58：待辦事項（舊資料沒有這個欄位 → 當沒有）
     todos.value = [...(r.todos ?? [])]
     images.value = [...(r.images ?? [])]
     originalImages = [...(r.images ?? [])]
@@ -561,7 +578,7 @@ function save() {
     occurredAt: fromLocalInput(occurredAt.value),
     note: note.value.trim(),
     images: images.value,
-    // 0.1.58：代辦事項。正常情況 `onTodosChange` 已經即時寫過了，
+    // 0.1.58：待辦事項。正常情況 `onTodosChange` 已經即時寫過了，
     //   這裡再帶一次是為了「開著明細 → 改代辦 → 按儲存」這條路也不會漏
     //   （例：子頁面改完的當下 props.record 還沒被 watch 重載的極端情況）。
     ...(todoTotal.value ? { todos: todos.value } : {}),
@@ -685,21 +702,21 @@ function save() {
           </label>
 
           <!--
-            0.1.58：代辦事項（使用者原話：「在備注輸入框的下方增加，代辨事項的欄位，
+            0.1.58：待辦事項（使用者原話：「在備注輸入框的下方增加，代辨事項的欄位，
             顯示 x未完成 / x已完成 之類的，也用文字的方式顯示代辦的事項，例: 1.xxx 2.yyy 3.zzz
             （但這個部份文字佔的空間要小…）；用戶再按下這個欄位後，再彈出一個子頁面」）。
             0.1.59 兩改（使用者原話）：
             ① 「每一筆要留一個tap的空位，1.xxx 2.xxx 3.xxx，已完成的時候也要顯示雙劃線」
                → 摘要列從「一整串文字」改成**每一項各自一個按鈕**（點哪項就開子頁面並高亮哪項）；
                  已完成＝雙劃線（text-decoration-style: double）。
-            ② 「代辦事項欄位，用戶點擊時，不應該彈出鍵盤輸入框」
+            ② 「待辦事項欄位，用戶點擊時，不應該彈出鍵盤輸入框」
                → 開啟子頁面不 focus 任何輸入框（見 openTodo 與 TodoSheet 的 focus-idx）。
           -->
           <div class="todorow">
-            <!-- 標題列：整列可點（沒有代辦時右側就是「新增代辦事項」） -->
+            <!-- 標題列：整列可點（沒有代辦時右側就是「新增待辦事項」） -->
             <button class="todorow__hd" type="button" @click="openTodo(null)">
-              <span class="flat__label">代辦事項</span>
-              <span v-if="!todoTotal" class="todorow__add">新增代辦事項</span>
+              <span class="flat__label">待辦事項</span>
+              <span v-if="!todoTotal" class="todorow__add">新增待辦事項</span>
               <span class="todorow__chev" aria-hidden="true">
                 <svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" /></svg>
               </span>
@@ -834,7 +851,7 @@ function save() {
         </div>
 
         <footer class="sheet__foot">
-          <button class="btn btn--danger" @click="emit('remove', record.id)">刪除</button>
+          <button class="btn btn--danger" @click="onDelete">刪除</button>
           <button class="btn btn--primary" :disabled="!(numeric > 0)" @click="save">儲存</button>
         </footer>
       </div>
@@ -854,7 +871,7 @@ function save() {
     @next-record="lbGotoRecord(1)"
   />
 
-  <!-- 0.1.58：代辦事項子頁面（底部彈層，幾何跟記錄明細同一套：下拉關閉／✕／背景鎖）。
+  <!-- 0.1.58：待辦事項子頁面（底部彈層，幾何跟記錄明細同一套：下拉關閉／✕／背景鎖）。
        0.1.59：`focus-idx`＝在明細裡點了某個事項 → 子頁面開著時高亮那一項（不 focus 輸入框）。
        ⚠ 它是獨立的模板根節點：明細本體 v-if 收掉時它不會自動消失，
        所以上面用 watch 在 props.open 轉假時把 todoOpen 一起收掉。 -->
@@ -1229,7 +1246,7 @@ function save() {
   color: var(--accent);
 }
 
-/* ── 0.1.58：代辦事項欄位（按下去開 TodoSheet 子頁面）──────────────
+/* ── 0.1.58：待辦事項欄位（按下去開 TodoSheet 子頁面）──────────────
    0.1.59：外框只是容器（div），裡面「標題列」與「每一個事項」各自是獨立的按鈕
    ——使用者原話：「每一筆要留一個tap的空位」。 */
 .todorow {
@@ -1259,7 +1276,7 @@ function save() {
 .todorow__hd:active {
   filter: brightness(0.98);
 }
-/* 沒有代辦時，右側那格就是「新增代辦事項」的提示（也是這顆按鈕的名字） */
+/* 沒有代辦時，右側那格就是「新增待辦事項」的提示（也是這顆按鈕的名字） */
 .todorow__add {
   margin-left: auto;
   font-size: 12.5px;

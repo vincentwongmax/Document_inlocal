@@ -51,6 +51,40 @@ const typeFilter = ref<'all' | 'expense' | 'income'>('all')
  */
 const recent = ref(false)
 
+/**
+ * 0.1.61：待辦篩選（檢視列的新按鈕，每按一下換一檔，循環）。
+ * 使用者原話：「檢視裡的依新增時間的按鈕的左手邊新增一個按鈕，
+ * 不限制 → 待辦(全部 icon) → 待辦(完成 icon) → 待辦(未完成 icon)，
+ * 用戶按了這個按鈕後，搜索的結果會再根據這些按鈕再篩選」。
+ *
+ * 四檔（預設 `off`＝不限制，不做任何事）：
+ *  - `off`     不限制（所有記錄）
+ *  - `has`     有待辦（掛了至少一個待辦事項，不管完成與否）
+ *  - `done`    待辦全部完成（有待辦，而且每一個都打勾）
+ *  - `pending` 有待辦未完成（至少一個還沒打勾）
+ */
+const todoFilter = ref<'off' | 'has' | 'done' | 'pending'>('off')
+const TODO_CYCLE: Array<'off' | 'has' | 'done' | 'pending'> = ['off', 'has', 'done', 'pending']
+function cycleTodo() {
+  const i = TODO_CYCLE.indexOf(todoFilter.value)
+  todoFilter.value = TODO_CYCLE[(i + 1) % TODO_CYCLE.length]
+}
+/** 按鈕上的字：只有「不限制」是字面，其餘三檔都叫「待辦」，靠 icon 區分 */
+const todoBtnLabel = computed(() => (todoFilter.value === 'off' ? '不限制' : '待辦'))
+/** 說明目前這一檔、按下去會切到哪一檔 */
+const todoTitle = computed(() => {
+  switch (todoFilter.value) {
+    case 'off':
+      return '待辦篩選：不限制（按一下改成只看有待辦的記錄）'
+    case 'has':
+      return '待辦篩選：有待辦事項的記錄（再按改成只看全部完成）'
+    case 'done':
+      return '待辦篩選：待辦全部完成的記錄（再按改成只看未完成）'
+    default:
+      return '待辦篩選：還有未完成的記錄（再按回不限制）'
+  }
+})
+
 /* ── 旅行過濾（0.1.38）：從「過去的旅行」詳情頁點「旅行期間記錄 N 筆」跳過來 ──
  * URL 長這樣：`#/records?trip=<id>`。
  * ⚠ 用 **tripId 精確比對**（`r.tripId === tripFilter`），不是文字搜索——
@@ -183,6 +217,13 @@ const rows = computed(() =>
         if (k < range.value.start || k > range.value.end) return false
       }
       if (typeFilter.value !== 'all' && r.type !== typeFilter.value) return false
+      // 0.1.61：待辦篩選（在日期／收支／關鍵字之上再疊一層）
+      if (todoFilter.value !== 'off') {
+        const ts = r.todos ?? []
+        if (todoFilter.value === 'has' && ts.length === 0) return false
+        if (todoFilter.value === 'done' && !(ts.length > 0 && ts.every((t) => t.done))) return false
+        if (todoFilter.value === 'pending' && !ts.some((t) => !t.done)) return false
+      }
       if (!terms.value.length) return true
       // 0.1.51：每一欄各自轉小寫的「可搜尋字串」，多詞之間是 AND（全部命中才留）
       const hay = [r.note ?? '', catNameOf(r.categoryId), tripNameOf(r)].map((x) => x.toLowerCase())
@@ -200,6 +241,9 @@ const emptyText = computed(() => {
       : `找不到符合「${q.value.trim()}」的記錄`
   }
   if (viewFilter.value) return '這趟旅行沒有記錄'
+  if (todoFilter.value === 'pending') return '沒有未完成的待辦記錄'
+  if (todoFilter.value === 'done') return '沒有待辦全完成的記錄'
+  if (todoFilter.value === 'has') return '沒有帶待辦的記錄'
   return recent.value ? '這段時間沒有新增的記錄' : '這個範圍沒有記錄'
 })
 
@@ -315,7 +359,7 @@ function visibleCat(row: CatGroup): TxRecord[] {
 
 // 換範圍／篩選／關鍵字／時間基準／旅行過濾時把展開狀態清掉，免得殘留不相關的分類
 // 0.1.53：同時回到第 1 頁（不然可能停在一筆都沒有的頁碼上）
-watch([range, typeFilter, kw, recent, viewFilter], () => {
+watch([range, typeFilter, kw, recent, viewFilter, todoFilter], () => {
   byCatOpen.value.clear()
   page.value = 1
 })
@@ -512,7 +556,7 @@ function onFeedScroll() {
 }
 
 // 換篩選／搜尋／範圍後從頭開始（不然會停在上一次已經載了很多筆的狀態）
-watch([range, typeFilter, kw, recent, viewFilter], () => {
+watch([range, typeFilter, kw, recent, viewFilter, todoFilter], () => {
   feedCount.value = pageSize.value || FEED_SIZES[0]
   void pump()
 })
@@ -719,7 +763,7 @@ function removeEditing(id: string) {
         <div class="grp">
           <span class="grp__label">檢視</span>
           <!-- .grp 是直向排列，所以按鈕要自己包一列才排得成橫的 -->
-          <div class="grp__row">
+          <div class="grp__row grp__row--view">
             <!-- 依分類檢視的切換鈕 -->
             <button
               type="button"
@@ -752,6 +796,41 @@ function removeEditing(id: string) {
               最近
             </button>
             <!--
+              0.1.61：待辦篩選按鈕（在「依新增時間」左手邊）。每按一下循環換檔：
+              不限制 → 待辦(全部) → 待辦(完成) → 待辦(未完成) → 不限制…
+              它只疊一層「有沒有待辦／完成度」的過濾，不改動日期／收支／關鍵字。
+            -->
+            <button
+              type="button"
+              class="bycat"
+              :class="{ 'is-on': todoFilter !== 'off' }"
+              :title="todoTitle"
+              @click="cycleTodo"
+            >
+              <!-- 不限制：項目符號列表（顯示全部） -->
+              <svg v-if="todoFilter === 'off'" class="bycat__ic" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 6.5h11M9 12h11M9 17.5h11" />
+                <path d="M4.5 6.5h.01M4.5 12h.01M4.5 17.5h.01" />
+              </svg>
+              <!-- 有待辦（全部）：勾選清單 -->
+              <svg v-else-if="todoFilter === 'has'" class="bycat__ic" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 6.4l1.4 1.4L8 5.2" />
+                <path d="M4 12l1.4 1.4L8 10.8" />
+                <path d="M4 17.6l1.4 1.4L8 16.4" />
+                <path d="M11 6.5h9M11 12h9M11 17.5h9" />
+              </svg>
+              <!-- 待辦全部完成：打勾方框 -->
+              <svg v-else-if="todoFilter === 'done'" class="bycat__ic" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="4.5" y="4.5" width="15" height="15" rx="3.5" />
+                <path d="M8.4 12.2l2.5 2.5 4.7-4.9" />
+              </svg>
+              <!-- 有待辦未完成：空方框 -->
+              <svg v-else class="bycat__ic" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="4.5" y="4.5" width="15" height="15" rx="3.5" />
+              </svg>
+              {{ todoBtnLabel }}
+            </button>
+            <!--
               0.1.29：「依新增時間」從區間列的小標籤（.rangetag）搬來這裡，
               而且改成**按鈕**（使用者：「把依新增時間按鈕放到分類按鈕和最近按鈕的最右手邊」）。
               它跟「最近」控制的是同一個東西（用新增時間還是交易時間查詢／分組），
@@ -773,7 +852,8 @@ function removeEditing(id: string) {
                 <path d="M12 8.7v4.9" />
                 <path d="M9.55 11.15h4.9" />
               </svg>
-              依新增時間
+              <!-- 0.1.61：窄屏（PWA）把「依新增時間」縮短成「依實時」，四顆按鈕才擠得進同一列 -->
+              {{ narrow ? '依實時' : '依新增時間' }}
             </button>
           </div>
         </div>
@@ -1152,6 +1232,44 @@ function removeEditing(id: string) {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+/*
+ * 0.1.61：檢視列（分類／最近／待辦／依新增時間）**固定同一列、不換行**。
+ * 加了「待辦」後四顆在 375px 手機上剛好貼齊；「依新增時間」窄屏已改顯示「依實時」，
+ * 所以套 nowrap 也不會溢出。⚠ 只約束這一列，別影響「篩選」那一列（它有自己的 --split）。
+ */
+.grp__row--view {
+  flex-wrap: nowrap;
+}
+@media (max-width: 519px) {
+  /* PWA：再收一點間距／內距，四顆按鈕在 375px 手機必定同一列 */
+  .grp__row--view {
+    gap: 6px;
+  }
+  .grp__row--view .bycat {
+    padding: 0 9px;
+  }
+}
+/*
+ * 0.1.61（續）：≤374px（320／360 這類小機身）四顆還是塞不進同一列——
+ *   實測內容寬約 312px（67＋67＋80＋80＋三個 6px 間距），而 320px 時那一列只有 254px，
+ *   套 nowrap 會整排溢出卡片。所以再壓一級：內距 4px、按鈕內距 4px、字 12px、icon 14px。
+ *   壓完內容約 242px，320px 也放得下（同一列、不溢出、不掉行）。
+ *   ⚠ 只壓「檢視」這一列、只在這個斷點；375px 以上維持原尺寸（375px 原本就放得下）。
+ */
+@media (max-width: 374px) {
+  .grp__row--view {
+    gap: 4px;
+  }
+  .grp__row--view .bycat {
+    padding: 0 4px;
+    gap: 4px;
+    font-size: 12px;
+  }
+  .grp__row--view .bycat__ic {
+    width: 14px;
+    height: 14px;
+  }
 }
 /* 篩選那一列：收支段控靠左，「依單位／自訂範圍」推到最右邊 */
 .grp__row--split .rangebar__mode {
