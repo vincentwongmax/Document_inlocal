@@ -14,6 +14,7 @@ import ClearableInput from '@/components/ClearableInput.vue'
 import CategorySearchPicker from '@/components/CategorySearchPicker.vue'
 import CategoryIcon from '@/components/CategoryIcon.vue'
 import HighlightText from '@/components/HighlightText.vue'
+import MoreFilterMenu from '@/components/MoreFilterMenu.vue'
 import { currency, fmtCompact, fmtMoney } from '@/lib/currency'
 import { iconForCategory } from '@/lib/icons'
 import { withAlpha } from '@/lib/color'
@@ -84,6 +85,55 @@ const todoTitle = computed(() => {
       return '待辦篩選：還有未完成的記錄（再按回不限制）'
   }
 })
+
+/**
+ * 0.1.62：「更多」下拉篩選（檢視列最右邊那一顆，取代原本的「依新增時間／依實時」）。
+ *
+ * 使用者原話：「依實時的按鈕改成一個下拉選單（不要影響依實時的功能，這部份的功能由用戶
+ * 可按『最近』的按鈕取代），名字改成更多，下拉選單: (圖片，旅行，待辦事項)，
+ * 用戶可以單選或多選，只顯示在目前條件下有這些標籤的記錄，例如用戶選了圖片和旅行，
+ * 即記錄要同時有圖片和旅行的標籤顯示…用戶選擇後，按鈕的名字改成用戶已選的，
+ * 但只要第一個字，如果是多選，圖+旅 之類的」。
+ *
+ * ⚠⚠ 原本那一顆跟「最近」**控制的是同一個東西**（`recent`：用新增時間還是交易時間），
+ *   所以把它換掉**不會**損失功能——切時間基準就按「最近」那一顆（它還在原地）。
+ * - `v` 是內部鍵，`short` 是按鈕上顯示的那**一個字**（使用者原話：「只要第一個字」）。
+ * - 過濾是 **AND**：勾了「圖片＋旅行」就只留同時有圖片與旅行標籤的記錄。
+ * - 標籤的判定跟記錄列上的標籤（RecordRow）同一套：
+ *   圖（`images.length`）／旅（`tripId`）／記（`todos`）。
+ */
+const MORE_TAGS = [
+  { v: 'img', label: '圖片', short: '圖' },
+  { v: 'trip', label: '旅行', short: '旅' },
+  { v: 'todo', label: '待辦事項', short: '待' },
+] as const
+/** 下拉的選項（給 MoreFilterMenu；`short` 只用在按鈕上，不進選項） */
+const moreOptions: { v: string; label: string }[] = MORE_TAGS.map((t) => ({
+  v: t.v,
+  label: t.label,
+}))
+/** 已勾選的標籤（順序照 MORE_TAGS） */
+const moreTags = ref<string[]>([])
+const moreActive = computed(() => moreTags.value.length > 0)
+/** 按鈕上的字：沒勾＝「更多」；勾了＝首字以「+」連接（圖+旅／圖+旅+待） */
+const moreLabel = computed(() => {
+  const picked = MORE_TAGS.filter((t) => moreTags.value.includes(t.v))
+  return picked.length ? picked.map((t) => t.short).join('+') : '更多'
+})
+const moreTitle = computed(() =>
+  moreActive.value
+    ? `只顯示同時有這些標籤的記錄：${MORE_TAGS.filter((t) => moreTags.value.includes(t.v))
+        .map((t) => t.label)
+        .join('、')}（再按可取消）`
+    : '更多篩選：圖片／旅行／待辦事項（可複選）',
+)
+/** 有這個標籤嗎（供 `rows` 過濾用） */
+function hasTag(r: TxRecord, v: string): boolean {
+  if (v === 'img') return (r.images?.length ?? 0) > 0
+  if (v === 'trip') return !!r.tripId
+  if (v === 'todo') return (r.todos?.length ?? 0) > 0
+  return true
+}
 
 /* ── 旅行過濾（0.1.38）：從「過去的旅行」詳情頁點「旅行期間記錄 N 筆」跳過來 ──
  * URL 長這樣：`#/records?trip=<id>`。
@@ -224,6 +274,8 @@ const rows = computed(() =>
         if (todoFilter.value === 'done' && !(ts.length > 0 && ts.every((t) => t.done))) return false
         if (todoFilter.value === 'pending' && !ts.some((t) => !t.done)) return false
       }
+      // 0.1.62：「更多」標籤篩選（AND——勾幾個就要同時有幾個標籤）
+      if (moreTags.value.length && !moreTags.value.every((v) => hasTag(r, v))) return false
       if (!terms.value.length) return true
       // 0.1.51：每一欄各自轉小寫的「可搜尋字串」，多詞之間是 AND（全部命中才留）
       const hay = [r.note ?? '', catNameOf(r.categoryId), tripNameOf(r)].map((x) => x.toLowerCase())
@@ -241,6 +293,7 @@ const emptyText = computed(() => {
       : `找不到符合「${q.value.trim()}」的記錄`
   }
   if (viewFilter.value) return '這趟旅行沒有記錄'
+  if (moreTags.value.length) return '沒有同時有這些標籤的記錄'
   if (todoFilter.value === 'pending') return '沒有未完成的待辦記錄'
   if (todoFilter.value === 'done') return '沒有待辦全完成的記錄'
   if (todoFilter.value === 'has') return '沒有帶待辦的記錄'
@@ -359,7 +412,7 @@ function visibleCat(row: CatGroup): TxRecord[] {
 
 // 換範圍／篩選／關鍵字／時間基準／旅行過濾時把展開狀態清掉，免得殘留不相關的分類
 // 0.1.53：同時回到第 1 頁（不然可能停在一筆都沒有的頁碼上）
-watch([range, typeFilter, kw, recent, viewFilter, todoFilter], () => {
+watch([range, typeFilter, kw, recent, viewFilter, todoFilter, moreTags], () => {
   byCatOpen.value.clear()
   page.value = 1
 })
@@ -556,7 +609,7 @@ function onFeedScroll() {
 }
 
 // 換篩選／搜尋／範圍後從頭開始（不然會停在上一次已經載了很多筆的狀態）
-watch([range, typeFilter, kw, recent, viewFilter, todoFilter], () => {
+watch([range, typeFilter, kw, recent, viewFilter, todoFilter, moreTags], () => {
   feedCount.value = pageSize.value || FEED_SIZES[0]
   void pump()
 })
@@ -833,28 +886,20 @@ function removeEditing(id: string) {
             <!--
               0.1.29：「依新增時間」從區間列的小標籤（.rangetag）搬來這裡，
               而且改成**按鈕**（使用者：「把依新增時間按鈕放到分類按鈕和最近按鈕的最右手邊」）。
-              它跟「最近」控制的是同一個東西（用新增時間還是交易時間查詢／分組），
-              差別是它**一直看得到**——關掉時也知道現在是依交易時間；外框一律黃色，
-              開啟（＝依新增時間）時才補黃底＋深黃字。
-              ⚠ 為什麼不直接改「最近」那顆就好：使用者明確說「是依新增時間的標籤，不是最近的按鈕」。
+              ⚠ 0.1.62：這一顆改成**「更多」多選下拉**（圖片／旅行／待辦事項）。
+              原本它跟「最近」控制的是同一個東西（`recent`），所以換掉不會損失功能——
+              要切「依新增時間／依交易時間」就按左手邊的「最近」那一顆。
+              （使用者原話：「不要影響依實時的功能，這部份的功能由用戶可按"最近"的按鈕取代」）
+              按鈕上的字＝已勾選項的首字以「+」連接（圖+旅），沒勾就是「更多」。
             -->
-            <button
-              type="button"
-              class="bycat bycat--basis"
-              :class="{ 'is-on': recent }"
-              :aria-pressed="recent"
-              :title="recent ? '改回依交易時間查詢' : '改為依新增時間查詢（不是交易時間）'"
-              @click="recent = !recent"
-            >
-              <!-- 時鐘＋加號（「新增」），跟「最近」那顆「時鐘＋指針」做出區別 -->
-              <svg class="bycat__ic" viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="12" cy="12" r="8.4" />
-                <path d="M12 8.7v4.9" />
-                <path d="M9.55 11.15h4.9" />
-              </svg>
-              <!-- 0.1.61：窄屏（PWA）把「依新增時間」縮短成「依實時」，四顆按鈕才擠得進同一列 -->
-              {{ narrow ? '依實時' : '依新增時間' }}
-            </button>
+            <MoreFilterMenu
+              v-model="moreTags"
+              :options="moreOptions"
+              :label="moreLabel"
+              :active="moreActive"
+              :title="moreTitle"
+              aria-label="更多篩選"
+            />
           </div>
         </div>
 

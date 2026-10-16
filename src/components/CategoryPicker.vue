@@ -7,6 +7,7 @@ import { withAlpha } from '@/lib/color'
 import { flattenCategories } from '@/lib/tree'
 import CategoryIcon from './CategoryIcon.vue'
 import CategorySelect from './CategorySelect.vue'
+import HighlightText from './HighlightText.vue'
 import { computed, ref, watch } from 'vue'
 
 const props = withDefaults(
@@ -26,8 +27,14 @@ const props = withDefaults(
     moreExternal?: boolean
     /** 顯示方式：chips 標籤（預設）／ select 下拉清單 */
     variant?: 'chips' | 'select'
+    /**
+     * 0.1.62：搜索關鍵字（由外面的搜索框傳進來，見 `CategorySheet`）。
+     * 有值時改成**扁平列出所有命中的分類**（含子分類，名稱帶完整路徑），
+     * 空白切成多段＝AND（每一段都要命中）。
+     */
+    query?: string
   }>(),
-  { limit: 0, usageOrder: true, collapsed: false, moreExternal: false, variant: 'chips' },
+  { limit: 0, usageOrder: true, collapsed: false, moreExternal: false, variant: 'chips', query: '' },
 )
 const emit = defineEmits<{ 'update:modelValue': [id: string]; more: [] }>()
 
@@ -130,7 +137,8 @@ const activeId = computed(() => {
  * 例如選了「餐飲 › 早餐」，就會出現「餐飲的子分類」與「早餐的子分類」兩列。
  */
 const subRows = computed<{ parent: Category; items: Category[] }[]>(() => {
-  if (props.variant === 'select' || !props.modelValue) return []
+  // 0.1.62：搜索中不列子分類列（搜索結果已經是扁平、帶完整路徑的清單）
+  if (props.variant === 'select' || !props.modelValue || searchMode.value) return []
   const rows: { parent: Category; items: Category[] }[] = []
   for (const step of settings.pathOf(props.modelValue)) {
     const kids = settings.childrenOf(step.id)
@@ -148,6 +156,56 @@ const expandable = computed(
   () =>
     props.collapsed && favorites.value.length > 0 && all.value.length > favorites.value.length,
 )
+
+/**
+ * 0.1.62：搜索。
+ * - `terms`：以空白切成多段（使用者原話：「支持使用空格多段搜索」，例：搜「吃 前」→「吃飯前」）
+ *   ⚠ 刻意不用 RegExp（使用者可能打 `(`、`*` 之類的字元），一律用 `includes` 比對。
+ * - `searchResults`：有搜索時改成**扁平列出所有命中的分類**（含子分類），
+ *   名稱換成完整路徑（「餐飲 › 早餐」）才看得出是哪一類底下的；順序照樹原本的順序。
+ */
+const terms = computed(() =>
+  props.query.trim().toLowerCase().split(/\s+/).filter(Boolean),
+)
+const searchMode = computed(() => terms.value.length > 0)
+const searchResults = computed<Category[]>(() => {
+  const ts = terms.value
+  if (!ts.length) return []
+  return flattenCategories(allWithSubs.value)
+    .map((c) => ({ ...c, name: pathName(c) }))
+    .filter((c) => {
+      const hay = c.name.toLowerCase()
+      return ts.every((t) => hay.includes(t))
+    })
+})
+
+/**
+ * 「更多」鈕要不要出現：
+ * - 搜索中不顯示（搜索結果已經是全部命中的分類，展開／收起沒有意義）
+ * - `moreExternal`（記帳頁）時**一律顯示**：那一顆開的是「選擇分類」頁面，
+ *   裡面有全部分類＋搜索，不管有沒有被收起來的分類都用得到
+ *   （0.1.62 使用者原話：「無論分類是否有隱藏都要顯示選擇分類的按鈕，不要隱藏」）。
+ * - 其餘維持原條件（真的有沒顯示出來的分類時才給展開）
+ */
+const showMore = computed(
+  () => !searchMode.value && (props.moreExternal || (expandable.value && !expanded.value)),
+)
+const showCollapse = computed(
+  () => !searchMode.value && expandable.value && expanded.value,
+)
+
+/**
+ * 「更多」鈕的提示文字：`hiddenCount` 為 0（沒有被收起來的分類）時不要寫「還有 0 個」，
+ * 改提一下這一頁可以**搜索**分類（0.1.62）。
+ */
+const moreTitle = computed(() => {
+  if (props.moreExternal) {
+    return hiddenCount.value > 0
+      ? `開啟全部分類（還有 ${hiddenCount.value} 個，可搜索）`
+      : '開啟全部分類（可搜索）'
+  }
+  return `更多分類（還有 ${hiddenCount.value} 個）`
+})
 
 const hiddenCount = computed(() =>
   props.collapsed && !expanded.value
@@ -187,6 +245,32 @@ watch(
       @update:model-value="emit('update:modelValue', $event)"
     />
 
+    <!--
+      0.1.62：搜索模式——扁平列出所有命中的分類（含子分類，名稱帶完整路徑），
+      命中的字由 HighlightText 上黃底。此模式不列子分類列、也不顯示展開／收起。
+    -->
+    <div v-else-if="searchMode" class="cats">
+      <button
+        v-for="c in searchResults"
+        :key="c.id"
+        type="button"
+        class="cat"
+        :class="{ 'is-on': c.id === modelValue }"
+        @click="pick(c.id)"
+      >
+        <span
+          class="cat__ic"
+          :style="{ '--c': c.color, '--bg': withAlpha(c.color, 0.14) }"
+          aria-hidden="true"
+        >
+          <CategoryIcon :name="iconForCategory(c)" :size="15" :stroke="1.9" />
+        </span>
+        <span class="cat__name"><HighlightText :text="c.name" :query="query" /></span>
+      </button>
+
+      <p v-if="!searchResults.length" class="muted tiny">找不到符合的分類</p>
+    </div>
+
     <!-- 標籤模式 -->
     <div v-else class="cats">
       <button
@@ -208,12 +292,14 @@ watch(
       </button>
 
       <!-- 「更多」與「收起」刻意分成兩顆：
-           原本共用一顆時，展開後 list 等於全部、顯示條件不成立，按鈕會消失導致收不回來 -->
+           原本共用一顆時，展開後 list 等於全部、顯示條件不成立，按鈕會消失導致收不回來
+           ⚠ 0.1.62：`showMore` 在 `moreExternal`（記帳頁）時一律為真——
+             那一顆開的是「選擇分類」頁面，不管有沒有被收起來的分類都要看得到 -->
       <button
-        v-if="expandable && !expanded"
+        v-if="showMore"
         type="button"
         class="cat-more"
-        :title="moreExternal ? `開啟全部分類（還有 ${hiddenCount} 個）` : `更多分類（還有 ${hiddenCount} 個）`"
+        :title="moreTitle"
         :aria-label="moreExternal ? '開啟全部分類' : '展開更多分類'"
         :aria-expanded="false"
         @click="onMore"
@@ -225,7 +311,7 @@ watch(
 
       <!-- 收起：圖示用「向上箭頭＋上方橫線」，與更多的單一向下箭頭明顯區隔 -->
       <button
-        v-if="expandable && expanded"
+        v-if="showCollapse"
         type="button"
         class="cat-more cat-more--up"
         title="收起分類"

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, toRef } from 'vue'
+import { computed, ref, toRef, watch } from 'vue'
 import type { TxType } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { useScrollLock } from '@/composables/useScrollLock'
 import { usePullToClose } from '@/composables/usePullToClose'
 import CategoryPicker from '@/components/CategoryPicker.vue'
+import ClearableInput from '@/components/ClearableInput.vue'
 
 /**
  * 選擇分類用的彈出頁面（置中卡片）。
@@ -13,6 +14,11 @@ import CategoryPicker from '@/components/CategoryPicker.vue'
  *
  * 分類內容直接沿用 CategoryPicker（不帶 collapsed），
  * 所以「大類標籤列 + 下面各層子分類標籤列」跟原本展開後的長相一致。
+ *
+ * 0.1.62：這一頁多了**小型搜索框**（使用者原話：「加入一個搜索框(小型)，
+ *   用戶可以搜索分類，只顯示符合搜索的分類，被搜索的文字要高亮，
+ *   同時也支持使用空格多段搜索…搜索框的最右方也要有清空的小型ICON」）。
+ *   輸入的關鍵字往下傳給 CategoryPicker 的 `query`，比對與黃底都由它負責。
  *
  * ⚠ 跟計算機子頁面的差別：分類可能很多，所以這裡**內容可以捲**；
  *   只有背景是鎖住的（overscroll-behavior: contain 避免捲到底把背景也帶動）。
@@ -48,6 +54,25 @@ const {
 } = usePullToClose({ panel: sheetEl, scroller: bodyEl, onClose: () => emit('close') })
 
 const currentName = computed(() => settings.category(props.modelValue)?.name ?? '')
+
+/**
+ * 0.1.62：搜索框的內容。往下傳給 CategoryPicker 當過濾條件。
+ * ⚠ 每次**開啟**都清掉：上一次搜過的字留著會讓人以為「分類不見了」
+ *   （關掉再開通常是想重新找別的分類）。
+ * ⚠ 不主動 focus（0.1.59 使用者原話的精神：點欄位不應該自己彈鍵盤）。
+ */
+const catQuery = ref('')
+watch(
+  () => props.open,
+  (v) => {
+    if (v) catQuery.value = ''
+  },
+)
+/** 清空鈕（使用者按「✕」之外，點分類選好後順手清掉也比較順） */
+function onPick(id: string) {
+  emit('update:modelValue', id)
+  if (catQuery.value) catQuery.value = ''
+}
 </script>
 
 <template>
@@ -82,11 +107,26 @@ const currentName = computed(() => settings.category(props.modelValue)?.name ?? 
           </button>
         </header>
 
+        <!--
+          0.1.62：小型搜索框（放在標題列與清單之間，清單捲動時它固定看得到）。
+          右側的清空小 ICON 是 ClearableInput 內建的（沒有內容時變灰不可按）。
+          ⚠ 它**不是** `.catsheet__body` 的子元素，所以不會跟著清單一起捲走。
+        -->
+        <div class="catsheet__search">
+          <ClearableInput
+            v-model="catQuery"
+            class="catsearch"
+            :maxlength="40"
+            placeholder="搜索分類（空格可分多段）"
+          />
+        </div>
+
         <div ref="bodyEl" class="catsheet__body bsheet__body">
           <CategoryPicker
             :type="type"
             :model-value="modelValue"
-            @update:model-value="emit('update:modelValue', $event)"
+            :query="catQuery"
+            @update:model-value="onPick"
           />
         </div>
       </div>
@@ -140,6 +180,30 @@ const currentName = computed(() => settings.category(props.modelValue)?.name ?? 
   padding: 0 14px;
   font-size: 13px;
   flex: none;
+}
+
+/* ── 0.1.62：小型搜索框 ──────────────────────────────────
+   「小型」＝高度跟分類標籤（.cat 34px）一致、字 13.5px、圓角膠囊，
+   右側清空鈕也縮到 22px。幾何壓在 ClearableInput 自己的 class 上（:deep），
+   不新增元件、也不動其他用到 ClearableInput 的地方。 */
+.catsheet__search {
+  padding: 10px 2px 0;
+}
+.catsearch :deep(.cf__in) {
+  height: 34px;
+  padding-right: 34px;
+  border-radius: 999px;
+  font-size: 13.5px;
+}
+.catsearch :deep(.cf__x) {
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+}
+.catsearch :deep(.cf__x svg) {
+  width: 13px;
+  height: 13px;
 }
 
 /* 分類清單可以捲，但捲到底不會帶動背景 */
