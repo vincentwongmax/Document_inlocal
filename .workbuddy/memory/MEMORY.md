@@ -86,6 +86,16 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - 「代辦事項」全站→「待辦事項」（RecordSheet/TodoSheet/RecordRow＋types.ts 註解）
 - 守門員 v136（28/28）＋v136-live（29/29）；v100 刪除流程加按 `.swal2-confirm`；v85/v94/v109 配合四顆＋依實時改斷言
 
+## 0.1.62（分類搜索框／選擇分類鈕常駐／「依實時」→「更多」下拉）
+- **選擇分類頁搜索框**：CategoryPicker 新 prop `query` → 搜索時扁平列命中分類（含子分類、完整路徑、HighlightText 黃底）；
+  空白多段＝AND（與記錄頁同一套）；CategorySheet 用 ClearableInput＋:deep 縮小（34px 膠囊、清空鈕 22px）；每次開啟清空 query、不 focus
+- **「選擇分類」鈕常駐**：`showMore = !searchMode && (moreExternal || (expandable && !expanded))`——記帳頁（moreExternal）不再受 expandable 限制
+- **新元件 MoreFilterMenu.vue**（記錄頁第四顆）：多選下拉（Teleport＋fixed、右緣對齊、方框打勾、點選不關、Esc/點外關）；
+  觸發鈕黃框沿用原格位＋`margin-left:auto`；**原本「依實時」鈕跟「最近」控制同一個 `recent`，換掉零損失**
+- 過濾：MORE_TAGS（img→圖/trip→旅/todo→待）AND（`hasTag`：images.length/tripId/todos）；`moreLabel`＝首字「+」連接（圖+旅，順序照 options）
+- ⚠⚠ v-if 鏈三段：CategorySelect → searchMode 結果 → 標籤模式；`.mf__trigger` 不帶 `.bycat` class → 量測型測試的選擇器要加它
+- 守門員 v137（33/33）＋v137-live（34/34）；v85/v94/v109/v136(+live) 改斷言；v109-live 整支重生成；ALL＝v70~v137（61 支）
+
 ## 0.1.58（代辦事項）
 - 資料：`TodoItem {id,text,done}`；`TxRecord.todos?`；**勾選即時存檔**（`records.update`，不等按儲存；清空存 `undefined` 不存 `[]`）；save patch 也帶 todos 雙保險
 - 明細摘要列 `.todorow`（備註下方）：`x/y`＋`x 項未完成`/`全部完成`（墨綠）＋前三項 `1.xxx 2.yyy 3.zzz`（line-clamp 2，超過補「…還有 N 項」）；沒有＝「新增代辦事項」；整列可點
