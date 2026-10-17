@@ -249,11 +249,23 @@ export const useRecordsStore = defineStore('records', () => {
     [...records.value].sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : a.occurredAt > b.occurredAt ? -1 : 0)),
   )
 
+  /**
+   * 0.1.63：這筆記錄是否「不計入統計」。
+   * 兩個來源（使用者原話：「在記錄明細頁面中，增加該筆資料不計入統計按鈕，
+   * 另外在設定頁中的管理分類頁面中，增加這個分類不計入統計按鈕」）：
+   *   ① 記錄自己被標記（明細裡的切換，即時存檔）
+   *   ② 它所屬分類（含整條上層）被標記 → 整個子樹的記錄一併排除
+   * 舊資料兩個欄位都沒有 → false（照舊計入）。
+   */
+  function isExcluded(r: TxRecord): boolean {
+    return r.excludeFromStats === true || settings.categoryExcluded(r.categoryId)
+  }
+
   const totalExpense = computed(() =>
-    records.value.filter((r) => r.type === 'expense').reduce((s, r) => s + r.baseAmount, 0),
+    records.value.filter((r) => r.type === 'expense' && !isExcluded(r)).reduce((s, r) => s + r.baseAmount, 0),
   )
   const totalIncome = computed(() =>
-    records.value.filter((r) => r.type === 'income').reduce((s, r) => s + r.baseAmount, 0),
+    records.value.filter((r) => r.type === 'income' && !isExcluded(r)).reduce((s, r) => s + r.baseAmount, 0),
   )
 
   return {
@@ -277,5 +289,6 @@ export const useRecordsStore = defineStore('records', () => {
     byOccurred,
     totalExpense,
     totalIncome,
+    isExcluded,
   }
 })

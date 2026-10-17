@@ -43,6 +43,12 @@ export interface Category {
    * 子分類本身還可以有子分類（多層），但收支類型一律沿用整條路徑的根分類。
    */
   parentId?: string | null
+  /**
+   * 這個分類不計入統計（0.1.63）：true 時**整個子樹**（含所有子分類）的記錄
+   * 都不進統計頁的任何數字。使用這個分類（或它的子分類）的舊記錄也一併排除。
+   * 舊資料沒有這個欄位 → 一律「計入」。
+   */
+  excludeFromStats?: boolean
 }
 
 export interface ImageRef {
@@ -151,6 +157,13 @@ export interface TxRecord {
    *   要求使用者記得回來按儲存太容易漏。舊資料沒有這個欄位。
    */
   todos?: TodoItem[]
+  /**
+   * 這筆資料不計入統計（0.1.63）：true 時統計頁的收支／分類佔比／長條圖／趨勢
+   * 都不算它（側欄總結餘與統計頁的「累計結餘」也不算），但記錄本身照樣留在
+   * 記錄頁與明細裡，統計頁也會單獨列出「未計入統計」的記錄。
+   * ⚠ 明細裡的切換是**即時存檔**的（同 todos 的勾選），舊資料沒有這個欄位。
+   */
+  excludeFromStats?: boolean
   ocr?: OcrInfo
 }
 

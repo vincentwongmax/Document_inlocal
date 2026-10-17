@@ -432,6 +432,16 @@ export const useSettingsStore = defineStore('settings', () => {
     return out
   }
 
+  /**
+   * 0.1.63：這個分類（**含整條上層路徑**）是否被標記「不計入統計」。
+   * 上層被標記 → 底下所有子分類一併排除（例：「餐飲」不計入 → 「餐飲 › 午餐」也不算）。
+   * ⚠ 封存的分類也查得到（pathOf 走的是全部 categories）—— 舊記錄仍指向它們，
+   *   標記後要能排除那些歷史記錄。
+   */
+  function categoryExcluded(id: string): boolean {
+    return pathOf(id).some((c) => c.excludeFromStats === true)
+  }
+
   /** 自己＋所有後代（多層）的 id */
   function descendantIds(id: string): string[] {
     const out: string[] = []
@@ -716,6 +726,7 @@ export const useSettingsStore = defineStore('settings', () => {
   /**
    * 新增分類。給 parentId 就是建立子分類：
    * 收支類型與顏色預設沿用上層，整條路徑才會一致。
+   * 0.1.63：`excludeFromStats`＝建立時就標記「不計入統計」（整個子樹）。
    */
   function addCategory(
     name: string,
@@ -723,6 +734,7 @@ export const useSettingsStore = defineStore('settings', () => {
     color: string,
     icon?: string,
     parentId: string | null = null,
+    excludeFromStats = false,
   ) {
     const parent = parentId ? category(parentId) : undefined
     const c: Category = {
@@ -734,6 +746,8 @@ export const useSettingsStore = defineStore('settings', () => {
       builtin: false,
       archived: false,
       parentId: parent ? parent.id : null,
+      // 0.1.63：只在勾了時寫 true（不勾就不留這個鍵，跟其他可選欄位的慣例一致）
+      ...(excludeFromStats ? { excludeFromStats: true } : {}),
     }
     state.value.categories.push(c)
     return c
@@ -741,13 +755,19 @@ export const useSettingsStore = defineStore('settings', () => {
 
   function updateCategory(
     id: string,
-    patch: Partial<Pick<Category, 'name' | 'color' | 'type' | 'icon' | 'parentId'>>,
+    patch: Partial<Pick<Category, 'name' | 'color' | 'type' | 'icon' | 'parentId' | 'excludeFromStats'>>,
   ) {
     const c = state.value.categories.find((x) => x.id === id)
     if (!c) return
     if (patch.name !== undefined) c.name = patch.name.trim() || c.name
     if (patch.color !== undefined) c.color = patch.color
     if (patch.icon !== undefined) c.icon = patch.icon
+
+    // 0.1.63：不計入統計。勾上寫 true；取消則把鍵整個刪掉，別在資料裡留一堆 false
+    if (patch.excludeFromStats !== undefined) {
+      if (patch.excludeFromStats) c.excludeFromStats = true
+      else delete c.excludeFromStats
+    }
 
     // 換上層：不能是自己、不能是自己的後代（會形成環），且類型要一致
     if (patch.parentId !== undefined) {
@@ -1072,6 +1092,7 @@ export const useSettingsStore = defineStore('settings', () => {
     childrenOf,
     hasChildren,
     pathOf,
+    categoryExcluded,
     descendantIds,
     fullNameOf,
     canRemove,

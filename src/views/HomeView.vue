@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
-import { notify } from '@/lib/alerts'
+import { confirmDialog, notify } from '@/lib/alerts'
 import CalcSheet from '@/components/CalcSheet.vue'
 import CategorySheet from '@/components/CategorySheet.vue'
 import CategoryPicker from '@/components/CategoryPicker.vue'
@@ -24,7 +24,7 @@ import {
   type CalcState,
 } from '@/lib/calc'
 import { currency, fmtMoney } from '@/lib/currency'
-import { fromLocalInput, nowLocalInput } from '@/lib/date'
+import { formatFull, fromLocalInput, nowLocalInput } from '@/lib/date'
 import type { ImageRef, QuickPreset, TxType } from '@/types'
 import { writeJSON } from '@/lib/storage'
 import { getImage, putImage } from '@/lib/imageDb'
@@ -364,6 +364,9 @@ function clearForm() {
   if (dirty) notify('已清空', 'info')
 }
 
+/** 0.1.63：「記錄時間不是現在」的容忍值（2 分鐘）——手動挑時間的幾十秒誤差不彈窗 */
+const NEAR_MS = 2 * 60 * 1000
+
 async function submit() {
   /**
    * 0.1.46：先把「隱藏區塊的預設值」解析成這次要送出的實際值。
@@ -384,6 +387,29 @@ async function submit() {
       'warn',
     )
     return
+  }
+  /*
+   * 0.1.63：記錄時間不是「現在」時先跳確認（使用者原話：「用戶按下記錄按鈕時，
+   * 如果在時間輸入框記錄的時間不是當前時間的話，就彈出一個alert，用戶確定後才成功記錄」）。
+   * 只有按「確定記錄」才真的寫入；按取消則什麼都不做、留在記帳頁。
+   *
+   * ⚠ 兩個刻意的決定：
+   *   ① 只在「日期時間區塊有顯示」時檢查。區塊被隱藏時時間來自設定頁的預設值
+   *      （使用者自己設的，例如「前一天」），那邊沒有「時間輸入框」可說，每次記錄
+   *      都彈一次只會把人吵死。
+   *   ② 容忍 2 分鐘以內的落差：手動挑時間總有幾十秒誤差，與其為這個彈窗，
+   *      不如只捕捉「真的補登／記錯時間」的情況。
+   */
+  if (!hiddenBlocks.value.has(5)) {
+    const diff = Math.abs(Date.now() - new Date(v.occurredAt).getTime())
+    if (diff > NEAR_MS) {
+      const ans = await confirmDialog({
+        title: '記錄時間不是現在？',
+        message: `這筆將記錄在 ${formatFull(v.occurredAt)}，確定要記錄嗎？`,
+        confirmText: '確定記錄',
+      })
+      if (ans !== 'confirm') return
+    }
   }
   /*
    * 旅行模式（0.1.35）：

@@ -117,6 +117,15 @@ const loadedAmount = ref(0)
 const todos = ref<TodoItem[]>([])
 /** 待辦事項子頁面開著嗎 */
 const todoOpen = ref(false)
+/**
+ * 0.1.63：這筆資料「不計入統計」（使用者原話：「在記錄明細頁面中，
+ * 增加該筆資料不計入統計按鈕」）。
+ * ⚠ 跟待辦事項的勾選一樣是**即時存檔**的——切換型操作要求使用者記得回來按
+ *   「儲存」太容易漏（0.1.58 的同一套理由）。舊資料沒有這個欄位。
+ */
+const excl = ref(false)
+/** 這筆所屬的分類（含上層）是否被標記不計入統計——是的話這筆也不會計入，給個提示 */
+const catExcluded = computed(() => settings.categoryExcluded(categoryId.value))
 const todoTotal = computed(() => todos.value.length)
 const todoDone = computed(() => todos.value.filter((t) => t.done).length)
 const todoLeft = computed(() => todoTotal.value - todoDone.value)
@@ -150,6 +159,17 @@ function onTodosChange(next: TodoItem[]) {
   if (!r) return
   // 清空時存 undefined（JSON 序列化會整個丢掉這個鍵），不要留一個空陣列佔空間
   records.update(r.id, { todos: next.length ? next : undefined })
+}
+
+/**
+ * 0.1.63：切換「不計入統計」——即時寫檔（理由同 todos 的勾選）。
+ * 統計頁的所有數字、側欄總結餘都會立刻排除／恢復這筆；記錄本身不受影響。
+ */
+function toggleExcl() {
+  const r = props.record
+  if (!r) return
+  excl.value = !excl.value
+  records.update(r.id, { excludeFromStats: excl.value })
 }
 
 const numeric = computed(() => {
@@ -418,6 +438,27 @@ function removeImage(im: ImageRef) {
   }
 }
 
+/**
+ * 0.1.63：移除圖片前先跳確認對話框（使用者原話：「圖片刪除要彈出alert，用戶確定」）。
+ *
+ * ⚠ 確認**只是閘門**，刻意不改變現有的「未儲存」語意（使用者括號裡的要求：
+ *   「但依然保持，未儲存明細頁面的修改依然，下次打開，圖片依然在」）：
+ *   - 按取消 → 什麼都不做，圖片留在明細裡
+ *   - 按移除 → 只從明細的本地清單移除（`removeImage`）；**blob 仍然只在
+ *     「儲存」（`save()` 清 originalImages 差集）或「關閉時丟棄新圖」才真正刪
+ *   - 所以未儲存就關閉明細 → 下次打開圖片依然在
+ */
+async function onRemoveImage(im: ImageRef) {
+  const ans = await confirmDialog({
+    title: '移除這張圖片？',
+    message: '確認後從這筆記錄移除（儲存明細後生效）。',
+    confirmText: '移除',
+    danger: true,
+  })
+  if (ans !== 'confirm') return
+  removeImage(im)
+}
+
 /** 丟棄尚未儲存的新圖片，避免 IndexedDB 殘留孤兒 */
 function discardPending() {
   for (const id of addedIds) void deleteImage(id)
@@ -461,6 +502,8 @@ watch(
     loadedAmount.value = r.amount
     // 0.1.58：待辦事項（舊資料沒有這個欄位 → 當沒有）
     todos.value = [...(r.todos ?? [])]
+    // 0.1.63：不計入統計（舊資料沒有這個欄位 → 計入）
+    excl.value = r.excludeFromStats === true
     images.value = [...(r.images ?? [])]
     originalImages = [...(r.images ?? [])]
     busyImg.value = false
@@ -582,6 +625,9 @@ function save() {
     //   這裡再帶一次是為了「開著明細 → 改代辦 → 按儲存」這條路也不會漏
     //   （例：子頁面改完的當下 props.record 還沒被 watch 重載的極端情況）。
     ...(todoTotal.value ? { todos: todos.value } : {}),
+    // 0.1.63：不計入統計。正常情況 `toggleExcl` 已經即時寫過，這裡再帶一次
+    //   是雙保險（同 todos 的理由）。
+    excludeFromStats: excl.value,
     // 旅行標記：跟著這一欄的狀態走（空＝解除）
     tripId: tripId.value || undefined,
     ...(amountChanged ? { expr: undefined } : {}),
@@ -754,6 +800,24 @@ function save() {
             </template>
           </div>
 
+          <!--
+            0.1.63：這筆要不要計入統計（使用者原話：「在記錄明細頁面中，
+            增加該筆資料不計入統計按鈕」）。即時存檔，按「儲存」與否都算。
+            排除後統計頁的收支／分類佔比／長條圖都不算它，統計頁也會單獨列出。
+          -->
+          <div class="flat">
+            <span class="flat__label">統計</span>
+            <button class="xstat" :class="{ 'is-on': excl }" type="button" @click="toggleExcl">
+              <span class="xstat__dot" />
+              <span class="xstat__txt">{{ excl ? '不計入統計' : '計入統計' }}</span>
+              <span class="xstat__hint">{{ excl ? '再按一下恢復' : '按一下排除' }}</span>
+            </button>
+            <!-- 分類本身被標記時給個說明：不是這筆的問題，改分類設定才會恢復 -->
+            <p v-if="catExcluded" class="tiny muted xstat__cat">
+              分類「{{ catName }}」已設定不計入統計，這筆也不會計入
+            </p>
+          </div>
+
           <!-- 詳細資訊 -->
           <section class="meta">
             <div class="meta__row">
@@ -797,7 +861,7 @@ function save() {
                 <button class="imgs__item" :title="im.name || '收據圖片'" @click="openImage(im)">
                   <img v-if="im.thumb" :src="im.thumb" alt="" />
                 </button>
-                <button class="imgs__x" type="button" title="移除圖片" @click="removeImage(im)">✕</button>
+                <button class="imgs__x" type="button" title="移除圖片" @click="onRemoveImage(im)">✕</button>
               </div>
               <button class="imgs__add" type="button" :disabled="busyImg" @click="pickImages">
                 <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1381,6 +1445,75 @@ function save() {
 .todorow__more {
   margin: 2px 0 0;
   padding: 0 7px;
+}
+
+/* ── 0.1.63：不計入統計切換（樣式沿用管理分類的 .dflt：空心圓→打勾）───────── */
+.xstat {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 11px;
+  border-radius: 11px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text-2);
+  text-align: left;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+.xstat:hover {
+  border-color: var(--accent);
+}
+.xstat.is-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.xstat__dot {
+  position: relative;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1.5px solid var(--line-strong);
+  background: var(--surface);
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+.xstat.is-on .xstat__dot {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.xstat.is-on .xstat__dot::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(43deg);
+}
+.xstat__txt {
+  font-size: 13px;
+  font-weight: 650;
+}
+.xstat__hint {
+  margin-left: auto;
+  flex: none;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+/* 分類被標記時的說明（不是這筆的問題） */
+.xstat__cat {
+  margin: -2px 0 0;
 }
 
 .meta {

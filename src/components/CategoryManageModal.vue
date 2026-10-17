@@ -34,6 +34,8 @@ const emit = defineEmits<{
       parentId: string | null
       /** 新增時就勾了「記帳時預選這個分類」 */
       makeDefault?: boolean
+      /** 0.1.63：建立時就標記「這個分類不計入統計」 */
+      excludeFromStats?: boolean
     },
   ]
   save: [
@@ -44,6 +46,8 @@ const emit = defineEmits<{
       type: TxType
       icon: string
       parentId: string | null
+      /** 0.1.63：這個分類不計入統計（整棵子樹） */
+      excludeFromStats: boolean
     },
   ]
   remove: [id: string]
@@ -105,6 +109,16 @@ const custom = ref(false)
  *   由外部（SettingsView）拿到剛建立的分類後再呼叫 setDefaultCategory()。
  */
 const makeDefault = ref(false)
+/**
+ * 0.1.63：這個分類不計入統計（使用者原話：「在設定頁中的管理分類頁面中，
+ * 增加這個分類不計入統計按鈕」）。
+ * - 編輯既有分類：`excludeStats` 表單值，跟著 fill/resetNew 走，按「儲存」時送出
+ * - 新增分類：`makeExcluded` 勾選，建立時一併標記（id 要等 create 才生得出來，
+ *   所以跟 makeDefault 同一套做法）
+ * ⚠ 標記一個分類＝**整棵子樹**都不進統計（見 settings.categoryExcluded）。
+ */
+const excludeStats = ref(false)
+const makeExcluded = ref(false)
 
 const parentId = computed(() => {
   const v = parentSel.value
@@ -220,6 +234,8 @@ function resetNew(under: string | null = null, type: TxType = props.defaultType)
   custom.value = false
   parentSel.value = under ?? TOP
   makeDefault.value = false
+  excludeStats.value = false
+  makeExcluded.value = false
 }
 
 /** 把表單填成某個分類的現況 */
@@ -230,6 +246,8 @@ function fill(c: Category) {
   icon.value = c.icon || DEFAULT_ICON
   custom.value = !PRESETS.includes(c.color)
   parentSel.value = c.parentId ?? TOP
+  // 0.1.63：不計入統計的目前狀態
+  excludeStats.value = c.excludeFromStats === true
   // 編輯既有分類時，打字不該把使用者原本挑好的圖示換掉
   iconPicked.value = true
 }
@@ -330,6 +348,8 @@ function submit() {
     type: catType.value,
     icon: icon.value,
     parentId: parentId.value,
+    // 0.1.63：編輯模式跟著表單值；新增模式跟著勾選
+    excludeFromStats: isEdit.value ? excludeStats.value : makeExcluded.value,
   }
   if (isEdit.value && editing.value) emit('save', { id: editing.value.id, ...payload })
   else emit('create', { ...payload, makeDefault: makeDefault.value })
@@ -512,6 +532,39 @@ async function askRemove() {
               <input v-model="makeDefault" type="checkbox" class="dflt__cb" />
               <span class="dflt__dot" />
               <span class="dflt__txt">建立後設為預設分類</span>
+            </label>
+          </div>
+
+          <!--
+            0.1.63：這個分類不計入統計（使用者原話：「在設定頁中的管理分類頁面中，
+            增加這個分類不計入統計按鈕」）。
+            標記一個分類＝**整棵子樹**都不進統計頁（子分類一併排除，舊記錄也是），
+            記錄本身不會被刪掉，統計頁會單獨列出「未計入統計」的記錄。
+          -->
+          <div class="lb">
+            <span>
+              統計
+              <em class="lb__hint">不計入統計頁的任何數字（子分類一併排除）</em>
+            </span>
+            <!-- 編輯既有分類：一顆切換鈕（按一下排除，再按一下恢復） -->
+            <button
+              v-if="isEdit"
+              type="button"
+              class="dflt"
+              :class="{ 'is-on': excludeStats }"
+              @click="excludeStats = !excludeStats"
+            >
+              <span class="dflt__dot" />
+              <span class="dflt__txt">
+                {{ excludeStats ? '不計入統計' : '計入統計' }}
+              </span>
+              <span class="dflt__hint">{{ excludeStats ? '再按一下恢復' : '按一下排除' }}</span>
+            </button>
+            <!-- 新增分類：建立時一併標記 -->
+            <label v-else class="dflt dflt--check" :class="{ 'is-on': makeExcluded }">
+              <input v-model="makeExcluded" type="checkbox" class="dflt__cb" />
+              <span class="dflt__dot" />
+              <span class="dflt__txt">這個分類不計入統計</span>
             </label>
           </div>
 

@@ -91,6 +91,14 @@ const todoTone = computed<'pending' | 'done' | null>(() => {
   if (!list?.length) return null
   return list.every((t) => t.done) ? 'done' : 'pending'
 })
+/**
+ * 0.1.63：這筆「不計入統計」嗎（列表上顯示「排」標記）。
+ * 兩個來源：明細裡把這筆標記排除，或它所屬分類（含上層）整棵被標記——
+ * 所以這裡讀的是即時判斷（`settings.categoryExcluded` 會跟著分類設定變）。
+ */
+const excluded = computed(
+  () => props.record.excludeFromStats === true || settings.categoryExcluded(props.record.categoryId),
+)
 
 /**
  * 0.1.39：旅行標籤「旅」的顏色＝**這筆記錄所屬那趟旅行**的 color。
@@ -162,6 +170,9 @@ watch(
     props.record.images?.length,
     props.record.todos?.length,
     props.record.source,
+    props.record.excludeFromStats,
+    // 0.1.63：分類被標記排除也會讓「排」標記出現／消失，同樣要重測
+    excluded.value,
     props.showTime,
     props.timeRecent,
     props.highlight,
@@ -256,6 +267,12 @@ watch(
           <span>{{ imgCount > 1 ? '圖+' : '圖' }}</span>
         </span>
         <span v-else-if="record.source === 'image'" class="imtag imtag--plain">收據</span>
+        <!--
+          0.1.63：不計入統計標記「排」（自己排除或所屬分類整棵排除）。
+          統計頁的任何數字都不含這筆；點進明細可以改回來。刻意用虛線框＋中性灰，
+          跟「旅／記／圖」那些彩色標籤區分——它是狀態，不是內容。
+        -->
+        <span v-if="excluded" class="texcl" title="不計入統計">排</span>
       </span>
       <span v-if="record.note" class="row__note tiny muted">
         <HighlightText :text="record.note" :query="highlight" />
@@ -470,6 +487,25 @@ watch(
 }
 .imtag__ic {
   stroke: var(--accent);
+}
+/*
+ * 0.1.63：「不計入統計」標記「排」——尺寸跟其他標籤相同（11px／19px 高），
+ * 用虛線框＋中性灰跟彩色標籤區分（它是狀態，不是內容）。
+ */
+.texcl {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 19px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px dashed var(--line-strong);
+  background: var(--surface-3);
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 .imtag__ic circle {
   fill: var(--accent);

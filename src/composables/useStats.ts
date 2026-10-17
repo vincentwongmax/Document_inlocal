@@ -48,10 +48,27 @@ export function useStats(range: Ref<DateRange>) {
    */
   const amt = (r: TxRecord) => settings.displayOf(r)
 
-  /** 落在選取區間內的記錄 */
+  /**
+   * 落在選取區間內的記錄。
+   * 0.1.63：排除「不計入統計」的記錄（明細裡標記的，或所屬分類整棵被標記的）——
+   * 使用者原話：「在記錄明細頁面中，增加該筆資料不計入統計按鈕…在統計頁面也要
+   * 列明哪些記錄沒有計入統計」。所以統計的一切數字（收支、佔比、長條圖、趨勢、
+   * 最大支出）都不含它們；被排除的改由下面的 `excludedRows` 單獨列出。
+   */
   const rows = computed(() => {
     const { start, end } = range.value
     return records.records.filter((r) => {
+      if (records.isExcluded(r)) return false
+      const k = dayKey(r.occurredAt)
+      return k >= start && k <= end
+    })
+  })
+
+  /** 0.1.63：區間內「不計入統計」的記錄（統計頁要單獨列出來給使用者看） */
+  const excludedRows = computed(() => {
+    const { start, end } = range.value
+    return records.records.filter((r) => {
+      if (!records.isExcluded(r)) return false
       const k = dayKey(r.occurredAt)
       return k >= start && k <= end
     })
@@ -254,7 +271,7 @@ export function useStats(range: Ref<DateRange>) {
     const [ey, em] = range.value.end.split('-').map(Number)
     const from = new Date(ey, em - 1, 1)
     return recentMonths(6, from).map((m) => {
-      const list = records.records.filter((r) => monthKey(r.occurredAt) === m)
+      const list = records.records.filter((r) => monthKey(r.occurredAt) === m && !records.isExcluded(r))
       return {
         month: m,
         expense: list.filter((r) => r.type === 'expense').reduce((s, r) => s + amt(r), 0),
@@ -270,7 +287,7 @@ export function useStats(range: Ref<DateRange>) {
     return records.records
       .filter((r) => {
         const k = dayKey(r.occurredAt)
-        return k >= start && k <= end && r.type === 'expense'
+        return k >= start && k <= end && r.type === 'expense' && !records.isExcluded(r)
       })
       .reduce((s, r) => s + amt(r), 0)
   })
@@ -286,6 +303,10 @@ export function useStats(range: Ref<DateRange>) {
       .slice(0, 5),
   )
 
+  /**
+   * 累計（全部時間）。0.1.63：收支改吃 store 的 `totalIncome`／`totalExpense`
+   * ——那兩個已經排除「不計入統計」的記錄；筆數仍指全部記錄（資訊用）。
+   */
   const allTime = computed(() => ({
     count: records.records.length,
     income: records.totalIncome,
@@ -294,6 +315,7 @@ export function useStats(range: Ref<DateRange>) {
 
   return {
     rows,
+    excludedRows,
     spanDays,
     granularity,
     income,

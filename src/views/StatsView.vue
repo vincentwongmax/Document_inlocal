@@ -646,8 +646,33 @@ watch([mode, range], () => {
       @close="sumOpen = null"
     />
 
+    <!--
+      0.1.63：未計入統計的記錄（使用者原話：「在統計頁面也要列明哪些記錄沒有計入統計」）。
+      這些記錄不進入上面任何數字——在明細裡標記了「不計入統計」，或它所屬分類
+      （含上層）在設定頁被標記「這個分類不計入統計」。點進明細可以改回來。
+      ⚠ 放在 `v-if/v-else` 外面：全部記錄都被排除時，這個區塊仍要出現。
+    -->
+    <section v-if="st.excludedRows.value.length" class="card block">
+      <header class="block__hd">
+        <h2>未計入統計</h2>
+        <span class="tiny muted">{{ st.excludedRows.value.length }} 筆</span>
+      </header>
+      <p class="tiny muted excl__hint">
+        這些記錄不計入上面的收支、分類佔比與圖表；清單裡的「排」標記代表它被排除。
+      </p>
+      <RecordList
+        :records="st.excludedRows.value"
+        :totals-from="st.excludedRows.value"
+        group-by="day"
+        :collapse-after="0"
+        empty-text="沒有未計入統計的記錄"
+        @edit="openRecord"
+        @remove="removeRecord"
+      />
+    </section>
+
     <div v-if="!st.rows.value.length" class="empty card">
-      <p class="muted">{{ rangeLabel }} 沒有記錄</p>
+      <p class="muted">{{ rangeLabel }} 沒有{{ st.excludedRows.value.length ? '計入統計的' : '' }}記錄</p>
       <p class="tiny muted">換個範圍，或先到主頁記一筆</p>
     </div>
 
@@ -993,6 +1018,10 @@ watch([mode, range], () => {
 }
 .block__hd h2 {
   font-size: 15.5px;
+}
+/* 0.1.63：「未計入統計」區塊的說明文字——緊貼標題列下方 */
+.excl__hint {
+  margin: -4px 0 10px;
 }
 /* 「顯示更多／收起」：撐滿寬、跟清單底部留一點距離（跟記錄頁的「顯示全部」同一個樣子） */
 .block__more {

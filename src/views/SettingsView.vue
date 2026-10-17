@@ -404,9 +404,11 @@ type CatForm = {
   type: TxType
   icon: string
   parentId: string | null
+  /** 0.1.63：這個分類不計入統計（整棵子樹） */
+  excludeFromStats?: boolean
 }
 function onCreateCat(p: CatForm & { makeDefault?: boolean }) {
-  const c = settings.addCategory(p.name, p.type, p.color, p.icon, p.parentId)
+  const c = settings.addCategory(p.name, p.type, p.color, p.icon, p.parentId, p.excludeFromStats)
   // 建立時勾了「建立後設為預設分類」：分類 id 這一刻才生出來，所以在這裡補設定
   if (p.makeDefault && c) settings.setDefaultCategory(c.id)
   showCatMgr.value = false
@@ -422,6 +424,7 @@ function onSaveCat(p: CatForm & { id: string }) {
     type: p.type,
     icon: p.icon,
     parentId: p.parentId,
+    excludeFromStats: p.excludeFromStats,
   })
   showCatMgr.value = false
   notify('已儲存分類', 'ok')
