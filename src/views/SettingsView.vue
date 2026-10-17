@@ -16,6 +16,10 @@ import { withAlpha, isHexColor } from '@/lib/color'
 import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { parseImport, restoreImages } from '@/lib/exportImport'
 import ExportModal from '@/components/ExportModal.vue'
+import ImportModal from '@/components/ImportModal.vue'
+import QuickRecordSheet from '@/components/QuickRecordSheet.vue'
+import { flatTreeByType } from '@/lib/tree'
+import type { QuickDraft } from '@/lib/quickParse'
 import WalletSection from '@/components/WalletSection.vue'
 import ReviewSheet from '@/components/ReviewSheet.vue'
 import { useUpload } from '@/composables/useUpload'
@@ -24,7 +28,7 @@ import { listImageIds } from '@/lib/imageDb'
 import { formatBytes } from '@/lib/imaging'
 import { offlineReady, updateSW } from '@/lib/pwa'
 import { APP_VERSION } from '@/lib/version'
-import type { Category, Settings, TxType } from '@/types'
+import type { Settings, TxType } from '@/types'
 
 const settings = useSettingsStore()
 const records = useRecordsStore()
@@ -366,21 +370,12 @@ async function changeBase(code: string) {
 /* ── 分類管理 ───────────────────────────────────────────── */
 // 只列出未封存的：刪除後的分類不該還留在清單上
 // 子分類展開成同一層、用 depth 做縮排，才能整棵樹一起勾常用
-function flatTree(type: TxType) {
-  const out: { cat: Category; depth: number }[] = []
-  const walk = (parentId: string | null, depth: number) => {
-    for (const c of settings.childrenOf(parentId)) {
-      if (c.type !== type) continue
-      out.push({ cat: c, depth })
-      walk(c.id, depth + 1)
-    }
-  }
-  walk(null, 0)
-  return out
-}
+// 0.1.66：改共用 lib/tree 的 flatTreeByType——它跟「貼上資料」解析器的分類編號
+// **同一份順序**（per-type、DFS、1 起編號），所以 chips 上顯示的編號就是
+// 使用者在貼上框裡可以輸入的編號（見 ImportModal 的格式說明）。
 const grouped = computed(() => [
-  { type: 'expense' as TxType, label: '支出分類', list: flatTree('expense') },
-  { type: 'income' as TxType, label: '收入分類', list: flatTree('income') },
+  { type: 'expense' as TxType, label: '支出分類', list: flatTreeByType(settings.categories, 'expense') },
+  { type: 'income' as TxType, label: '收入分類', list: flatTreeByType(settings.categories, 'income') },
 ])
 
 /** 管理分類彈窗的下拉清單：支出＋收入全部列出 */
@@ -501,6 +496,25 @@ const totalStats = computed(() => ({
 }))
 
 const exportOpen = ref(false)
+
+/* ── 0.1.66：匯入彈窗（三分頁）與快速記錄表格頁 ───────────────── */
+const importOpen = ref(false)
+const quickOpen = ref(false)
+/** 送到快速記錄頁的草稿（貼上資料的解析結果；空陣列＝從一列空白開始） */
+const quickDrafts = ref<QuickDraft[]>([])
+
+/** JSON 分頁：關掉彈窗再開檔案選擇器（原本的匯入流程完全沒變） */
+function onPickJson() {
+  importOpen.value = false
+  pickImport()
+}
+
+function onQuickDrafts(drafts: QuickDraft[]) {
+  quickDrafts.value = drafts
+  quickOpen.value = true
+  // 匯入彈窗讓位給快速記錄頁（z-index 92 蓋在 90 之上）；先關掉才不會回來時殘影
+  importOpen.value = false
+}
 
 const importInput = ref<HTMLInputElement | null>(null)
 type ParsedImport = ReturnType<typeof parseImport>
@@ -1009,6 +1023,8 @@ const activeWalletName = computed(() => settings.activeWallet.name)
         </div>
         <p class="tiny muted favs__hint">
           勾選幾個，主頁就只顯示那幾個，其餘收進「更多」；沒有勾選任何一個時，主頁顯示全部分類。
+          <br />
+          每顆分類前面的編號（支出／收入各自由 1 起）可在「匯入 → 貼上資料」的分類欄直接輸入。
         </p>
         <div v-for="g in grouped" :key="'fav-' + g.type" class="catgroup">
           <span class="tiny muted catgroup__label">{{ g.label }}</span>
@@ -1021,6 +1037,8 @@ const activeWalletName = computed(() => settings.activeWallet.name)
               @click="settings.toggleFavorite(row.cat.id)"
             >
               <span v-if="row.depth > 0" class="catchip__branch" aria-hidden="true">└</span>
+              <!-- 0.1.66：分類編號（per-type、由 1 起）——「匯入 → 貼上資料」可直接輸入 -->
+              <span class="catchip__no" :title="`貼上資料可輸入編號 ${row.no}`">{{ row.no }}</span>
               <span
                 class="catchip__ic"
                 :style="{ '--c': row.cat.color, '--bg': withAlpha(row.cat.color, 0.14) }"
@@ -1294,13 +1312,13 @@ const activeWalletName = computed(() => settings.activeWallet.name)
           <span class="act__t">匯出</span>
           <span class="act__d tiny muted">JSON（可還原）或 Excel（ZIP），可選本錢包或全部錢包</span>
         </button>
-        <button class="act" @click="pickImport">
+        <button class="act" @click="importOpen = true">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 14V4m0 0 4 4m-4-4L8 8" />
             <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
           </svg>
           <span class="act__t">匯入</span>
-          <span class="act__d tiny muted">合併去重（id／圖片 MD5）</span>
+          <span class="act__d tiny muted">JSON 備份、貼上資料或快速記錄表格</span>
         </button>
         <button class="act act--danger" @click="doReset">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1394,6 +1412,19 @@ const activeWalletName = computed(() => settings.activeWallet.name)
     <TripHistorySheet :open="histOpen" @close="histOpen = false" />
 
     <ExportModal :open="exportOpen" @close="exportOpen = false" />
+
+    <!--
+      0.1.66：匯入彈窗——三分頁（匯入 JSON／貼上資料／快速記錄）。
+      「匯入 JSON」分頁透過 pick-json 沿用下面那個 hidden file input 的原本流程。
+    -->
+    <ImportModal
+      :open="importOpen"
+      @close="importOpen = false"
+      @pick-json="onPickJson"
+      @quick="onQuickDrafts"
+    />
+    <!-- 0.1.66：快速記錄表格頁（貼上資料／快速記錄分頁的落點） -->
+    <QuickRecordSheet :open="quickOpen" :drafts="quickDrafts" @close="quickOpen = false" />
 
     <!--
       BETA 收據辨識的結果清單（0.1.26 從記帳頁搬過來）。
@@ -1807,6 +1838,21 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   color: var(--c);
   background: var(--bg);
   flex: none;
+}
+/* 0.1.66：分類編號（支出／收入各自由 1 起）——「匯入 → 貼上資料」的
+   分類欄可以直接輸入這個號碼，順序與快速記錄頁共用（lib/tree.ts） */
+.catchip__no {
+  flex: none;
+  min-width: 14px;
+  margin-left: -2px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.catchip--pick.is-on .catchip__no {
+  color: var(--accent);
 }
 .catchip__name {
   font-size: 13px;

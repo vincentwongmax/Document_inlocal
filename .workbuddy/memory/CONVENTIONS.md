@@ -1124,16 +1124,24 @@ WebKit 就把它當成一次真正的 double-tap 手勢（smart zoom／重新對
 會讓「沒有 JS 錯誤」那條假紅燈。用像收據的圖就完全正常（實測金額 85.00 辨識得出來）。
 - 這個 abort **與換頁無關**（不換頁也會在 3 秒內炸），純粹是圖的問題。
 
-## 不計入統計（0.1.63 建立，0.1.64 三態＋總結卡）
+## 不計入統計（0.1.63 建立，0.1.64 三態＋總結卡，0.1.65 三顆勾選框＋可還原）
 
 - **三態模型**（`TxRecord.excludeFromStats`，0.1.64 起）：
   - `undefined`＝跟隨分類（舊資料／沒動過）；`true`＝不計入；`false`＝**單獨解除**
     （分類被標記也照樣計入）
   - 唯一判別式：`r.excludeFromStats ?? settings.categoryExcluded(r.categoryId)`
     （records store 的 `isExcluded`、RecordRow 的 `excluded` 都用這一句）
-  - 明細按過切換＝脫離分類控制（寫明確 true／false，之後分類再改都不影響它）
   - ⚠ 明細 save patch **只有單獨設定過才帶** `excludeFromStats`——0.1.63 每次儲存都寫
     `false`，會把「跟隨分類」悄悄固化成「這筆自己的設定」
+- **明細「統計」列＝三顆單選框**（0.1.65，取代 0.1.63 的切換鈕與 0.1.64 的提示行）：
+  - `.xradios`（nowrap，三顆同一列）裡三顆 `.xradio`（膠囊＋16px 方框白勾，選中 accent 底），
+    `data-v="incl|excl|cat"`；真 radio `.xradio__cb` 藏起來當接收面，`name="xstat"` 原生互斥
+  - 標題 `統計` 右邊括號（`.xstat__state`，`exclState` computed）四種格式：
+    `統計(計入統計)`／`統計(不統計)`（單獨設定）；
+    `統計(統計)(由分類控制)`／`統計(不統計)(由分類控制)`（跟隨分類，括號裡是生效結果）
+  - 三顆對應 `setExcl(false|true|undefined)`——**即時存檔**；`undefined` 被 JSON.stringify
+    吃掉＝**還原**成跟隨分類（之後分類設定再改會再次影響它）
+  - 320px 窄屏實測 272px < 容器 286px，不需要額外緊湊斷點
 - **統計頁「未計入統計」＝總結卡**（0.1.64）：`button.exclsum`（筆數＋支出／收入合計，
   fmtCompact），點它 → `router.push({ path: '/records', query: { excl: '1', from, to } })`
   （from／to＝統計頁當下區間，讓「N 筆」對得上；記錄頁接成自訂範圍）。
@@ -1146,3 +1154,8 @@ WebKit 就把它當成一次真正的 double-tap 手勢（smart zoom／重新對
 - **「排」標記橙色**（0.1.64）：`--orange #c95f16`（字）／`--orange-soft #fdf0e3`（底）／
   `--orange-line #f0bd8a`（虛線框），色票加在 style.css 的 `--amber` 旁邊；
   虛線框刻意保留（狀態≠內容）
+- **彈層頁腳固定**（0.1.65，CategoryManageModal 的刪除／取消／儲存）：要「不跟著內容捲」
+  的按鈕列就放 `.bsheet__body` **外面**當 `.bsheet` 直接子元素（共用 `.bsheet` 是 flex 欄向，
+  body 吃 `flex:1`、頁腳 `flex:none`）；safe-area 沿用共用 padding-bottom 不重複加。
+  格式對齊 RecordSheet 的 `.sheet__foot`（border-top＋`padding:12px 18px 16px`）。
+  ⚠ 測試選搜「頁腳按鈕」要用 `.mask .bsheet .foot`——`.box` 裡已經沒有它們了

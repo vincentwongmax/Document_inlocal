@@ -645,7 +645,16 @@ async function askRemove() {
           </p>
           </div>
         </Transition>
+        </div>
 
+        <!--
+          頁腳按鈕列（0.1.65：固定，不跟著內容捲）。
+          使用者原話：「最底的刪除, 取消,儲存的按鈕，用戶滑動時不應一起向上滑，
+          應該固定（格式請參考記錄明細的頁面）」。
+          ⚠ 所以它刻意放在 `.bsheet__body`（唯一會捲的那一層）**外面**，
+            變成 `.bsheet` 的直接子元素 —— 位置由 flex 版面釘在底部，
+            內容怎麼捲都不動。
+        -->
         <div class="foot">
           <button
             v-if="isEdit"
@@ -667,7 +676,6 @@ async function askRemove() {
           >
             {{ isEdit ? '儲存' : '新增' }}
           </button>
-        </div>
         </div>
       </div>
     </div>
@@ -1042,12 +1050,29 @@ async function askRemove() {
   color: var(--text-3);
   font-size: 11.5px;
   line-height: 1.5;
-}.foot {
+}
+
+/**
+ * 頁腳按鈕列（0.1.65：改成固定，不跟著內容捲）。
+ *
+ * 使用者原話：「最底的刪除, 取消,儲存的按鈕，用戶滑動時不應一起向上滑，
+ * 應該固定（格式請參考記錄明細的頁面）」。
+ *
+ * 做法：HTML 把 `.foot` 移出 `.box bsheet__body`（唯一會捲的那一層），
+ *   變成 `.bsheet` 的直接子元素。`.bsheet` 本身是 flex 欄向：
+ *     - `.bsheet__body` 吃 `flex:1; min-height:0; overflow-y:auto` → 內容自己捲
+ *     - `.foot` 用 `flex:none` → 高度固定、永遠釘在底部
+ *   分隔線與內距在這裡補（共用 `.bsheet` 只給 body 的捲動，不管頁腳）。
+ *   safe-area 沿用 `.bsheet` 的 `padding-bottom`，這裡不重複加。
+ */
+.foot {
+  flex: none;
   display: flex;
   gap: 10px;
   align-items: center;
   justify-content: flex-end;
-  margin-top: 2px;
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--line);
 }
 .foot__del {
   margin-right: auto;

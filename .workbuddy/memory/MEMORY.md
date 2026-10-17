@@ -1,144 +1,64 @@
 # 記帳本（mop-ledger）— 核心備忘
 
 Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\Desktop\AI`。
+細節（逐版設計決策、CSS 慣例、測試寫法）在 `CONVENTIONS.md`；這裡只放**每次動手都會用到**的東西。
 
 ## 版本
-- 只加 Z（目前 0.1.60）；改 package.json ＋ CHANGELOG（插最前面 --- 後）
-- ⚠ `.smoke/` 在 .gitignore（測試檔**不會**進 commit）→ 版本 commit 只含 src/、CHANGELOG、package.json、.workbuddy/memory
+- 只加 Z（目前 **0.1.66**）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
+- ⚠ `.smoke/` 在 .gitignore（測試**不會**進 commit）→ 版本 commit 只含 src/、CHANGELOG、package.json、.workbuddy/memory
 
-## 開發/驗證
-- preview :4173（改完先 build）；dev :5173（ls 分開）
-- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v139（63 支，v108 不存在）
-- ⚠⚠ 回歸跑著時**不要編輯 run-regress.sh**｜升版後必先 build｜冷啟 goto 30s＝**假紅**（單獨重跑）｜守門員 v119~v130；RecordSheet＝`.mask > .sheet.card`
-- ⚠⚠ **本地回歸 dist 不能帶 VITE_BASE**（preview 在根目錄伺服，帶了全 404 → App 空白假紅）；部署前才帶 base 重建
-- ⚠⚠ **測「無限滾動/餵食」不能用 `scrollTo(0, scrollHeight)` 一次跳到底**（會跳過死區、掩蓋卡死 bug）→ 一律 `scrollBy` 一小段一小段滑模擬手指
+## 開發／驗證
+- preview :4173（**改完必先 build**）；dev :5173（兩個 ls 分開）
+- 回歸 `bash .smoke/run-regress.sh`，**判準＝每支 exit code**；ALL＝v70~v141（65 支，v108 不存在）
+- ⚠⚠ 回歸跑著時**不要編輯 run-regress.sh**；升版後必先 build（APP_VERSION 是編譯期注入）
+- ⚠⚠ **本地回歸 dist 不能帶 VITE_BASE**（preview 伺服在根目錄，帶了全 404 → App 空白假紅）；部署前才帶 base 重建
+- 冷啟 `Navigation timeout 30s`＝**環境假紅**（單獨重跑就好）；v113/v135 等偶發 timing flake 同理
+- ⚠⚠ 測「無限滾動/餵食」不能用 `scrollTo(0, scrollHeight)` 一次跳到底 → 一律 `scrollBy` 小段滑模擬手指
+- ⚠⚠ **puppeteer 在 headless 下 `input[type=file].click()` 不會發 `filechooser` 事件** → `await` 它會**永遠卡死**（0.1.66 實慘）。改監測「input.click 被呼叫幾次」（覆寫 `HTMLInputElement.prototype.click` 計數）
+- 測試殺手：`deleteDatabase` 只能 reload 後；`isRealErr()+ENV_NOISE` 照抄；等狀態不等時間；防空集合假通過
 
-## Git/部署
+## Git／部署
 - Pages＝gh-pages；線上 `vincentwongmax.github.io/Document_inlocal/`；線上驗證＝**內容特徵**
 - ⚠ push/deploy 要使用者明說「上傳」才做；`git add -A -- . ':!ddd.txt'`；PAT：grep audit-log `ghp_…`（**不寫進任何檔案**）
-- ⚠⚠ **git push 常被代理截斷**（fetch 也可能掛）→ 走 **REST API**：`.smoke/api-push.mjs`（main）＋`.smoke/deploy-api.mjs`（gh-pages）；對齊＝`fetch`＋`reset <sha>`（樹同才安全）
-- ⚠ 走 API 推完後**本地 remote-tracking ref 一定是舊的**（`git fetch` 也常被截斷，且遠端 commit 物件不在本地）→ 這是**正常現象不用修**；`.smoke/api-push.mjs` 以遠端 tree 當 base，**不依賴本地 ref**。要確認遠端狀態就用 `curl .../commits/<branch>` 或看線上 `version.json`
-- ⚠⚠ **api-push.mjs 會讀 `.smoke/show.txt`（單一 commit 的 diff 清單）**——忘記重新產生就會推到**舊清單**（0.1.57 實慘：推到 RecordList.vue、四個真正改動的檔沒上去）→ **以後一律改用 `.smoke/api-sync.mjs`**：比對「遠端 recursive tree vs 本機 tracked 檔案的 blob sha」，把所有不同的檔案補上去 → 遠端必然等於本機
-  - 產生本機清單：`git ls-files | while IFS= read -r p; do [ -f "$p" ] && printf '%s\t%s\n' "$(git hash-object "$p")" "$p"; done > .smoke/local-hash.txt`
-  - ⚠ node 在這個環境叫 `cmd.exe` 會 **EBUSY** → 清單要在 bash 端生好再讓 node 讀，不要 spawn
-  - deploy 前後各跑一次（第二次應該印「遠端已與本機一致，不用推」）當驗證
-- ⚠⚠ Git Bash 的 `VITE_BASE=/Document_inlocal/` 被 **MSYS 路徑轉換**改掉→線上 404；加 `MSYS_NO_PATHCONV=1`
+- ⚠⚠ **git push 常被代理截斷** → 走 REST API：`.smoke/api-sync.mjs`（main，比對遠端 tree vs 本機 blob sha，補齊所有差異）＋`.smoke/deploy-api.mjs`（gh-pages）
+  - 本機清單：`git ls-files | while IFS= read -r p; do [ -f "$p" ] && printf '%s\t%s\n' "$(git hash-object "$p")" "$p"; done > .smoke/local-hash.txt`（bash 端生好再給 node 讀，node spawn cmd.exe 會 EBUSY）
+  - ⚠ 不要用 `api-push.mjs`（讀 `.smoke/show.txt`，忘了重產生會推到舊清單）
+  - deploy 前後各跑一次 api-sync（第二次應印「遠端已與本機一致」）當驗證
+- ⚠ 推完後**本地 remote-tracking ref 一定是舊的**（正常，不用修）；確認遠端用 `curl .../commits/<branch>` 或線上 version.json
+- ⚠⚠ Git Bash 的 `VITE_BASE=/Document_inlocal/` 會被 MSYS 路徑轉換改掉 → 加 `MSYS_NO_PATHCONV=1`
+- live 測試（v132-live…v137-live）版本斷言要跟著**線上**版本（未部署就維持舊值）
 
-## 資料
-- wallets.v1＝{wallets, activeWalletId}；每錢包 `setting.<id>.v1`（預設 `w_default`）；`records`＝當前錢包 computed；匯出 JSON=format2；Excel=.zip
+## 資料模型
+- wallets.v1＝{wallets, activeWalletId}；每錢包 `setting.<id>.v1`（預設 `w_default`）；`records`＝當前錢包 computed
+- 匯出 JSON=format2（可還原）／Excel=.zip（不含設定）
+- **匯率凍結**：記錄顯示＝該筆快照的 `rate`；`recRate()` 最前面短路 `r.currency===dc → 1`；「更新匯率」只寫 `rates`（舊記錄不動）
+- **不計入統計三態**：`undefined`＝跟隨分類／`true`／`false`；唯一判別式 `r.excludeFromStats ?? settings.categoryExcluded(r.categoryId)`
 
-## 旅行模式（0.1.35 起）
-- 一次一個 `activeTrip`；記錄蓋 `tripId?`；結束**保留**標籤（推 `tripHistory`）；`?trip=` 過濾；旅行色 `--trip-c`
+## 元件幾何（全站共用）
+- 底部彈層＝`.mask > .card.bsheet`（`.bsheet__grab`＋`.box.bsheet__body` 唯一可捲＋下拉關閉＋背景鎖）
+- **頁腳固定**：`.foot` 放在 `.bsheet` 直接子元素（**不是** `.box` 裡）→ `flex:none`＋`border-top`＋`padding:12px 18px 16px`（0.1.65 的修法，之後所有彈層照做）
+- z-index：tabbar 40／一般彈層與匯入彈窗 90／快速記錄頁 92／格子編輯器 96
+- ⚠⚠ Vue 模板 HTML 註解內**不能用 `-->` 箭頭**（註解提前結束→文字外洩）；一律寫「→」
 
-## 0.1.44~50（舊版重點）
-- 自訂貨幣＝`settings.customCurrencies`＋匯率進 `rates`；**代碼不設限**（只擋 空白/撞內建/重複）；0.1.49 起**可當主幣別**
-- 排版＝`settings.homeLayout`（空=全顯示；分類=3 號）；預設值＝`settings.homeDefaults`（即改即存；幣別下拉只有區塊 1 隱藏才套用）；`dateOffset`：`before|after:N:m|h|d|mo|y`／`'now'`／`'at:…'`；**MiniSelect** class 不 fallthrough→`inheritAttrs:false`＋父 span 包
+## 視覺
+米白紙感；收入墨綠 `#2c6e5b`（`--accent`）、支出 `#bf563c`（`--expense`）、琥珀 `#d9a326`＝旅行、橘 `#c95f16`＝「排」。
 
-## 0.1.51~52
-- 排版標題列貼右＝`#sec-homelayout` 加 `.sec__hd--lay`（`.sec__meta{flex:1}`）；HomeDefaultSheet scoped 漏 `.hidden`→補 `display:none`；`.mask` z-index 90 蓋 `.tabbar`(40)
-- 記錄頁搜索＝**空白切詞 AND**（每詞在 備註／分類／旅行名 任一欄命中）；HighlightText 多詞黃底
-- **version.json**（檢查更新）：vite plugin 建置時產生；**必須** `globIgnores:['**/version.json']` 排除預快取＋`?t=`＋`cache:'no-store'`；其餘可離線
-- ⚠ 教訓：placeholder 有「塞得進」守門員（v95）；SweetAlert2 `.swal2-cancel` 一直在 DOM→驗對話框用可見性
+## 近期版本重點
+- **0.1.66** 匯入改三分頁彈窗（JSON／貼上資料／快速記錄表格）：
+  - `ImportModal`（頁籤 seg、JSON 分頁 emit `pick-json` 沿用 hidden file input 的原本流程）；`QuickRecordSheet`（div grid 類表格可橫滑、空白列 `--`、點格子開編輯器（輸入框＋複製/貼上/清空/確定一排）、✕ 刪列不確認、只提交完整列）
+  - `src/lib/quickParse.ts`＝**純函式**解析器（欄位靠型樣不靠位置、日期時間整顆 token、第一個數字＝金額／第二個＝分類編號、看不懂併備註、缺欄補預設記 issues、全形轉半形、吃 Excel Tab）
+  - 分類編號＝`src/lib/tree.ts` 的 `flatTreeByType()`（per 收支別、DFS、由 1 起）→ **設定頁 chips 編號與解析器同源**
+  - 單驗 `.smoke/unit-quickparse.mjs`（23/23）；守門員 v141（44/44）
+- **0.1.65** 明細「統計」三顆 radio（統計／不統計／由分類控制，即時存檔，還原＝寫 undefined 讓鍵消失）＋標題括號四種格式；管理分類頁腳固定。**已 commit 未部署**（跟 0.1.66 一起上）
+- **0.1.64** 統計頁「未計入統計」總結卡（點了跳記錄頁 `?excl=1`＋帶區間）；「更多」第四項 excl（short「排」，改橙色）；三態 excludeFromStats
+- **0.1.63** 送出前時間非現在 → confirmDialog；不計入統計（分類含上層整棵子樹）；圖片刪除確認
+- **0.1.62** 選擇分類頁搜索框＋「選擇分類」鈕常駐；記錄頁「依實時」→「更多」多選下拉（`MoreFilterMenu`）
 
-## 0.1.53（匯率凍結模型＋圖片+＋記錄頁分頁）
-- **記錄顯示＝該筆自己凍結的匯率**：快照 `rate`＝1 record.currency = rate record.baseCurrency；顯示走 `recRate`／`displayOf`／`displayRateOf`（settings.ts）→現行表換算成顯示幣別；`base===dc` 直接回 mult 不碰表；舊資料回退即時表
-- 「更新匯率」只寫 `rates`（未來新快照）→舊記錄顯示不動；`setBaseCurrency` conv fallback（無效當 1）→自訂貨幣當主幣 A→B 不被 `defaultRates` 吃掉；`toDisplay` 只留輸入用
-- 圖片 icon＝多張「圖片+」／單張「圖片」（無張數節點）
-- 記錄頁分頁：`pageSize` 20/50/100/全部(0) 預設 50＋`page`；>20 筆出 pager；切篩選/搜尋回第 1 頁；桌面四鈕＋頁碼／PWA「顯示更多」
-- ⚠⚠ `v-if`/`v-else` 陷阱：分頁列 `v-if="showPager"` 插在 RecordList 與「依分類」`<template v-else>` 中間→v-else 改黏 showPager，≤20 筆兩種檢視同時渲染→`<template v-if="!byCat">` 包住
-- ⚠ `<select v-model>` 送字串→「全部」0 變 '0'→掛 `.number`；攔 er-api 要自帶 CORS header；setViewport 切 isMobile **會重載**
-
-## 0.1.54（主幣＝記錄幣別不換算＋PWA 餵食＋必填外框＋K/M）
-- `recRate()` 最前面短路 `r.currency===dc → return 1`（不能靠 round-trip：更新匯率後會散成 0.9879）
-- PWA(≤519px)=餵食模式（IO 哨兵、無按鈕、10/20/50/全部）；桌面維持 0.1.53 分頁。RecordList `virtual` prop：一天=`.dayblk`，IO(rootMargin 1000px)+RO，離開視窗換等高空白 div；坑：子元件 onMounted 較早→`ensureObservers()` 一律建＋watch 補種；**`vis` key 只能是日期**（高度 key 才是 `日期|筆數`）；`pump()` 用 `top > innerHeight` 不加 rootMargin
-- 必填未填＝`--pick` #b85773（金額/分類 `.is-missing`）；非必填＝`--line-strong` #d6d1c7；`:hover` 壓回；`.rec` 要 `:deep()`
-- `fmtCompact`（K/M/B，q<10 兩位小數、<100 一位，trimZeros）；統計三卡＋`title` 完整數字；子頁面維持 fmtMoney
-- ⚠⚠ **Vue 模板 HTML 註解內不能用「--＞」箭頭**（註解提前結束→文字外洩到頁面）；註解一律用「→」
-- v86 Toast 吃觸控＝時序偶發（SW 快取完成才彈）→ `reset()` 每節補 `settleToast()`
-
-## 0.1.55（修 PWA 餵食卡死）
-- 死區 bug：IO rootMargin(400) ≠ pump 停止條件(innerHeight) → 哨兵在「視窗下方 0~400」時 IO 叫了 pump 卻不載，且 IO 只在狀態改變時回呼 → 永遠卡住
-- 修：共用 `FEED_SLACK=200`（IO rootMargin ＋ pump `top > innerHeight + FEED_SLACK`）；pump 加 `pumping` 鎖；加 window scroll 備援(rAF)
-
-## PWA 離線（0.1.60）
-- iOS 7 天驅逐：主畫面 PWA **明文豁免**（WebKit ITP）→「第一次連線＋放主畫面」就永久離線可用；Safari 分頁開啟的不豁免
-- **⚠⚠ workbox 坑**：`<link rel=stylesheet>` 是 no-cors → SW 拿到 opaque（status 0）；workbox `cachePut` 無 cacheWillUpdate 外掛時**只收 200** → 樣式表永遠不快取。兩條 font 路由都必須給 `cacheableResponse:{statuses:[0,200]}`（產生 CacheableResponsePlugin）
-- Google Fonts＝runtimeCaching CacheFirst（`gf-stylesheets`／`gf-webfonts`，maxAge 1 年）；globPatterns 加 `webmanifest`
-- `navigator.storage.persist()` 開機呼叫（pwa.ts；iOS 不支援＝no-op）防儲存壓力回收
-- 離線測試 v135：`page.emulateNetworkConditions({offline:true,download:-1,upload:-1,latency:0})`（puppeteer 25 **沒有** setOffline；鍵名是 download/upload 不是 Throughput）；**字型要第二次 reload 才進 SW 快取**（首次載入時 SW 還沒控制頁面）
-- 版检查（version.json）只在按鈕時觸發、離線有 Toast；匯率 API 同理；hash 路由離線換頁免伺服器
-
-## 0.1.59（代辦四項修正）
-- **點欄位不彈鍵盤**：TodoSheet 開啟不 focus 輸入框（0.1.58 的 `lastInput.focus()` 拿掉）；只有按「新增事項」才 focus 新項
-- 明細欄位每一項各自一個按鈕 `.todorow__it`（`1.xxx` 格式）；點某項→開子頁面＋`.tdolist__row.is-focus` 高亮（**不 focus**，scrollIntoView center）；已完成＝**雙劃線**（`text-decoration:line-through double`）
-- 「清除已完成」走 `confirmDialog`（SweetAlert2，紅色清除鈕）——唯一會一次丟多項的操作
-- 記錄列「記」`.ttodo`：移到 `.ttag` **右邊**；`todoTone` computed：pending＝紅 `--expense-soft`底／done＝綠 `--accent-soft`底；**11px／19px 高＝跟 .ttag 相同**
-- RecordSheet 開子頁面改走 `openTodo(idx)`（帶 `todoFocusIdx`）；`.todorow` 外框改 div（裡面標題列與各項都是 button，按鈕不能巢狀）
-- 守門員 v134（24/24）＋v134-live；v133 跟著改讀取（`.todorow__it`）；截圖 shot-1059-{records,sheet,confirm}.png
-
-## 0.1.61（刪除確認／待辦篩選鈕／代辦→待辦）
-- **刪除先確認**：RecordSheet「刪除」鈕改走 `onDelete()` → `confirmDialog({danger:true, confirmText:'刪除'})`，只有 `'confirm'` 才 `emit('remove')`（移除＋復原吐司仍父層 `removeEditing`）
-- **待辦篩選鈕**（RecordsView 檢視列第 3 顆，「最近」右邊）：`todoFilter` off/has/done/pending 循環（TODO_CYCLE）；
-  has＝`todos.length>0`、done＝length>0 且全 done、pending＝有 `!t.done`；疊在 typeFilter 後；兩個 reset watch 都要加 todoFilter
-- 四檔 icon 兩兩不同（項目符號／勾選清單／打勾方框／空方框）；非 off 時 `.is-on` 墨綠底
-- **窄屏排版**：`.grp__row--view{flex-wrap:nowrap}`；「依新增時間」→「依實**時**」（⚠繁體「時」）；≤519px gap 6px＋padding 0 9px；
-  **≤374px 緊湊斷點**（gap 4px／padding 0 4px／font 12px／icon 14px）——不然 320px 四顆內容 312px > 列寬 254px 會溢出卡片
-- 「代辦事項」全站→「待辦事項」（RecordSheet/TodoSheet/RecordRow＋types.ts 註解）
-- 守門員 v136（28/28）＋v136-live（29/29）；v100 刪除流程加按 `.swal2-confirm`；v85/v94/v109 配合四顆＋依實時改斷言
-
-## 0.1.62（分類搜索框／選擇分類鈕常駐／「依實時」→「更多」下拉）
-- **選擇分類頁搜索框**：CategoryPicker 新 prop `query` → 搜索時扁平列命中分類（含子分類、完整路徑、HighlightText 黃底）；
-  空白多段＝AND（與記錄頁同一套）；CategorySheet 用 ClearableInput＋:deep 縮小（34px 膠囊、清空鈕 22px）；每次開啟清空 query、不 focus
-- **「選擇分類」鈕常駐**：`showMore = !searchMode && (moreExternal || (expandable && !expanded))`——記帳頁（moreExternal）不再受 expandable 限制
-- **新元件 MoreFilterMenu.vue**（記錄頁第四顆）：多選下拉（Teleport＋fixed、右緣對齊、方框打勾、點選不關、Esc/點外關）；
-  觸發鈕黃框沿用原格位＋`margin-left:auto`；**原本「依實時」鈕跟「最近」控制同一個 `recent`，換掉零損失**
-- 過濾：MORE_TAGS（img→圖/trip→旅/todo→待）AND（`hasTag`：images.length/tripId/todos）；`moreLabel`＝首字「+」連接（圖+旅，順序照 options）
-- ⚠⚠ v-if 鏈三段：CategorySelect → searchMode 結果 → 標籤模式；`.mf__trigger` 不帶 `.bycat` class → 量測型測試的選擇器要加它
-- 守門員 v137（33/33）＋v137-live（34/34）；v85/v94/v109/v136(+live) 改斷言；v109-live 整支重生成；ALL＝v70~v137（61 支）
-
-## 0.1.64（未計入統計總結卡／三態／排改橙色）
-- **統計頁「未計入統計」＝總結卡**：`button.exclsum`（N 筆＋支出／收入合計，fmtCompact），放在區間記錄 v-else 的**外面下方**（全排除時也看得到）；點擊 → `push({path:'/records',query:{excl:'1',from,to}})`（from/to＝統計頁當下區間，讓 N 筆對得上）
-- **記錄頁 `?excl=1`**：watch `route.query.excl` → 自動勾「更多」的 `excl`＋把 from/to 套成自訂範圍；只勾那一格不重置其他條件
-- **「更多」下拉第四項**：`{v:'excl',label:'未計入統計',short:'排'}`（short 與記錄列標記同字）；`hasTag` 吃 `records.isExcluded`
-- **三態 `excludeFromStats`**：undefined＝跟隨分類／true＝不計入／false＝單獨解除；唯一判別式 `r.excludeFromStats ?? settings.categoryExcluded(r.categoryId)`（isExcluded／RecordRow excluded 都用它）；明細按過切換＝脫離分類控制（寫明確值）；**save patch 只有 solo 過才帶**（0.1.63 每次寫 false 會把跟隨分類悄悄固化）
-- 明細提示兩款：沒按過且分類被標記→「目前由分類『X』控制；按上面的切換可單獨設定這筆」；按過→「這筆已單獨設定，不會再跟隨分類」
-- **「排」橙色**：`--orange #c95f16`／`--orange-soft #fdf0e3`／`--orange-line #f0bd8a`（style.css 加在 --amber 旁）；虛線框保留
-- 守門員 v139（29/29）＋shots-v139.mjs（5 張）；v137(+live) 下拉斷言三→四項；v138 統計頁改讀總結卡；ALL＝v70~v139（63 支）
-
-## 0.1.63（時間確認／不計入統計／圖片刪除確認）
-- **時間確認**：HomeView `submit()` 在金額／分類檢查後，`!hiddenBlocks.has(5)` 且 `|now - occurredAt| > NEAR_MS(2min)` → `confirmDialog`（`formatFull` 顯示時間）→ 只有 `'confirm'` 才繼續；隱藏區塊（預設值）不檢查
-- **不計入統計**：`Category.excludeFromStats?`＋`TxRecord.excludeFromStats?`；`settings.categoryExcluded(id)`＝`pathOf(id).some(excludeFromStats)`（**含上層＝整棵子樹**，封存分類也查得到）；`records.isExcluded(r)`＝記錄旗標 **or** 分類排除；`totalExpense/totalIncome`、useStats 的 rows/trend/prevExpense/topRecords 全過濾；明細切換**即時存檔**（todos 先例）＋save patch 雙保險
-- 管理分類：編輯模式 `.dflt` 切換（計入／不計入統計）＋新增模式勾選；`addCategory(..., excludeFromStats)` 只在 true 時寫鍵
-- 統計頁新增「未計入統計」區塊（`excludedRows`，內置 RecordList 可點進明細）；記錄列「排」`.texcl` 標記（11px/19px，虛線框中性灰）
-- ⚠ 記錄頁清單與加總、旅行摘要**刻意不動**（清單內容 ≠ 統計）
-- **圖片刪除確認**：`.imgs__x` → `onRemoveImage()`＝confirmDialog 閘門；取消不動、確認只移除本地清單 → **blob 仍於儲存／關閉才刪**，未儲存關閉再開圖片還在
-- 守門員 v138（40/40）＋shots-v138.mjs（5 張）；v92 加按「確定記錄」；ALL＝v70~v138（62 支，v108 不存在）
-
-## 0.1.58（代辦事項）
-- 資料：`TodoItem {id,text,done}`；`TxRecord.todos?`；**勾選即時存檔**（`records.update`，不等按儲存；清空存 `undefined` 不存 `[]`）；save patch 也帶 todos 雙保險
-- 明細摘要列 `.todorow`（備註下方）：`x/y`＋`x 項未完成`/`全部完成`（墨綠）＋前三項 `1.xxx 2.yyy 3.zzz`（line-clamp 2，超過補「…還有 N 項」）；沒有＝「新增代辦事項」；整列可點
-- 子頁面 `TodoSheet.vue`＝bsheet 幾何（下拉關閉/✕/背景鎖/pop）；進度長條＋編號/勾選圈/input/✕；Enter 新增；空白項 blur 自動移除；清除已完成/全部完成(取消)；完成＝劃線淡出；**每次開啟從 props 重拿**（無殘影）
-- ⚠⚠ `TodoSheet` 是 RecordSheet 模板**第三個根節點**（不在明細 `v-if` 內）→ 加 `watch(props.open)` 收 `todoOpen`，否則關明細後代辦面板留在畫面
-- 記錄列「記」標籤＝`.ttodo`（墨綠軟底、18px 高、清單 icon）；`todos?.length` 才出現；**已加進 0.1.38 stacked 重測的 watch 依賴**
-- 守門員 v133（37/37）＋v133-live；截圖 shot-1058-{records,sheet,todo}.png
-
-## 0.1.57（記錄頁 K/M＋圖片標籤改「圖」＋放大檢視導覽＋點圖關閉）
-- 記錄頁 sum 三格＝`currency().symbol + fmtCompact()`（**帶幣別符號**）；`title` 留完整數字。**沒**做「量測到超出才壓」（要 ResizeObserver、會閃），因為會被截成 … 的數字本來就 ≥1000
-- 統計頁（0.1.54）維持**純數字不帶符號**→ 兩頁刻意不同，理由寫在 RecordsView 註解裡
-- 圖片標籤：多張「圖+」／單張「圖」（0.1.53 的「圖片+」再短一階），RecordRow 全站一致
-- ImageLightbox 新增**可選** `nav` → 底部**獨立一列** 4 顆 ICON（‹ › 上下張、« » 上下筆＋位置）；**不**放進 `.lightbox__bar`（既有測試斷言那列 3 顆）
-- 無圖＝`.lightbox__empty`「無圖」佔位，燈箱**不關**、上下筆照可按；`opened = src || nav`（src 為 null 時靠 nav 撐住）
-- 導覽範圍＝`rows`（完整搜尋結果）；統計頁不傳 `navIds` → 只出現上下張；「關閉停在最後看圖那筆」＝按上下筆時就 emit `goto-record` 換 `editingId`
-- ⚠⚠ 坑：`releaseUrls()` 原本呼叫 `closeLightbox()` → 導覽換記錄時燈箱被關。改成 `releaseUrls()` 只收 URL **不清 `lbNav`**，只有使用者主動關圖的 `closeLightbox()` 才清
-- 點圖片關閉＝`@click.stop="onImgClick"`，沿用「位移 > 8px 視為拖曳」保護；Test 用 dispatchEvent(PointerEvent + MouseEvent) 模擬點擊／拖曳
-
-## 0.1.56（回收要積極）
-- RecordList 視窗化保留範圍 `VIRTUAL_SLACK=200`（原 1000 太寬＝幾乎沒回收）；區塊高約 410px → 300 仍不回收、200 才收；上下同一 rootMargin → 對稱回收；回收後＝上次量到的真實高度（不跳）
-
-## 全站約定（細節在 CONVENTIONS.md，勿回退）
-1~5. body `min-height:100%`｜日期一律 DateField/DateTimeField｜彈層開背景不能滑｜可編輯元素 16px｜點/雙擊空白不能動
-6~10. 子頁面＝底部彈層（幾何在 style.css）｜一列記錄＝一個點擊目標｜連點防護別拆｜彈層避 home indicator
-11~14. 金額顯示用凍結匯率（0.1.53 起）｜快速金額只帶入不送出｜「依新增時間」＝最右黃框｜統計組標題金額用完整清單加總
-15. 測試殺手：deleteDatabase 只能 reload 後；isRealErr()+ENV_NOISE 照抄；等狀態不等時間；防空集合假通過；拔 @esbuild 要裝回
-
-視覺：米白紙感；收入墨綠 #2c6e5b、支出 #bf563c；琥珀 #d9a326＝旅行主題
+## 舊版（一行帶過，細節見 CONVENTIONS.md）
+- 0.1.44~50 自訂貨幣（代碼不設限、0.1.49 起可當主幣別）、`homeLayout`/`homeDefaults`/`dateOffset`
+- 0.1.53 匯率凍結模型＋記錄頁分頁（⚠ `v-if`/`v-else` 陷阱）｜0.1.54 主幣＝記錄幣別不換算＋PWA 餵食＋必填粉紅外框＋K/M
+- 0.1.55 餵食死區（IO rootMargin 與 pump 停止條件要共用 `FEED_SLACK`）｜0.1.56 回收 `VIRTUAL_SLACK=200`
+- 0.1.58/0.1.59 待辦事項（`TodoItem`、`todos?`、勾選即時存檔、`.todorow` 摘要、TodoSheet）
+- 0.1.60 PWA 離線（⚠ workbox 對 opaque 樣式表只收 200 → 兩條 font 路由要 `statuses:[0,200]`；v135 字型要第二次 reload 才進快取）
+- 0.1.61 刪除前確認＋待辦篩選鈕＋「代辦」→「待辦」｜0.1.57 圖片標籤「圖」、燈箱導覽、點圖關閉
+- ⚠ v5x/v6x **不在回歸集**且有舊世代遺留（`mop-ledger.settings.v1` 舊 key、0.1.2 前 `.toast__text`／`.box[role="alertdialog"]`）→ 紅燈與現行版無關，不修

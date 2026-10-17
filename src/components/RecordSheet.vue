@@ -124,17 +124,42 @@ const todoOpen = ref(false)
  * 若果用戶單獨解除，則這筆記錄可由用戶自訂要計入統計或不計入統計」
  * → 改成**三態**（`explicit`，直接對應 `TxRecord.excludeFromStats`）：
  *   - `undefined` 沒單獨設定過 → **跟隨分類**（分類含上層被標記就一併排除）
- *   - `true`／`false` 使用者在明細裡按過切換 → 這筆自己的設定，不再跟隨分類
+ *   - `true`／`false` 使用者在明細裡按過 → 這筆自己的設定，不再跟隨分類
+ * 0.1.65（使用者原話）：「更改計入統計的格式，在同一行中，分成3個勾選框，
+ * 統計，不統計，由分類控制…用戶也可以還原成交由分類控制」
+ * → 三態直接變成**三個單選框**（`xradio`），一顆對應一種狀態：
+ *     統計＝`false`（單獨計入）／不統計＝`true`（單獨不計入）／
+ *     由分類控制＝`undefined`（還原，跟著分類走）
  * ⚠ 跟待辦事項的勾選一樣是**即時存檔**的——切換型操作要求使用者記得回來按
  *   「儲存」太容易漏（0.1.58 的同一套理由）。
  */
 const explicit = ref<boolean | undefined>(undefined)
-/** 實際生效的狀態（畫面上那顆切換顯示的就是它）：沒單獨設定過時跟隨分類 */
+/** 實際生效的狀態（畫面上的括號與單選框都照它顯示）：沒單獨設定過時跟隨分類 */
 const excl = computed(() => explicit.value ?? settings.categoryExcluded(categoryId.value))
-/** 這筆已經「單獨設定」過了嗎（離開分類控制）——用來決定提示文字 */
+/** 這筆已經「單獨設定」過了嗎（離開分類控制） */
 const exclSolo = computed(() => explicit.value !== undefined)
-/** 這筆所屬的分類（含上層）是否被標記不計入統計——是的話這筆預設也不會計入 */
-const catExcluded = computed(() => settings.categoryExcluded(categoryId.value))
+/**
+ * 標題右邊括號裡的目前狀態（0.1.65 使用者指定的格式）：
+ *   統計(計入統計)／統計(不統計)                    ← 單獨設定（使用者自己選的）
+ *   統計(統計)(由分類控制)／統計(不統計)(由分類控制)  ← 還原成跟隨分類（括號裡是生效結果）
+ */
+const exclState = computed(() => {
+  if (explicit.value !== undefined) return `(${explicit.value ? '不統計' : '計入統計'})`
+  return `(${excl.value ? '不統計' : '統計'})(由分類控制)`
+})
+
+/**
+ * 0.1.65：選一個統計狀態（三個單選框共用）——即時寫檔（理由同 todos 的勾選）。
+ * 統計頁的所有數字、側欄總結餘都會立刻排除／恢復這筆；記錄本身不受影響。
+ * 傳 `undefined`＝「由分類控制」＝還原成跟隨分類（使用者原話：「用戶也可以還原」）。
+ */
+function setExcl(v: boolean | undefined) {
+  const r = props.record
+  if (!r) return
+  explicit.value = v
+  // ⚠ undefined 會被 JSON.stringify 吃掉 → 存檔後鍵整個消失，正是「還原」要的效果
+  records.update(r.id, { excludeFromStats: v })
+}
 const todoTotal = computed(() => todos.value.length)
 const todoDone = computed(() => todos.value.filter((t) => t.done).length)
 const todoLeft = computed(() => todoTotal.value - todoDone.value)
@@ -168,21 +193,6 @@ function onTodosChange(next: TodoItem[]) {
   if (!r) return
   // 清空時存 undefined（JSON 序列化會整個丢掉這個鍵），不要留一個空陣列佔空間
   records.update(r.id, { todos: next.length ? next : undefined })
-}
-
-/**
- * 0.1.63：切換「不計入統計」——即時寫檔（理由同 todos 的勾選）。
- * 統計頁的所有數字、側欄總結餘都會立刻排除／恢復這筆；記錄本身不受影響。
- * 0.1.64：按一下就是把這筆轉成**單獨設定**（寫入明確的 true／false）——
- *   就算是「分類控制中」的狀態，按過之後也由使用者自己說話，
- *   之後分類設定再變都不會影響這筆（使用者原話：「若果用戶單獨解除，
- *   則這筆記錄可由用戶自訂要計入統計或不計入統計」）。
- */
-function toggleExcl() {
-  const r = props.record
-  if (!r) return
-  explicit.value = !excl.value
-  records.update(r.id, { excludeFromStats: explicit.value })
 }
 
 const numeric = computed(() => {
@@ -638,10 +648,11 @@ function save() {
     //   這裡再帶一次是為了「開著明細 → 改代辦 → 按儲存」這條路也不會漏
     //   （例：子頁面改完的當下 props.record 還沒被 watch 重載的極端情況）。
     ...(todoTotal.value ? { todos: todos.value } : {}),
-    // 0.1.63：不計入統計。正常情況 `toggleExcl` 已經即時寫過，這裡再帶一次
+    // 0.1.63：不計入統計。正常情況 `setExcl` 已經即時寫過，這裡再帶一次
     //   是雙保險（同 todos 的理由）。
     // 0.1.64：**只有單獨設定過才帶**——沒按過就讓它繼續跟隨分類
     //   （不然每次儲存都會把「跟隨分類」悄悄變成「這筆自己的設定」）。
+    // 0.1.65：改成三個單選框後語意不變——選「由分類控制」等於還原（undefined）。
     ...(exclSolo.value ? { excludeFromStats: excl.value } : {}),
     // 旅行標記：跟著這一欄的狀態走（空＝解除）
     tripId: tripId.value || undefined,
@@ -819,25 +830,52 @@ function save() {
             0.1.63：這筆要不要計入統計（使用者原話：「在記錄明細頁面中，
             增加該筆資料不計入統計按鈕」）。即時存檔，按「儲存」與否都算。
             排除後統計頁的收支／分類佔比／長條圖都不算它，統計頁也會單獨列出。
-            0.1.64（使用者原話）：「計入統計的選項，如果是由分類控制，要顯示，
-            若果用戶單獨解除，則這筆記錄可由用戶自訂要計入統計或不計入統計」
-            → 按鈕下面多一行「控制來源」提示：
-              ① 沒按過切換、且分類被標記 → 目前由分類控制（按一下就能單獨設定這筆）
-              ② 按過切換 → 這筆已單獨設定，之後分類再改都不影響它
+            0.1.64：三態（undefined＝跟隨分類／true＝不計入／false＝單獨解除）。
+            0.1.65（使用者原話）：「更改計入統計的格式，在同一行中，分成3個勾選框，
+            統計，不統計，由分類控制，由統計標題的文字的右手邊括號顯示目前統計狀態，
+            統計(計入統計), 統計(不統計)(由分類控制), 統計(統計)(由分類控制)」
+            → 切換鈕改成**三個單選框**（同一列），標題右邊括號顯示目前狀態；
+              選「由分類控制」＝還原成跟隨分類（使用者原話：「用戶也可以還原」）。
           -->
           <div class="flat">
-            <span class="flat__label">統計</span>
-            <button class="xstat" :class="{ 'is-on': excl }" type="button" @click="toggleExcl">
-              <span class="xstat__dot" />
-              <span class="xstat__txt">{{ excl ? '不計入統計' : '計入統計' }}</span>
-              <span class="xstat__hint">{{ excl ? '再按一下恢復' : '按一下排除' }}</span>
-            </button>
-            <!-- 分類控制中（還沒單獨設定過）：說明現在的狀態是分類給的 -->
-            <p v-if="!exclSolo && catExcluded" class="tiny muted xstat__cat">
-              目前由分類「{{ catName }}」控制；按上面的切換可單獨設定這筆
-            </p>
-            <!-- 單獨設定過：這筆自己說話，不再跟隨分類 -->
-            <p v-else-if="exclSolo" class="tiny muted xstat__cat">這筆已單獨設定，不會再跟隨分類</p>
+            <span class="flat__label">
+              統計<span class="xstat__state">{{ exclState }}</span>
+            </span>
+            <div class="xradios">
+              <label class="xradio" :class="{ 'is-on': explicit === false }" data-v="incl">
+                <input
+                  type="radio"
+                  name="xstat"
+                  class="xradio__cb"
+                  :checked="explicit === false"
+                  @change="setExcl(false)"
+                />
+                <span class="xradio__box" aria-hidden="true" />
+                <span class="xradio__txt">統計</span>
+              </label>
+              <label class="xradio" :class="{ 'is-on': explicit === true }" data-v="excl">
+                <input
+                  type="radio"
+                  name="xstat"
+                  class="xradio__cb"
+                  :checked="explicit === true"
+                  @change="setExcl(true)"
+                />
+                <span class="xradio__box" aria-hidden="true" />
+                <span class="xradio__txt">不統計</span>
+              </label>
+              <label class="xradio" :class="{ 'is-on': explicit === undefined }" data-v="cat">
+                <input
+                  type="radio"
+                  name="xstat"
+                  class="xradio__cb"
+                  :checked="explicit === undefined"
+                  @change="setExcl(undefined)"
+                />
+                <span class="xradio__box" aria-hidden="true" />
+                <span class="xradio__txt">由分類控制</span>
+              </label>
+            </div>
           </div>
 
           <!-- 詳細資訊 -->
@@ -1469,73 +1507,85 @@ function save() {
   padding: 0 7px;
 }
 
-/* ── 0.1.63：不計入統計切換（樣式沿用管理分類的 .dflt：空心圓→打勾）───────── */
-.xstat {
+/* ── 0.1.65：統計三態單選框（0.1.63 的切換鈕改成三個方框）─────────────────
+   使用者原話：「更改計入統計的格式，在同一行中，分成3個勾選框，統計，不統計，
+   由分類控制，由統計標題的文字的右手邊括號顯示目前統計狀態」。
+   - `.xstat__state`＝標題右邊括號裡的狀態（由 exclState computed 組）
+   - `.xradios`＝同一列的三顆單選框（nowrap，使用者指定「同一行中」）
+   - `.xradio` 外框照 `.dflt`／`.xstat` 的膠囊語彙，選中用 accent 底；
+     方框打勾照 `.mf__box`（實心方框＋白勾），一眼看得出是「勾選」 */
+.xstat__state {
+  margin-left: 1px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.xradios {
   display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+.xradio {
+  display: inline-flex;
   align-items: center;
-  gap: 9px;
-  width: 100%;
-  min-height: 40px;
-  padding: 8px 11px;
-  border-radius: 11px;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 10px 6px 8px;
+  border-radius: 10px;
   border: 1px solid var(--line-strong);
   background: var(--surface);
   color: var(--text-2);
-  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  position: relative;
   transition:
     background 0.12s,
     border-color 0.12s,
     color 0.12s;
 }
-.xstat:hover {
+.xradio:hover {
   border-color: var(--accent);
 }
-.xstat.is-on {
+.xradio.is-on {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--text);
 }
-.xstat__dot {
+/* 真的 radio 藏起來當接收面（`:checked` 由 Vue 綁，`name` 讓原生互斥也生效） */
+.xradio__cb {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.xradio__box {
   position: relative;
   flex: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
   border: 1.5px solid var(--line-strong);
   background: var(--surface);
   transition:
     background 0.12s,
     border-color 0.12s;
 }
-.xstat.is-on .xstat__dot {
+.xradio.is-on .xradio__box {
   border-color: var(--accent);
   background: var(--accent);
 }
-.xstat.is-on .xstat__dot::after {
+.xradio.is-on .xradio__box::after {
   content: '';
   position: absolute;
-  left: 5px;
-  top: 2px;
-  width: 5px;
-  height: 9px;
+  left: 4px;
+  top: 1.5px;
+  width: 4px;
+  height: 8px;
   border: solid #fff;
   border-width: 0 2px 2px 0;
   transform: rotate(43deg);
-}
-.xstat__txt {
-  font-size: 13px;
-  font-weight: 650;
-}
-.xstat__hint {
-  margin-left: auto;
-  flex: none;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-3);
-}
-/* 分類被標記時的說明（不是這筆的問題） */
-.xstat__cat {
-  margin: -2px 0 0;
 }
 
 .meta {
