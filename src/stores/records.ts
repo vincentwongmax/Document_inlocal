@@ -251,14 +251,16 @@ export const useRecordsStore = defineStore('records', () => {
 
   /**
    * 0.1.63：這筆記錄是否「不計入統計」。
-   * 兩個來源（使用者原話：「在記錄明細頁面中，增加該筆資料不計入統計按鈕，
-   * 另外在設定頁中的管理分類頁面中，增加這個分類不計入統計按鈕」）：
-   *   ① 記錄自己被標記（明細裡的切換，即時存檔）
-   *   ② 它所屬分類（含整條上層）被標記 → 整個子樹的記錄一併排除
-   * 舊資料兩個欄位都沒有 → false（照舊計入）。
+   * 0.1.64（使用者原話）：「在記錄明細頁面中，計入統計的選項，如果是由分類控制，
+   * 要顯示，若果用戶單獨解除，則這筆記錄可由用戶自訂要計入統計或不計入統計」
+   * → 改成**三態**（`excludeFromStats`）：
+   *   - `true`  這筆不計入統計（明細裡單獨排除）
+   *   - `false` 這筆**單獨解除**——就算所屬分類被標記，這筆照樣計入
+   *   - `undefined`（舊資料／沒動過）跟隨分類：分類（含上層）被標記就一併排除
+   * ⚠ `??` 的左右兩邊都是 boolean，所以回傳值一定是 boolean。
    */
   function isExcluded(r: TxRecord): boolean {
-    return r.excludeFromStats === true || settings.categoryExcluded(r.categoryId)
+    return r.excludeFromStats ?? settings.categoryExcluded(r.categoryId)
   }
 
   const totalExpense = computed(() =>

@@ -120,11 +120,20 @@ const todoOpen = ref(false)
 /**
  * 0.1.63：這筆資料「不計入統計」（使用者原話：「在記錄明細頁面中，
  * 增加該筆資料不計入統計按鈕」）。
+ * 0.1.64（使用者原話）：「計入統計的選項，如果是由分類控制，要顯示，
+ * 若果用戶單獨解除，則這筆記錄可由用戶自訂要計入統計或不計入統計」
+ * → 改成**三態**（`explicit`，直接對應 `TxRecord.excludeFromStats`）：
+ *   - `undefined` 沒單獨設定過 → **跟隨分類**（分類含上層被標記就一併排除）
+ *   - `true`／`false` 使用者在明細裡按過切換 → 這筆自己的設定，不再跟隨分類
  * ⚠ 跟待辦事項的勾選一樣是**即時存檔**的——切換型操作要求使用者記得回來按
- *   「儲存」太容易漏（0.1.58 的同一套理由）。舊資料沒有這個欄位。
+ *   「儲存」太容易漏（0.1.58 的同一套理由）。
  */
-const excl = ref(false)
-/** 這筆所屬的分類（含上層）是否被標記不計入統計——是的話這筆也不會計入，給個提示 */
+const explicit = ref<boolean | undefined>(undefined)
+/** 實際生效的狀態（畫面上那顆切換顯示的就是它）：沒單獨設定過時跟隨分類 */
+const excl = computed(() => explicit.value ?? settings.categoryExcluded(categoryId.value))
+/** 這筆已經「單獨設定」過了嗎（離開分類控制）——用來決定提示文字 */
+const exclSolo = computed(() => explicit.value !== undefined)
+/** 這筆所屬的分類（含上層）是否被標記不計入統計——是的話這筆預設也不會計入 */
 const catExcluded = computed(() => settings.categoryExcluded(categoryId.value))
 const todoTotal = computed(() => todos.value.length)
 const todoDone = computed(() => todos.value.filter((t) => t.done).length)
@@ -164,12 +173,16 @@ function onTodosChange(next: TodoItem[]) {
 /**
  * 0.1.63：切換「不計入統計」——即時寫檔（理由同 todos 的勾選）。
  * 統計頁的所有數字、側欄總結餘都會立刻排除／恢復這筆；記錄本身不受影響。
+ * 0.1.64：按一下就是把這筆轉成**單獨設定**（寫入明確的 true／false）——
+ *   就算是「分類控制中」的狀態，按過之後也由使用者自己說話，
+ *   之後分類設定再變都不會影響這筆（使用者原話：「若果用戶單獨解除，
+ *   則這筆記錄可由用戶自訂要計入統計或不計入統計」）。
  */
 function toggleExcl() {
   const r = props.record
   if (!r) return
-  excl.value = !excl.value
-  records.update(r.id, { excludeFromStats: excl.value })
+  explicit.value = !excl.value
+  records.update(r.id, { excludeFromStats: explicit.value })
 }
 
 const numeric = computed(() => {
@@ -502,8 +515,8 @@ watch(
     loadedAmount.value = r.amount
     // 0.1.58：待辦事項（舊資料沒有這個欄位 → 當沒有）
     todos.value = [...(r.todos ?? [])]
-    // 0.1.63：不計入統計（舊資料沒有這個欄位 → 計入）
-    excl.value = r.excludeFromStats === true
+    // 0.1.63：不計入統計（舊資料沒有這個欄位 → undefined＝跟隨分類）
+    explicit.value = r.excludeFromStats
     images.value = [...(r.images ?? [])]
     originalImages = [...(r.images ?? [])]
     busyImg.value = false
@@ -627,7 +640,9 @@ function save() {
     ...(todoTotal.value ? { todos: todos.value } : {}),
     // 0.1.63：不計入統計。正常情況 `toggleExcl` 已經即時寫過，這裡再帶一次
     //   是雙保險（同 todos 的理由）。
-    excludeFromStats: excl.value,
+    // 0.1.64：**只有單獨設定過才帶**——沒按過就讓它繼續跟隨分類
+    //   （不然每次儲存都會把「跟隨分類」悄悄變成「這筆自己的設定」）。
+    ...(exclSolo.value ? { excludeFromStats: excl.value } : {}),
     // 旅行標記：跟著這一欄的狀態走（空＝解除）
     tripId: tripId.value || undefined,
     ...(amountChanged ? { expr: undefined } : {}),
@@ -804,6 +819,11 @@ function save() {
             0.1.63：這筆要不要計入統計（使用者原話：「在記錄明細頁面中，
             增加該筆資料不計入統計按鈕」）。即時存檔，按「儲存」與否都算。
             排除後統計頁的收支／分類佔比／長條圖都不算它，統計頁也會單獨列出。
+            0.1.64（使用者原話）：「計入統計的選項，如果是由分類控制，要顯示，
+            若果用戶單獨解除，則這筆記錄可由用戶自訂要計入統計或不計入統計」
+            → 按鈕下面多一行「控制來源」提示：
+              ① 沒按過切換、且分類被標記 → 目前由分類控制（按一下就能單獨設定這筆）
+              ② 按過切換 → 這筆已單獨設定，之後分類再改都不影響它
           -->
           <div class="flat">
             <span class="flat__label">統計</span>
@@ -812,10 +832,12 @@ function save() {
               <span class="xstat__txt">{{ excl ? '不計入統計' : '計入統計' }}</span>
               <span class="xstat__hint">{{ excl ? '再按一下恢復' : '按一下排除' }}</span>
             </button>
-            <!-- 分類本身被標記時給個說明：不是這筆的問題，改分類設定才會恢復 -->
-            <p v-if="catExcluded" class="tiny muted xstat__cat">
-              分類「{{ catName }}」已設定不計入統計，這筆也不會計入
+            <!-- 分類控制中（還沒單獨設定過）：說明現在的狀態是分類給的 -->
+            <p v-if="!exclSolo && catExcluded" class="tiny muted xstat__cat">
+              目前由分類「{{ catName }}」控制；按上面的切換可單獨設定這筆
             </p>
+            <!-- 單獨設定過：這筆自己說話，不再跟隨分類 -->
+            <p v-else-if="exclSolo" class="tiny muted xstat__cat">這筆已單獨設定，不會再跟隨分類</p>
           </div>
 
           <!-- 詳細資訊 -->

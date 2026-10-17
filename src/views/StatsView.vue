@@ -200,6 +200,36 @@ function removeRecord(id: string) {
   })
 }
 
+/* ── 未計入統計（0.1.63 建立，0.1.64 改成總結卡）─────────────────
+ * 使用者原話（0.1.64）：「在統計頁面，未計入統計，只顯示總結，用戶點擊黎，
+ * 跳至記錄的頁面，只顯示未計入統計（不是每筆資料都顯示），
+ * 放在區間記錄區域的下方」。
+ * → 0.1.63 那個逐筆的 RecordList 換成**一張可點的總結卡**（筆數＋支出／收入合計），
+ *   整顆卡就是一顆按鈕，點下去跳記錄頁並自動勾「更多」裡的「排」（`?excl=1`）。
+ *   卡片放在 `v-if/v-else`（區間記錄那一區）的**外面下方**：全部記錄都被排除時
+ *   （`st.rows` 為空）這張卡仍要出現，不然使用者完全看不到出口。
+ */
+const exclExpense = computed(() =>
+  st.excludedRows.value.filter((r) => r.type === 'expense').reduce((s, r) => s + settings.displayOf(r), 0),
+)
+const exclIncome = computed(() =>
+  st.excludedRows.value.filter((r) => r.type === 'income').reduce((s, r) => s + settings.displayOf(r), 0),
+)
+/**
+ * 點總結卡 → 記錄頁，只顯示未計入統計的記錄。
+ * 0.1.64：除了 `excl=1`（勾「排」）還把**統計頁現在的區間**一起帶過去
+ * （`from`／`to`）——卡片上的「N 筆」是照這個區間算的，不帶的話記錄頁
+ * 預設只有「今天」，使用者會看到比 N 少的記錄，以為壞了。
+ * （照 0.1.38 旅行跳轉的先例：摘要跳詳情要讓「筆數對得上」。）
+ */
+function goExcluded() {
+  editingId.value = null
+  void router.push({
+    path: '/records',
+    query: { excl: '1', from: range.value.start, to: range.value.end },
+  })
+}
+
 const donutType = ref<'expense' | 'income'>('expense')
 const donutItems = computed(() =>
   donutType.value === 'expense' ? st.expenseByCat.value : st.incomeByCat.value,
@@ -646,31 +676,6 @@ watch([mode, range], () => {
       @close="sumOpen = null"
     />
 
-    <!--
-      0.1.63：未計入統計的記錄（使用者原話：「在統計頁面也要列明哪些記錄沒有計入統計」）。
-      這些記錄不進入上面任何數字——在明細裡標記了「不計入統計」，或它所屬分類
-      （含上層）在設定頁被標記「這個分類不計入統計」。點進明細可以改回來。
-      ⚠ 放在 `v-if/v-else` 外面：全部記錄都被排除時，這個區塊仍要出現。
-    -->
-    <section v-if="st.excludedRows.value.length" class="card block">
-      <header class="block__hd">
-        <h2>未計入統計</h2>
-        <span class="tiny muted">{{ st.excludedRows.value.length }} 筆</span>
-      </header>
-      <p class="tiny muted excl__hint">
-        這些記錄不計入上面的收支、分類佔比與圖表；清單裡的「排」標記代表它被排除。
-      </p>
-      <RecordList
-        :records="st.excludedRows.value"
-        :totals-from="st.excludedRows.value"
-        group-by="day"
-        :collapse-after="0"
-        empty-text="沒有未計入統計的記錄"
-        @edit="openRecord"
-        @remove="removeRecord"
-      />
-    </section>
-
     <div v-if="!st.rows.value.length" class="empty card">
       <p class="muted">{{ rangeLabel }} 沒有{{ st.excludedRows.value.length ? '計入統計的' : '' }}記錄</p>
       <p class="tiny muted">換個範圍，或先到主頁記一筆</p>
@@ -803,6 +808,37 @@ watch([mode, range], () => {
         </button>
       </section>
     </template>
+
+    <!--
+      0.1.64：未計入統計＝**總結卡**（使用者原話：「只顯示總結，用戶點擊黎，跳至記錄的頁面，
+      只顯示未計入統計（不是每筆資料都顯示），放在區間記錄區域的下方」）。
+      整顆卡就是一顆按鈕 → 跳記錄頁並自動勾「更多」裡的「排」。
+      ⚠ 放在 `v-if/v-else` 外面（區間記錄那一區的下面）：全部記錄都被排除時
+         （st.rows 為空）這張卡仍要出現。
+      ⚠ 卡裡只用 phrasing content（span／strong）——<h2> 這些放不進 <button>。
+    -->
+    <button
+      v-if="st.excludedRows.value.length"
+      type="button"
+      class="card block exclsum"
+      @click="goExcluded"
+    >
+      <span class="exclsum__hd">
+        <span class="exclsum__t">未計入統計</span>
+        <span class="tiny muted">{{ st.excludedRows.value.length }} 筆</span>
+      </span>
+      <span class="tiny muted excl__hint">不計入上面的收支、分類佔比與圖表；點擊在記錄頁查看這些記錄</span>
+      <span class="exclsum__nums">
+        <span class="exclsum__col">
+          <span class="tiny muted">支出</span>
+          <strong class="num sum__exp" :title="fmtMoney(exclExpense, base)">{{ fmtCompact(exclExpense) }}</strong>
+        </span>
+        <span v-if="exclIncome > 0" class="exclsum__col">
+          <span class="tiny muted">收入</span>
+          <strong class="num sum__inc" :title="fmtMoney(exclIncome, base)">{{ fmtCompact(exclIncome) }}</strong>
+        </span>
+      </span>
+    </button>
 
     <RecordSheet
       :open="!!editing"
@@ -1022,6 +1058,61 @@ watch([mode, range], () => {
 /* 0.1.63：「未計入統計」區塊的說明文字——緊貼標題列下方 */
 .excl__hint {
   margin: -4px 0 10px;
+}
+/* 0.1.64：未計入統計總結卡（整顆是可點的按鈕）。外觀做法照 .sum：
+   把按鈕的瀏覽器預設樣式歸零（block／左對齊／繼承字體與顏色），
+   hover 時邊框亮起＋淡綠底提示「可以點」，按下輕微縮放。 */
+.exclsum {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease,
+    transform 0.12s ease;
+}
+.exclsum:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.exclsum:active {
+  transform: scale(0.995);
+}
+.exclsum:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.exclsum__hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.exclsum__t {
+  font-size: 15.5px;
+  font-weight: 700;
+}
+.exclsum__nums {
+  display: flex;
+  gap: 20px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.exclsum__col {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+.exclsum__col strong {
+  font-size: 14.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* 「顯示更多／收起」：撐滿寬、跟清單底部留一點距離（跟記錄頁的「顯示全部」同一個樣子） */
 .block__more {

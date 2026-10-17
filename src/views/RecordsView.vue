@@ -101,11 +101,15 @@ const todoTitle = computed(() => {
  * - 過濾是 **AND**：勾了「圖片＋旅行」就只留同時有圖片與旅行標籤的記錄。
  * - 標籤的判定跟記錄列上的標籤（RecordRow）同一套：
  *   圖（`images.length`）／旅（`tripId`）／記（`todos`）。
+ * 0.1.64：新增第四項「未計入統計」（`short`＝「排」）。它不是標籤而是**狀態**
+ *   （統計頁總結卡跳過來就是勾這一格），`short` 刻意跟記錄列那顆橙色「排」
+ *   標記用同一個字——使用者在兩邊看到的是同一個詞彙。
  */
 const MORE_TAGS = [
   { v: 'img', label: '圖片', short: '圖' },
   { v: 'trip', label: '旅行', short: '旅' },
   { v: 'todo', label: '待辦事項', short: '待' },
+  { v: 'excl', label: '未計入統計', short: '排' },
 ] as const
 /** 下拉的選項（給 MoreFilterMenu；`short` 只用在按鈕上，不進選項） */
 const moreOptions: { v: string; label: string }[] = MORE_TAGS.map((t) => ({
@@ -122,16 +126,18 @@ const moreLabel = computed(() => {
 })
 const moreTitle = computed(() =>
   moreActive.value
-    ? `只顯示同時有這些標籤的記錄：${MORE_TAGS.filter((t) => moreTags.value.includes(t.v))
+    ? `只顯示符合以下條件的記錄：${MORE_TAGS.filter((t) => moreTags.value.includes(t.v))
         .map((t) => t.label)
         .join('、')}（再按可取消）`
-    : '更多篩選：圖片／旅行／待辦事項（可複選）',
+    : '更多篩選：圖片／旅行／待辦事項／未計入統計（可複選）',
 )
 /** 有這個標籤嗎（供 `rows` 過濾用） */
 function hasTag(r: TxRecord, v: string): boolean {
   if (v === 'img') return (r.images?.length ?? 0) > 0
   if (v === 'trip') return !!r.tripId
   if (v === 'todo') return (r.todos?.length ?? 0) > 0
+  // 0.1.64：「未計入統計」——明細裡單獨標記的，或所屬分類（含上層）被標記的
+  if (v === 'excl') return records.isExcluded(r)
   return true
 }
 
@@ -222,6 +228,37 @@ watch(
   { immediate: true }, // 從統計頁跳過來時 query 在掛載前就帶好了，必須 immediate 才接得到
 )
 
+/**
+ * 0.1.64：從統計頁「未計入統計」總結卡點過來 → URL 帶 `?excl=1`，
+ * 自動勾上「更多」裡的「排」（未計入統計）。
+ * 使用者原話：「用戶點擊黎，跳至記錄的頁面，只顯示未計入統計」。
+ *
+ * 同時接住 `from`／`to`（統計頁當下的區間）：卡片上的「N 筆」是照那個區間算的，
+ * 不帶的話記錄頁預設只有「今天」，使用者會看到比 N 少的記錄。
+ * → 把區間設成自訂範圍（日期如實在範圍列上顯示，不是偷偷繞過）。
+ *
+ * ⚠ 只做「勾上這一格＋套用帶過來的區間」：收支、關鍵字等一律不碰——跳過來時
+ *   這個頁面剛掛載，其他條件本來就是預設值，額外重置反而會蓋掉使用者手動組的網址
+ *   （例：自己打 `?excl=1&q=餐飲` 想兩個都要）。
+ * ⚠ 使用者之後可以在「更多」裡手動取消；URL 上的參數留著不會再自動生效
+ *   （watch 只在值改變時觸發），重新整理則會重新套上——行為可預期。
+ */
+watch(
+  () => route.query.excl,
+  (v) => {
+    if (v !== '1') return
+    if (!moreTags.value.includes('excl')) moreTags.value = [...moreTags.value, 'excl']
+    const f = route.query.from
+    const t = route.query.to
+    if (typeof f === 'string' && typeof t === 'string' && f && t) {
+      start.value = f <= t ? f : t
+      end.value = f <= t ? t : f
+      mode.value = 'custom'
+    }
+  },
+  { immediate: true },
+)
+
 const units: { key: RangeUnit; label: string }[] = [
   { key: 'day', label: '日' },
   { key: 'month', label: '月' },
@@ -293,6 +330,8 @@ const emptyText = computed(() => {
       : `找不到符合「${q.value.trim()}」的記錄`
   }
   if (viewFilter.value) return '這趟旅行沒有記錄'
+  // 0.1.64：只勾了「排」時的專屬文案（「沒有同時有這些標籤」對它不通）
+  if (moreTags.value.length === 1 && moreTags.value[0] === 'excl') return '這個範圍沒有未計入統計的記錄'
   if (moreTags.value.length) return '沒有同時有這些標籤的記錄'
   if (todoFilter.value === 'pending') return '沒有未完成的待辦記錄'
   if (todoFilter.value === 'done') return '沒有待辦全完成的記錄'

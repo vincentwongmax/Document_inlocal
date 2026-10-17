@@ -93,11 +93,12 @@ const todoTone = computed<'pending' | 'done' | null>(() => {
 })
 /**
  * 0.1.63：這筆「不計入統計」嗎（列表上顯示「排」標記）。
- * 兩個來源：明細裡把這筆標記排除，或它所屬分類（含上層）整棵被標記——
+ * 0.1.64：改成三態——`excludeFromStats` 有值（true／false）時以它為準
+ * （使用者在明細裡單獨設定過），`undefined` 時才跟隨所屬分類（含上層）的設定。
  * 所以這裡讀的是即時判斷（`settings.categoryExcluded` 會跟著分類設定變）。
  */
 const excluded = computed(
-  () => props.record.excludeFromStats === true || settings.categoryExcluded(props.record.categoryId),
+  () => props.record.excludeFromStats ?? settings.categoryExcluded(props.record.categoryId),
 )
 
 /**
@@ -489,8 +490,10 @@ watch(
   stroke: var(--accent);
 }
 /*
- * 0.1.63：「不計入統計」標記「排」——尺寸跟其他標籤相同（11px／19px 高），
- * 用虛線框＋中性灰跟彩色標籤區分（它是狀態，不是內容）。
+ * 0.1.63：「不計入統計」標記「排」——尺寸跟其他標籤相同（11px／19px 高）。
+ * 0.1.64（使用者原話）：「在記錄頁中，排的標籤，改成橙色」→ 中性灰虛線框改成
+ * **橙色系**（--orange／--orange-soft／--orange-line，見 style.css）。
+ * ⚠ 虛線框刻意保留：它是「狀態」不是「內容」，跟其他實心彩籤視覺上要有所區別。
  */
 .texcl {
   flex: none;
@@ -499,9 +502,9 @@ watch(
   height: 19px;
   padding: 0 7px;
   border-radius: 999px;
-  border: 1px dashed var(--line-strong);
-  background: var(--surface-3);
-  color: var(--text-3);
+  border: 1px dashed var(--orange-line);
+  background: var(--orange-soft);
+  color: var(--orange);
   font-size: 11px;
   font-weight: 650;
   letter-spacing: 0.02em;

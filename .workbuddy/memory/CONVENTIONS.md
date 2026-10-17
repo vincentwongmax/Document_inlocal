@@ -1123,3 +1123,26 @@ WebKit 就把它當成一次真正的 double-tap 手勢（smart zoom／重新對
 `RuntimeError: Aborted(-1)`（wasm 內部斷言），而且那個 abort 是 **uncaught 的 pageerror**，
 會讓「沒有 JS 錯誤」那條假紅燈。用像收據的圖就完全正常（實測金額 85.00 辨識得出來）。
 - 這個 abort **與換頁無關**（不換頁也會在 3 秒內炸），純粹是圖的問題。
+
+## 不計入統計（0.1.63 建立，0.1.64 三態＋總結卡）
+
+- **三態模型**（`TxRecord.excludeFromStats`，0.1.64 起）：
+  - `undefined`＝跟隨分類（舊資料／沒動過）；`true`＝不計入；`false`＝**單獨解除**
+    （分類被標記也照樣計入）
+  - 唯一判別式：`r.excludeFromStats ?? settings.categoryExcluded(r.categoryId)`
+    （records store 的 `isExcluded`、RecordRow 的 `excluded` 都用這一句）
+  - 明細按過切換＝脫離分類控制（寫明確 true／false，之後分類再改都不影響它）
+  - ⚠ 明細 save patch **只有單獨設定過才帶** `excludeFromStats`——0.1.63 每次儲存都寫
+    `false`，會把「跟隨分類」悄悄固化成「這筆自己的設定」
+- **統計頁「未計入統計」＝總結卡**（0.1.64）：`button.exclsum`（筆數＋支出／收入合計，
+  fmtCompact），點它 → `router.push({ path: '/records', query: { excl: '1', from, to } })`
+  （from／to＝統計頁當下區間，讓「N 筆」對得上；記錄頁接成自訂範圍）。
+  卡片放在區間記錄的 v-else **外面下方**（全排除時也要看得到）
+- **記錄頁 `?excl=1`**：RecordsView watch `route.query.excl` → 自動勾「更多」的 `excl`
+  （`moreTags`）＋把 from／to 套成自訂範圍。只勾那一格，不重置其他條件；
+  手打網址（不帶 from／to）同樣生效
+- **「更多」下拉第四項**：`{ v: 'excl', label: '未計入統計', short: '排' }`；
+  `short` 與記錄列標記同字。v137 斷言「下拉四項」
+- **「排」標記橙色**（0.1.64）：`--orange #c95f16`（字）／`--orange-soft #fdf0e3`（底）／
+  `--orange-line #f0bd8a`（虛線框），色票加在 style.css 的 `--amber` 旁邊；
+  虛線框刻意保留（狀態≠內容）
