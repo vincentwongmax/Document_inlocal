@@ -8,7 +8,7 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 
 ## 開發/驗證
 - preview :4173（改完先 build）；dev :5173（ls 分開）
-- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v138（62 支，v108 不存在）
+- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v139（63 支，v108 不存在）
 - ⚠⚠ 回歸跑著時**不要編輯 run-regress.sh**｜升版後必先 build｜冷啟 goto 30s＝**假紅**（單獨重跑）｜守門員 v119~v130；RecordSheet＝`.mask > .sheet.card`
 - ⚠⚠ **本地回歸 dist 不能帶 VITE_BASE**（preview 在根目錄伺服，帶了全 404 → App 空白假紅）；部署前才帶 base 重建
 - ⚠⚠ **測「無限滾動/餵食」不能用 `scrollTo(0, scrollHeight)` 一次跳到底**（會跳過死區、掩蓋卡死 bug）→ 一律 `scrollBy` 一小段一小段滑模擬手指
@@ -95,6 +95,15 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - 過濾：MORE_TAGS（img→圖/trip→旅/todo→待）AND（`hasTag`：images.length/tripId/todos）；`moreLabel`＝首字「+」連接（圖+旅，順序照 options）
 - ⚠⚠ v-if 鏈三段：CategorySelect → searchMode 結果 → 標籤模式；`.mf__trigger` 不帶 `.bycat` class → 量測型測試的選擇器要加它
 - 守門員 v137（33/33）＋v137-live（34/34）；v85/v94/v109/v136(+live) 改斷言；v109-live 整支重生成；ALL＝v70~v137（61 支）
+
+## 0.1.64（未計入統計總結卡／三態／排改橙色）
+- **統計頁「未計入統計」＝總結卡**：`button.exclsum`（N 筆＋支出／收入合計，fmtCompact），放在區間記錄 v-else 的**外面下方**（全排除時也看得到）；點擊 → `push({path:'/records',query:{excl:'1',from,to}})`（from/to＝統計頁當下區間，讓 N 筆對得上）
+- **記錄頁 `?excl=1`**：watch `route.query.excl` → 自動勾「更多」的 `excl`＋把 from/to 套成自訂範圍；只勾那一格不重置其他條件
+- **「更多」下拉第四項**：`{v:'excl',label:'未計入統計',short:'排'}`（short 與記錄列標記同字）；`hasTag` 吃 `records.isExcluded`
+- **三態 `excludeFromStats`**：undefined＝跟隨分類／true＝不計入／false＝單獨解除；唯一判別式 `r.excludeFromStats ?? settings.categoryExcluded(r.categoryId)`（isExcluded／RecordRow excluded 都用它）；明細按過切換＝脫離分類控制（寫明確值）；**save patch 只有 solo 過才帶**（0.1.63 每次寫 false 會把跟隨分類悄悄固化）
+- 明細提示兩款：沒按過且分類被標記→「目前由分類『X』控制；按上面的切換可單獨設定這筆」；按過→「這筆已單獨設定，不會再跟隨分類」
+- **「排」橙色**：`--orange #c95f16`／`--orange-soft #fdf0e3`／`--orange-line #f0bd8a`（style.css 加在 --amber 旁）；虛線框保留
+- 守門員 v139（29/29）＋shots-v139.mjs（5 張）；v137(+live) 下拉斷言三→四項；v138 統計頁改讀總結卡；ALL＝v70~v139（63 支）
 
 ## 0.1.63（時間確認／不計入統計／圖片刪除確認）
 - **時間確認**：HomeView `submit()` 在金額／分類檢查後，`!hiddenBlocks.has(5)` 且 `|now - occurredAt| > NEAR_MS(2min)` → `confirmDialog`（`formatFull` 顯示時間）→ 只有 `'confirm'` 才繼續；隱藏區塊（預設值）不檢查
