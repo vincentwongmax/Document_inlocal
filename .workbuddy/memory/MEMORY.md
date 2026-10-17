@@ -8,7 +8,7 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 
 ## 開發/驗證
 - preview :4173（改完先 build）；dev :5173（ls 分開）
-- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v135（59 支）
+- 回歸 `bash .smoke/run-regress.sh`，**判準看每支 exit code**；維護中＝v70~v138（62 支，v108 不存在）
 - ⚠⚠ 回歸跑著時**不要編輯 run-regress.sh**｜升版後必先 build｜冷啟 goto 30s＝**假紅**（單獨重跑）｜守門員 v119~v130；RecordSheet＝`.mask > .sheet.card`
 - ⚠⚠ **本地回歸 dist 不能帶 VITE_BASE**（preview 在根目錄伺服，帶了全 404 → App 空白假紅）；部署前才帶 base 重建
 - ⚠⚠ **測「無限滾動/餵食」不能用 `scrollTo(0, scrollHeight)` 一次跳到底**（會跳過死區、掩蓋卡死 bug）→ 一律 `scrollBy` 一小段一小段滑模擬手指
@@ -95,6 +95,15 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - 過濾：MORE_TAGS（img→圖/trip→旅/todo→待）AND（`hasTag`：images.length/tripId/todos）；`moreLabel`＝首字「+」連接（圖+旅，順序照 options）
 - ⚠⚠ v-if 鏈三段：CategorySelect → searchMode 結果 → 標籤模式；`.mf__trigger` 不帶 `.bycat` class → 量測型測試的選擇器要加它
 - 守門員 v137（33/33）＋v137-live（34/34）；v85/v94/v109/v136(+live) 改斷言；v109-live 整支重生成；ALL＝v70~v137（61 支）
+
+## 0.1.63（時間確認／不計入統計／圖片刪除確認）
+- **時間確認**：HomeView `submit()` 在金額／分類檢查後，`!hiddenBlocks.has(5)` 且 `|now - occurredAt| > NEAR_MS(2min)` → `confirmDialog`（`formatFull` 顯示時間）→ 只有 `'confirm'` 才繼續；隱藏區塊（預設值）不檢查
+- **不計入統計**：`Category.excludeFromStats?`＋`TxRecord.excludeFromStats?`；`settings.categoryExcluded(id)`＝`pathOf(id).some(excludeFromStats)`（**含上層＝整棵子樹**，封存分類也查得到）；`records.isExcluded(r)`＝記錄旗標 **or** 分類排除；`totalExpense/totalIncome`、useStats 的 rows/trend/prevExpense/topRecords 全過濾；明細切換**即時存檔**（todos 先例）＋save patch 雙保險
+- 管理分類：編輯模式 `.dflt` 切換（計入／不計入統計）＋新增模式勾選；`addCategory(..., excludeFromStats)` 只在 true 時寫鍵
+- 統計頁新增「未計入統計」區塊（`excludedRows`，內置 RecordList 可點進明細）；記錄列「排」`.texcl` 標記（11px/19px，虛線框中性灰）
+- ⚠ 記錄頁清單與加總、旅行摘要**刻意不動**（清單內容 ≠ 統計）
+- **圖片刪除確認**：`.imgs__x` → `onRemoveImage()`＝confirmDialog 閘門；取消不動、確認只移除本地清單 → **blob 仍於儲存／關閉才刪**，未儲存關閉再開圖片還在
+- 守門員 v138（40/40）＋shots-v138.mjs（5 張）；v92 加按「確定記錄」；ALL＝v70~v138（62 支，v108 不存在）
 
 ## 0.1.58（代辦事項）
 - 資料：`TodoItem {id,text,done}`；`TxRecord.todos?`；**勾選即時存檔**（`records.update`，不等按儲存；清空存 `undefined` 不存 `[]`）；save patch 也帶 todos 雙保險
