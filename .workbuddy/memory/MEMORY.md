@@ -4,7 +4,7 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 細節（逐版設計決策、CSS 慣例、測試寫法）在 `CONVENTIONS.md`；這裡只放**每次動手都會用到**的東西。
 
 ## 版本
-- 只加 Z（目前 **0.1.66**）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
+- 只加 Z（目前 **0.1.67**）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
 - ⚠ `.smoke/` 在 .gitignore（測試**不會**進 commit）→ 版本 commit 只含 src/、CHANGELOG、package.json、.workbuddy/memory
 
 ## 開發／驗證
@@ -37,14 +37,15 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 ## 元件幾何（全站共用）
 - 底部彈層＝`.mask > .card.bsheet`（`.bsheet__grab`＋`.box.bsheet__body` 唯一可捲＋下拉關閉＋背景鎖）
 - **頁腳固定**：`.foot` 放在 `.bsheet` 直接子元素（**不是** `.box` 裡）→ `flex:none`＋`border-top`＋`padding:12px 18px 16px`（0.1.65 的修法，之後所有彈層照做）
-- z-index：tabbar 40／一般彈層與匯入彈窗 90／快速記錄頁 92／格子編輯器 96
+- z-index：tabbar 40／一般彈層與匯入彈窗 90／格子編輯器 96（快速記錄頁已併入匯入彈窗，不再獨立）
 - ⚠⚠ Vue 模板 HTML 註解內**不能用 `-->` 箭頭**（註解提前結束→文字外洩）；一律寫「→」
 
 ## 視覺
 米白紙感；收入墨綠 `#2c6e5b`（`--accent`）、支出 `#bf563c`（`--expense`）、琥珀 `#d9a326`＝旅行、橘 `#c95f16`＝「排」。
 
 ## 近期版本重點
-- **0.1.66** 匯入改三分頁彈窗（JSON／貼上資料／快速記錄表格）：
+- **0.1.67** 快速記錄併入匯入彈窗（移除獨立 QuickRecordSheet；ImportModal 三頁籤含快速記錄表格、`savedRows` 關閉保留資料、複製/貼上＝套用＋關閉）；明細「統計」三顆 radio 改「點一下開下拉」（`.statsrow`＋Teleport `.statspop`，三態不變：統計＝false／不統計＝true／由分類控制＝undefined）；管理分類頁收斂高度（gap/igrid 高度/icon）。守門員 v138~v141 改寫對應新 UI
+- **0.1.66** 匯入改三分頁彈窗（JSON／貼上資料／快速記錄表格；**QuickRecordSheet 在 0.1.67 已併入 ImportModal 移除**）：
   - `ImportModal`（頁籤 seg、JSON 分頁 emit `pick-json` 沿用 hidden file input 的原本流程）；`QuickRecordSheet`（div grid 類表格可橫滑、空白列 `--`、點格子開編輯器（輸入框＋複製/貼上/清空/確定一排）、✕ 刪列不確認、只提交完整列）
   - `src/lib/quickParse.ts`＝**純函式**解析器（欄位靠型樣不靠位置、日期時間整顆 token、第一個數字＝金額／第二個＝分類編號、看不懂併備註、缺欄補預設記 issues、全形轉半形、吃 Excel Tab）
   - 分類編號＝`src/lib/tree.ts` 的 `flatTreeByType()`（per 收支別、DFS、由 1 起）→ **設定頁 chips 編號與解析器同源**

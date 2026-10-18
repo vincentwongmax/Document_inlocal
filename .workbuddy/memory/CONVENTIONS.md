@@ -327,6 +327,44 @@
 - 共用件（改動要一併回歸）：`DateTimeField`、`ClearableInput`、`CategoryIcon`、
   `CategoryPicker`、`RecordList`、`RecordRow`、`HighlightText`
 
+## 快速匯入（0.1.66：匯入三分頁彈窗）
+
+設定頁「匯入」鈕不再直接開檔案選擇器，改開 `components/ImportModal.vue`（三分頁、
+幾何沿用 ExportModal、**頁腳在 `.bsheet__body` 外面固定**）：
+
+1. **匯入 JSON**＝系統原有模式：emit `pick-json` → SettingsView 關彈窗＋`pickImport()`
+   （hidden file input 保留在設定頁，v99 的 `input.uploadFile` 不受影響）
+2. **貼上資料**：textarea 即時 `parseQuickLines` → 摘要「解析到 N 筆 · M 筆不完整」
+   → 送出 emit `quick(drafts)`
+3. **快速記錄**：emit `quick([])` → QuickRecordSheet 自開一列空白
+
+### 解析器 `src/lib/quickParse.ts`（純函式）
+- **欄位靠型樣不靠位置**：Excel 貼上（缺收支／貨幣）與完整格式 `A MOP 10 1 test 2026/10/17 23:13` 同一套規則
+- **日期時間整顆 token**（`DATE_TOKEN` 正則先切，`2026/10/17 23:13` 中間的空白不會把時間切成備註）
+- 第一個數字＝金額、第二個數字＝分類編號；收支認 A/B／支出/收入/expense/income；
+  看不懂的 token 併備註（寬鬆不報錯）；缺欄補預設（支出／記帳幣別／現在）記在 `issues`
+- 全形轉半形（`halfWidth`）；單欄 helper（`parseTypeText`…）給格子編輯器共用，規則同源
+- 分類編號＝`src/lib/tree.ts` `flatTreeByType(cats, type)`：**per 收支別、DFS、由 1 起**；
+  設定頁 chips 的 `.catchip__no` 編號與解析器**同一份順序**（不能先 filter 再 flatten——
+  上層封存時子孫要整棵消失，`flattenCategories` 會把孤兒提成根，語義不同）
+
+### `QuickRecordSheet.vue`（z-index 92）
+- **div grid 類表格**（不是 `<table>`）：欄寬 `minmax()` 地板 → 390px 窄屏整張表橫滑
+- 空白列金額／分類／備註顯示 `--`；**✕ 刪列不確認**（草稿未寫入，刻意從簡）
+- 點格子開編輯器（**z-index 96**）：輸入框＋「複製／貼上／清空／確定」四顆一排；
+  clipboard 先試 `navigator.clipboard`、失敗落**內部剪貼簿**（headless／無授權也能用）
+- ⚠⚠ **`.edmask` 必須自己寫 `position:fixed; inset:0`**——它跟 `.card.bsheet` 同層掛在
+  `.bsheet-mask`（flex）底下，少了 fixed 會變成第二個 flex 子元素把彈層**擠成窄條**
+  （截圖才抓到；v141 的座標斷言量得出值但量不出「變窄」）
+- 提交只寫 `issues` 為空的列（金額>0 且分類解得開）；不完整列標紅（`.td.is-bad`）不寫入；
+  寫入走 `records.add()`（自動算 rate/baseAmount）；旅行模式一開著帶 `tripId`
+- 分類與收支不合 → `recheckDraft` 後補「分類與收支不符」issue
+
+### 測試
+- 單驗 `.smoke/unit-quickparse.mjs`（esbuild 打包 quickParse.ts 後跑，23/23）
+- 守門員 v141（44/44）；⚠ headless 下 `input[type=file].click()` **不發 filechooser 事件**，
+  `await` 它會卡死 → 改覆寫 `HTMLInputElement.prototype.click` 計數驗證有沒有去開
+
 ## 匯出（JSON ╱ Excel）
 
 設定頁的「匯出」不直接下載，先開 `components/ExportModal.vue` 選**格式**、

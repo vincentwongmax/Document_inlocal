@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, toRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, toRef, watch } from 'vue'
 import { useScrollLock } from '@/composables/useScrollLock'
 import { usePullToClose } from '@/composables/usePullToClose'
 import type { ImageRef, TodoItem, TxRecord, TxType } from '@/types'
@@ -160,6 +160,62 @@ function setExcl(v: boolean | undefined) {
   // ⚠ undefined 會被 JSON.stringify 吃掉 → 存檔後鍵整個消失，正是「還原」要的效果
   records.update(r.id, { excludeFromStats: v })
 }
+
+/* ── 0.1.67：統計改為「點一下開下拉」選單 ─────────────────────
+   樣式參考修改分類頁的選擇分類下拉（Teleport 到 body、fixed 定位、pop 樣式）。
+   三個選項對應三態：統計＝false／不統計＝true／由分類控制＝undefined（即時存檔）。 */
+type StatsOpt = { key: string; label: string; value: boolean | undefined; match: boolean }
+const statsOpen = ref(false)
+const statsTrigger = ref<HTMLElement | null>(null)
+const statsPop = ref<HTMLElement | null>(null)
+const statsPopStyle = ref<Record<string, string>>({})
+const statsOpts = computed<StatsOpt[]>(() => [
+  { key: 'incl', label: '統計', value: false, match: explicit.value === false },
+  { key: 'excl', label: '不統計', value: true, match: explicit.value === true },
+  { key: 'cat', label: '由分類控制', value: undefined, match: explicit.value === undefined },
+])
+function placeStats() {
+  const t = statsTrigger.value
+  if (!t) return
+  const r = t.getBoundingClientRect()
+  const w = Math.max(r.width, 220)
+  const vh = window.innerHeight || document.documentElement.clientHeight
+  const est = 3 * 42 + 16
+  let top = r.bottom + 6
+  // 下方空間不夠就往上翻
+  if (top + est > vh && r.top > est) top = r.top - 6 - est
+  statsPopStyle.value = {
+    position: 'fixed',
+    left: `${r.left}px`,
+    top: `${top}px`,
+    width: `${w}px`,
+    zIndex: '95',
+  }
+}
+function toggleStats() {
+  if (statsOpen.value) {
+    statsOpen.value = false
+    return
+  }
+  statsOpen.value = true
+  nextTick(placeStats)
+}
+function pickStats(v: boolean | undefined) {
+  setExcl(v)
+  statsOpen.value = false
+}
+function onDocPointer(e: MouseEvent) {
+  if (!statsOpen.value) return
+  const t = e.target as Node
+  if (statsTrigger.value?.contains(t) || statsPop.value?.contains(t)) return
+  statsOpen.value = false
+}
+watch(statsOpen, (o) => {
+  // 延一拍再加監聽：避免「開啟的那一下點擊」立刻被同一個事件關掉
+  if (o) setTimeout(() => document.addEventListener('click', onDocPointer), 0)
+  else document.removeEventListener('click', onDocPointer)
+})
+onBeforeUnmount(() => document.removeEventListener('click', onDocPointer))
 const todoTotal = computed(() => todos.value.length)
 const todoDone = computed(() => todos.value.filter((t) => t.done).length)
 const todoLeft = computed(() => todoTotal.value - todoDone.value)
@@ -826,57 +882,7 @@ function save() {
             </template>
           </div>
 
-          <!--
-            0.1.63：這筆要不要計入統計（使用者原話：「在記錄明細頁面中，
-            增加該筆資料不計入統計按鈕」）。即時存檔，按「儲存」與否都算。
-            排除後統計頁的收支／分類佔比／長條圖都不算它，統計頁也會單獨列出。
-            0.1.64：三態（undefined＝跟隨分類／true＝不計入／false＝單獨解除）。
-            0.1.65（使用者原話）：「更改計入統計的格式，在同一行中，分成3個勾選框，
-            統計，不統計，由分類控制，由統計標題的文字的右手邊括號顯示目前統計狀態，
-            統計(計入統計), 統計(不統計)(由分類控制), 統計(統計)(由分類控制)」
-            → 切換鈕改成**三個單選框**（同一列），標題右邊括號顯示目前狀態；
-              選「由分類控制」＝還原成跟隨分類（使用者原話：「用戶也可以還原」）。
-          -->
-          <div class="flat">
-            <span class="flat__label">
-              統計<span class="xstat__state">{{ exclState }}</span>
-            </span>
-            <div class="xradios">
-              <label class="xradio" :class="{ 'is-on': explicit === false }" data-v="incl">
-                <input
-                  type="radio"
-                  name="xstat"
-                  class="xradio__cb"
-                  :checked="explicit === false"
-                  @change="setExcl(false)"
-                />
-                <span class="xradio__box" aria-hidden="true" />
-                <span class="xradio__txt">統計</span>
-              </label>
-              <label class="xradio" :class="{ 'is-on': explicit === true }" data-v="excl">
-                <input
-                  type="radio"
-                  name="xstat"
-                  class="xradio__cb"
-                  :checked="explicit === true"
-                  @change="setExcl(true)"
-                />
-                <span class="xradio__box" aria-hidden="true" />
-                <span class="xradio__txt">不統計</span>
-              </label>
-              <label class="xradio" :class="{ 'is-on': explicit === undefined }" data-v="cat">
-                <input
-                  type="radio"
-                  name="xstat"
-                  class="xradio__cb"
-                  :checked="explicit === undefined"
-                  @change="setExcl(undefined)"
-                />
-                <span class="xradio__box" aria-hidden="true" />
-                <span class="xradio__txt">由分類控制</span>
-              </label>
-            </div>
-          </div>
+          <!-- 0.1.67：統計區塊已搬到 <section class="meta"> 最底，改為點擊開下拉 -->
 
           <!-- 詳細資訊 -->
           <section class="meta">
@@ -908,7 +914,53 @@ function save() {
               <span class="tiny muted">圖片大小</span>
               <span class="tiny num">{{ fmtBytes(imgBytes) }}（壓縮後）</span>
             </div>
+
+            <!--
+              0.1.67：統計從三顆單選框改成「點一下開下拉」——樣式與上方新增時間／主幣金額
+              完全一致（同一個 .meta__row 語彙）；下拉參考修改分類頁的選擇分類（Teleport 到
+              body、fixed 定位、pop 樣式）。四種狀態文字由 exclState 提供：
+                不統計(由分類控制)／統計(由分類控制)／不統計／統計。
+            -->
+            <button
+              type="button"
+              class="meta__row statsrow"
+              ref="statsTrigger"
+              :aria-expanded="statsOpen"
+              @click="toggleStats"
+            >
+              <span class="tiny muted">統計</span>
+              <span class="statsrow__val">
+                <span class="tiny num statsrow__state">{{ exclState }}</span>
+                <svg class="statsrow__caret" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M6 9l6 6 6-6"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </span>
+            </button>
           </section>
+
+          <!-- 0.1.67：統計下拉（Teleport 到 body，蓋在明細彈層之上） -->
+          <Teleport to="body">
+            <div v-if="statsOpen" ref="statsPop" class="statspop" :style="statsPopStyle" @click.stop>
+              <button
+                v-for="o in statsOpts"
+                :key="o.key"
+                type="button"
+                class="statspop__item"
+                :class="{ 'is-on': o.match }"
+                @click="pickStats(o.value)"
+              >
+                <span class="statspop__name">{{ o.label }}</span>
+                <span v-if="o.match" class="statspop__tick">✓</span>
+              </button>
+            </div>
+          </Teleport>
 
           <!-- 0.1.44：收據圖片合併進「收據辨識」（原本是分開的「收據圖片」flat 區塊） -->
           <section class="flat ocrsec">
@@ -1507,85 +1559,74 @@ function save() {
   padding: 0 7px;
 }
 
-/* ── 0.1.65：統計三態單選框（0.1.63 的切換鈕改成三個方框）─────────────────
-   使用者原話：「更改計入統計的格式，在同一行中，分成3個勾選框，統計，不統計，
-   由分類控制，由統計標題的文字的右手邊括號顯示目前統計狀態」。
-   - `.xstat__state`＝標題右邊括號裡的狀態（由 exclState computed 組）
-   - `.xradios`＝同一列的三顆單選框（nowrap，使用者指定「同一行中」）
-   - `.xradio` 外框照 `.dflt`／`.xstat` 的膠囊語彙，選中用 accent 底；
-     方框打勾照 `.mf__box`（實心方框＋白勾），一眼看得出是「勾選」 */
-.xstat__state {
-  margin-left: 1px;
-  font-weight: 500;
-  color: var(--text-3);
+/* ── 0.1.67：統計改為點擊開下拉（樣式參考修改分類頁的選擇分類下拉）──────
+   - `.statsrow`＝ meta 最底那列（與新增時間／主幣金額同一個 .meta__row 語彙）
+   - `.statspop`＝ Teleport 到 body 的下拉（fixed、表面底、line-strong 邊、陰影） */
+.statsrow {
+  width: 100%;
+  margin: 0;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.xradios {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 8px;
+.statsrow:last-child {
+  border-bottom: 0;
 }
-.xradio {
+.statsrow__val {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 34px;
-  padding: 6px 10px 6px 8px;
-  border-radius: 10px;
-  border: 1px solid var(--line-strong);
-  background: var(--surface);
+  gap: 5px;
+}
+.statsrow__state {
   color: var(--text-2);
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-  position: relative;
-  transition:
-    background 0.12s,
-    border-color 0.12s,
-    color 0.12s;
 }
-.xradio:hover {
-  border-color: var(--accent);
-}
-.xradio.is-on {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--text);
-}
-/* 真的 radio 藏起來當接收面（`:checked` 由 Vue 綁，`name` 讓原生互斥也生效） */
-.xradio__cb {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-}
-.xradio__box {
-  position: relative;
+.statsrow__caret {
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
   flex: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 5px;
-  border: 1.5px solid var(--line-strong);
+}
+.statspop {
+  position: fixed;
+  z-index: 95;
   background: var(--surface);
-  transition:
-    background 0.12s,
-    border-color 0.12s;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-3, 0 14px 44px rgba(0, 0, 0, 0.2));
+  padding: 6px;
 }
-.xradio.is-on .xradio__box {
-  border-color: var(--accent);
-  background: var(--accent);
+.statspop__item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 42px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
 }
-.xradio.is-on .xradio__box::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  top: 1.5px;
-  width: 4px;
-  height: 8px;
-  border: solid #fff;
-  border-width: 0 2px 2px 0;
-  transform: rotate(43deg);
+.statspop__item:hover {
+  background: var(--surface-3);
+}
+.statspop__item.is-on {
+  background: var(--accent-soft);
+}
+.statspop__name {
+  flex: 1;
+  text-align: left;
+}
+.statspop__tick {
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .meta {

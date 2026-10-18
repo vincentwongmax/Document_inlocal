@@ -701,7 +701,7 @@ async function askRemove() {
   padding: 6px 18px 18px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 .box h3 {
   font-size: 16px;
@@ -716,7 +716,7 @@ async function askRemove() {
 .reveal {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 /**
  * 轉場：從下面 10px 滑上來 ＋ 淡入（200ms）。
@@ -737,7 +737,7 @@ async function askRemove() {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 11px 12px;
+  padding: 9px 12px;
   border-radius: 12px;
   background: var(--surface-3);
 }
@@ -768,7 +768,7 @@ async function askRemove() {
 .lb {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 6px;
 }
 /**
  * 標籤列 = 兩欄格線，不是 flex。
@@ -883,7 +883,7 @@ async function askRemove() {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
   gap: 6px;
-  max-height: 152px;
+  max-height: 116px;
   overflow-y: auto;
   padding: 2px;
   border-radius: 12px;
@@ -892,7 +892,7 @@ async function askRemove() {
 .ic {
   display: grid;
   place-items: center;
-  height: 40px;
+  height: 38px;
   border-radius: 9px;
   border: 1px solid transparent;
   color: var(--text-2);

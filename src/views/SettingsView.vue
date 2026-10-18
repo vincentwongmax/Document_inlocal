@@ -17,9 +17,7 @@ import { CURRENCIES, currency, fmtMoney } from '@/lib/currency'
 import { parseImport, restoreImages } from '@/lib/exportImport'
 import ExportModal from '@/components/ExportModal.vue'
 import ImportModal from '@/components/ImportModal.vue'
-import QuickRecordSheet from '@/components/QuickRecordSheet.vue'
 import { flatTreeByType } from '@/lib/tree'
-import type { QuickDraft } from '@/lib/quickParse'
 import WalletSection from '@/components/WalletSection.vue'
 import ReviewSheet from '@/components/ReviewSheet.vue'
 import { useUpload } from '@/composables/useUpload'
@@ -497,23 +495,13 @@ const totalStats = computed(() => ({
 
 const exportOpen = ref(false)
 
-/* ── 0.1.66：匯入彈窗（三分頁）與快速記錄表格頁 ───────────────── */
+/* ── 0.1.66：匯入彈窗（三分頁：JSON／貼上資料／快速記錄） ─────────── */
 const importOpen = ref(false)
-const quickOpen = ref(false)
-/** 送到快速記錄頁的草稿（貼上資料的解析結果；空陣列＝從一列空白開始） */
-const quickDrafts = ref<QuickDraft[]>([])
 
 /** JSON 分頁：關掉彈窗再開檔案選擇器（原本的匯入流程完全沒變） */
 function onPickJson() {
   importOpen.value = false
   pickImport()
-}
-
-function onQuickDrafts(drafts: QuickDraft[]) {
-  quickDrafts.value = drafts
-  quickOpen.value = true
-  // 匯入彈窗讓位給快速記錄頁（z-index 92 蓋在 90 之上）；先關掉才不會回來時殘影
-  importOpen.value = false
 }
 
 const importInput = ref<HTMLInputElement | null>(null)
@@ -1421,10 +1409,7 @@ const activeWalletName = computed(() => settings.activeWallet.name)
       :open="importOpen"
       @close="importOpen = false"
       @pick-json="onPickJson"
-      @quick="onQuickDrafts"
     />
-    <!-- 0.1.66：快速記錄表格頁（貼上資料／快速記錄分頁的落點） -->
-    <QuickRecordSheet :open="quickOpen" :drafts="quickDrafts" @close="quickOpen = false" />
 
     <!--
       BETA 收據辨識的結果清單（0.1.26 從記帳頁搬過來）。
