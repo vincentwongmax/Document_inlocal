@@ -20,6 +20,17 @@ const props = withDefaults(
     /** 已勾選的 `v`（順序一律照 `options`，不是點擊順序） */
     modelValue: string[]
     options: { v: string; label: string }[]
+    /**
+     * 0.1.69：下半段的「開關」選項（不是篩選條件）。
+     *
+     * 使用者要求在這個下拉裡加一個「顯示實際時間」——它**不會過濾記錄**，
+     * 只是改時間標籤的顯示方式，所以不能混在上面那組標籤篩選裡
+     * （混進去的話按鈕標題會寫成「只顯示符合以下條件」，語意就不對了）。
+     * 這裡用同樣的方框外觀，但以分隔線隔開、標題換成「顯示方式」。
+     */
+    extras?: { v: string; label: string }[]
+    /** 已打開的開關（`extras` 的 v） */
+    extraOn?: string[]
     /** 觸發鈕上的字 */
     label: string
     /** 有勾東西嗎（觸發鈕要不要亮） */
@@ -27,9 +38,12 @@ const props = withDefaults(
     ariaLabel?: string
     title?: string
   }>(),
-  { active: false, ariaLabel: '', title: '' },
+  { extras: () => [], extraOn: () => [], active: false, ariaLabel: '', title: '' },
 )
-const emit = defineEmits<{ 'update:modelValue': [v: string[]] }>()
+const emit = defineEmits<{
+  'update:modelValue': [v: string[]]
+  'update:extraOn': [v: string[]]
+}>()
 
 // 多根元件（觸發鈕＋Teleport）→ class 不會自動 fallthrough，手動綁到觸發鈕上
 defineOptions({ inheritAttrs: false })
@@ -109,6 +123,14 @@ function toggleItem(v: string) {
   )
 }
 
+function toggleExtra(v: string) {
+  const has = props.extraOn.includes(v)
+  emit(
+    'update:extraOn',
+    has ? props.extraOn.filter((x) => x !== v) : [...props.extraOn, v],
+  )
+}
+
 onBeforeUnmount(close)
 </script>
 
@@ -163,6 +185,30 @@ onBeforeUnmount(close)
           </span>
           <span class="mf__name">{{ o.label }}</span>
         </button>
+
+        <!-- 0.1.69：分隔線＋「顯示方式」區（開關，不篩選） -->
+        <template v-if="extras.length">
+          <div class="mf__sep" role="separator"></div>
+          <p class="mf__groupt tiny muted">顯示方式</p>
+          <button
+            v-for="o in extras"
+            :key="o.v"
+            type="button"
+            class="mf__item"
+            :class="{ 'is-on': extraOn.includes(o.v) }"
+            role="checkbox"
+            :aria-checked="extraOn.includes(o.v)"
+            :data-x="o.v"
+            @click="toggleExtra(o.v)"
+          >
+            <span class="mf__box" aria-hidden="true">
+              <svg v-if="extraOn.includes(o.v)" viewBox="0 0 24 24">
+                <path d="M5 13.2 9.2 17.4 19 7.6" />
+              </svg>
+            </span>
+            <span class="mf__name">{{ o.label }}</span>
+          </button>
+        </template>
       </div>
     </Transition>
   </Teleport>
@@ -281,6 +327,19 @@ onBeforeUnmount(close)
 .mf__name {
   flex: 1;
   min-width: 0;
+}
+/* 0.1.69：篩選區與「顯示方式」區之間的分隔 */
+.mf__sep {
+  height: 1px;
+  margin: 6px 4px 4px;
+  background: var(--line);
+}
+.mf__groupt {
+  margin: 0 0 2px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
 }
 .mfspop-enter-active,
 .mfspop-leave-active {

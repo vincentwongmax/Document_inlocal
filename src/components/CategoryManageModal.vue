@@ -698,7 +698,12 @@ async function askRemove() {
 /* 內容區：共用 `.bsheet__body` 已經給了「自己捲 + 不連鎖」，
    這裡只補這個彈層自己的內距與欄距 */
 .box {
-  padding: 14px 18px 18px;
+  /* 0.1.69（第二次收斂）：使用者在 0.1.68 之後仍覺得按鈕列下方空白太多，
+     所以整體再往下移一點（上緣 14→18px、內容底 18→6px），
+     頁腳自己的下內距 10→2px —— 剩下的安全區留白交給共用的
+     `.bsheet.bsheet.bsheet { padding-bottom: calc(var(--safe-b) + 12px) }`，
+     元件層不再疊加。 */
+  padding: 18px 18px 6px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1071,7 +1076,8 @@ async function askRemove() {
   gap: 10px;
   align-items: center;
   justify-content: flex-end;
-  padding: 12px 18px 10px;
+  /* 0.1.69：下內距 10→2px（空白改由共用的 .bsheet 安全區處理） */
+  padding: 12px 18px 2px;
   border-top: 1px solid var(--line);
 }
 .foot__del {

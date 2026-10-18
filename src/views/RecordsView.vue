@@ -122,7 +122,9 @@ const moreActive = computed(() => moreTags.value.length > 0)
 /** 按鈕上的字：沒勾＝「更多」；勾了＝首字以「+」連接（圖+旅／圖+旅+待） */
 const moreLabel = computed(() => {
   const picked = MORE_TAGS.filter((t) => moreTags.value.includes(t.v))
-  return picked.length ? picked.map((t) => t.short).join('+') : '更多'
+  const base = picked.length ? picked.map((t) => t.short).join('+') : '更多'
+  // 0.1.69：開了「顯示實際時間」也要讓按鈕看得出來（用「時」接在後面）
+  return showAbsTime.value ? `${base}+時` : base
 })
 const moreTitle = computed(() =>
   moreActive.value
@@ -131,6 +133,57 @@ const moreTitle = computed(() =>
         .join('、')}（再按可取消）`
     : '更多篩選：圖片／旅行／待辦事項／未計入統計（可複選）',
 )
+/**
+ * 0.1.69：「更多 › 顯示方式 › 顯示實際時間」開關。
+ *
+ * ⚠ 這**不是**篩選條件（不影響記錄筆數），所以不混進 `moreTags`，
+ *   而是 `MoreFilterMenu` 的 `extras`／`extraOn`（下拉裡用分隔線隔開的一段）。
+ *
+ * ⚠ 持久化到 localStorage：這是**顯示偏好**，不是資料篩選 —— 重新整理後
+ *   使用者不該要再按一次。鍵名帶 app 前綴，避免跟其他設定打架。
+ */
+const ABS_TIME_KEY = 'mop-ledger.ui.absTime.v1'
+const absTimeOn = ref<string[]>(loadAbsTime())
+function loadAbsTime(): string[] {
+  try {
+    return localStorage.getItem(ABS_TIME_KEY) === '1' ? ['abs-time'] : []
+  } catch {
+    return []
+  }
+}
+function saveAbsTime() {
+  try {
+    localStorage.setItem(ABS_TIME_KEY, showAbsTime.value ? '1' : '0')
+  } catch {
+    /* 隱私模式等 → 記不住就記不住，不影響使用 */
+  }
+}
+/** 開關打開了嗎 */
+const showAbsTime = computed(() => absTimeOn.value.includes('abs-time'))
+watch(absTimeOn, () => saveAbsTime(), { deep: true })
+/** 下拉裡「顯示方式」那一段的選項 */
+const moreExtras = [{ v: 'abs-time', label: '顯示實際時間' }]
+/**
+ * 全部記錄是不是同一天？
+ * 使用者原話：「如果記錄都是同一天，就不用顯示日期，只顯示時間，
+ * 若是記錄中有一個不是同一天的，就日期時間都顯示」。
+ *
+ * ⚠ 判斷用的是**目前篩選後的全部記錄**（`rows`），不是目前這一頁 ——
+ *   使用者講的是「記錄中有一個不是同一天的」，只要清單裡有任何一筆跨日就要顯示日期。
+ *   時間來源用 `occurredAt`（跟 RecordRow 顯示的時間一致）。
+ */
+const allSameDay = computed(() => {
+  const list = rows.value
+  if (!list.length) return true
+  const k0 = dayKey(list[0].occurredAt)
+  return list.every((r) => dayKey(r.occurredAt) === k0)
+})
+/** 傳給 RecordList → RecordRow 的時間顯示模式 */
+const absTimeMode = computed<'off' | 'time' | 'datetime'>(() => {
+  if (!showAbsTime.value) return 'off'
+  return allSameDay.value ? 'time' : 'datetime'
+})
+
 /** 有這個標籤嗎（供 `rows` 過濾用） */
 function hasTag(r: TxRecord, v: string): boolean {
   if (v === 'img') return (r.images?.length ?? 0) > 0
@@ -934,8 +987,10 @@ function removeEditing(id: string) {
             <MoreFilterMenu
               v-model="moreTags"
               :options="moreOptions"
+              v-model:extra-on="absTimeOn"
+              :extras="moreExtras"
               :label="moreLabel"
-              :active="moreActive"
+              :active="moreActive || showAbsTime"
               :title="moreTitle"
               aria-label="更多篩選"
             />
@@ -1032,6 +1087,7 @@ function removeEditing(id: string) {
         :empty-text="emptyText"
         :highlight="kw"
         :date-basis="recent ? 'created' : 'occurred'"
+        :abs-time="absTimeMode"
         @edit="editingId = $event"
         @remove="removeEditing($event)"
       />

@@ -431,8 +431,111 @@ async function openImage(im: ImageRef) {
   await showNavImage(Math.max(0, images.value.findIndex((x) => x.id === im.id)))
 }
 
-/** 同一筆裡往前／往後一張 */
-function lbPrevImage() {
+/* ── 0.1.69：複製圖片／分享（匯出）圖片 ────────────────────────
+ * 兩個按鈕都掛在收據圖片區的標題列右側（`.ocrsec__head`），一整區共用，
+ * 對「目前看得到的那張」操作 —— 也就是燈箱正在看的那張，沒開燈箱時是縮圖
+ * 順序裡的第一張（多張時使用者先點開想處理的圖）。
+ * ⚠ 為什麼不用 navigator.share 當主力：桌機瀏覽器多半沒有 `canShare`，
+ *   所以一律先準備 `<a download>` 匯出；只有真的能分享檔案時才走分享面板。
+ */
+
+/** 要操作的圖：燈箱看著的那張優先，否則第一張 */
+const actImage = computed<ImageRef | null>(() => {
+  const list = images.value
+  if (!list.length) return null
+  const at = lbNav.value ? lbNav.value.idx : 0
+  return list[Math.min(Math.max(at, 0), list.length - 1)] ?? null
+})
+const actImageName = computed(() => actImage.value?.name || '收據圖片')
+
+/** 取這一張的原始 blob（IndexedDB 讀不到就 null） */
+async function actBlob(): Promise<Blob | null> {
+  const im = actImage.value
+  if (!im) return null
+  return (await getImage(im.id)) ?? null
+}
+
+/** 複製圖片到剪貼簿（以 PNG 貼上，微信／LINE 等可直接收圖） */
+async function copyImage() {
+  const im = actImage.value
+  if (!im) return
+  try {
+    const blob = await actBlob()
+    if (!blob) {
+      notify('圖片已不存在（可能已被清除）', 'warn')
+      return
+    }
+    // Safari 只收 PNG；其他瀏覽器也統一轉 PNG，貼上最通用
+    const png = blob.type === 'image/png' ? blob : await toPng(blob)
+    const file = new File([png], safeFileName(actImageName.value, 'png'), { type: 'image/png' })
+    if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+      notify('這個瀏覽器不支援複製圖片，請改用「分享」', 'warn')
+      return
+    }
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': file })])
+    notify('已複製圖片到剪貼簿', 'ok')
+  } catch {
+    notify('複製圖片失敗，請改用「分享」', 'warn')
+  }
+}
+
+/** 分享（匯出）圖片：能分享檔案就走分享面板，否則直接下載 */
+async function shareImage() {
+  const im = actImage.value
+  if (!im) return
+  try {
+    const blob = await actBlob()
+    if (!blob) {
+      notify('圖片已不存在（可能已被清除）', 'warn')
+      return
+    }
+    const file = new File([blob], safeFileName(actImageName.value, blob.type), { type: blob.type })
+    const navAny = navigator as Navigator & { canShare?: (d: ShareData) => boolean }
+    if (navAny.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: actImageName.value })
+        return
+      } catch (e) {
+        // 使用者取消分享 → 不做任何事，也不要跳錯誤提示
+        if ((e as Error)?.name === 'AbortError') return
+      }
+    }
+    downloadBlob(blob, safeFileName(actImageName.value, blob.type))
+    notify('已匯出圖片', 'ok')
+  } catch {
+    notify('分享圖片失敗', 'warn')
+  }
+}
+
+/** 檔名清理：只留副檔名前的乾淨名字，避免路徑字元 */
+function safeFileName(name: string, mime: string) {
+  const ext = mime.split('/')[1] || 'png'
+  const base = name.replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]+/g, '_').trim()
+  return `${base || 'image'}.${ext === 'jpeg' ? 'jpg' : ext}`
+}
+
+/** 非 PNG 就用 canvas 轉一張（複製貼上用） */
+async function toPng(blob: Blob): Promise<Blob> {
+  const bmp = await createImageBitmap(blob)
+  const c = document.createElement('canvas')
+  c.width = bmp.width
+  c.height = bmp.height
+  c.getContext('2d')!.drawImage(bmp, 0, 0)
+  bmp.close?.()
+  return await new Promise<Blob>((res) => c.toBlob((b) => res(b ?? blob), 'image/png'))
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000)
+}
+
+/** 同一筆裡往前／往後一張 */function lbPrevImage() {
   if (lbNav.value) void showNavImage(lbNav.value.idx - 1)
 }
 function lbNextImage() {
@@ -456,6 +559,30 @@ function lbGotoRecord(delta: number) {
   lbNav.value = { id: ids[to], idx: 0 }
   navEmpty.value = false
   emit('goto-record', ids[to])
+}
+
+/**
+ * 0.1.69：標題列「上一頁／下一頁」icon（關閉鈕的左手邊）。
+ *
+ * ⚠ 沿用既有的 `props.navIds` + `emit('goto-record')` 機制（0.1.57 圖片燈箱
+ *   的上下筆記錄就是走這條），**不自己換記錄** —— 明細的記錄是父層給的。
+ *   為什麼叫「頁」而不是「筆」：在記錄列表頁它是上/下一筆，在統計頁是上/下一頁，
+ *   使用者按語意就是翻頁。
+ *
+ * 沒有 navIds（例如從圖片燈箱直接進來、或匯入後單筆開啟）→ 兩顆都disable。
+ */
+const navAt = computed(() => {
+  const ids = props.navIds ?? []
+  if (!ids.length || !props.record) return -1
+  return ids.indexOf(props.record.id)
+})
+const navHas = computed(() => navAt.value >= 0)
+const navPrevId = computed(() => (navHas.value ? (props.navIds ?? [])[navAt.value - 1] ?? '' : ''))
+const navNextId = computed(() =>
+  navHas.value ? (props.navIds ?? [])[navAt.value + 1] ?? '' : '',
+)
+function navGoto(id: string) {
+  if (id) emit('goto-record', id)
 }
 
 /** 明細中可編輯的圖片（含本次新上傳、尚未儲存的） */
@@ -708,6 +835,18 @@ const tripOptions = computed(() => {
   return out
 })
 
+/**
+ * 0.1.69：有沒有任何旅行（進行中或歷史，含已隱藏）？
+ * 設定頁的「旅行模式」完全沒有旅行時，記錄明細裡的旅行資料整個藏起來
+ * —— 只剩一個「不屬於任何旅行」的下拉沒有意義。
+ * ⚠ 拍板的例外：如果**這筆記錄自己**帶著一個已不存在的 tripId
+ * （例如設定被匯入覆盖），仍然顯示這一列，避免使用者看不到、無法清除
+ * 那個殘留的歸屬。
+ */
+const hasAnyTrip = computed(
+  () => !!settings.activeTrip || settings.tripHistory.length > 0 || !!tripId.value,
+)
+
 /** 目前這筆歸屬的旅行（沒有則 null） */
 const currentTrip = computed(() => (tripId.value ? (settings.tripById(tripId.value) ?? null) : null))
 
@@ -806,6 +945,47 @@ function save() {
               <h3 class="sheet__title">記錄明細</h3>
               <span class="sheet__src">{{ record.source === 'image' ? '收據辨識' : '手動記帳' }}</span>
             </div>
+          </div>
+          <!-- 0.1.69：上一頁／下一頁 icon，排在「關閉」左手邊；到頭就 disabled -->
+          <div class="sheet__nav">
+            <button
+              type="button"
+              class="sheet__navbtn"
+              aria-label="上一頁"
+              title="上一頁"
+              :disabled="!navPrevId"
+              @click="navGoto(navPrevId)"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M15 5l-7 7 7 7"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="sheet__navbtn"
+              aria-label="下一頁"
+              title="下一頁"
+              :disabled="!navNextId"
+              @click="navGoto(navNextId)"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M9 5l7 7-7 7"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
           </div>
           <button class="sheet__close" type="button" @click="close">關閉</button>
         </header>
@@ -999,6 +1179,7 @@ function save() {
               （參考修改分類頁的選擇分類下拉：Teleport 到 body、fixed 定位、同一套 .statspop）。
             -->
             <button
+              v-if="hasAnyTrip"
               type="button"
               class="meta__row triprow"
               ref="tripTrigger"
@@ -1058,11 +1239,42 @@ function save() {
             </div>
           </Teleport>
 
-          <!-- 0.1.44：收據圖片合併進「收據辨識」（原本是分開的「收據圖片」flat 區塊） -->
+          <!-- 0.1.44：收據圖片合併進「收據辨識」（原本是分開的「收據圖片」flat 區塊）；
+               0.1.69：標題改回「收據圖片」（使用者原話），並在標題列右側加
+               複製圖片／分享（匯出）圖片 —— 沒有圖片時兩顆 disabled。 -->
           <section class="flat ocrsec">
             <div class="ocrsec__head">
-              <span class="flat__label">收據辨識</span>
-              <span class="beta">BETA</span>
+              <span class="flat__label">收據圖片</span>
+              <span class="ocrsec__acts">
+                <button
+                  type="button"
+                  class="ocrsec__act"
+                  :disabled="!images.length"
+                  title="把圖片複製到剪貼簿"
+                  @click="copyImage"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="9" y="9" width="11" height="11" rx="2" />
+                    <path d="M5 15V6a2 2 0 0 1 2-2h9" />
+                  </svg>
+                  <span>複製圖片</span>
+                </button>
+                <button
+                  type="button"
+                  class="ocrsec__act"
+                  :disabled="!images.length"
+                  title="分享或匯出圖片"
+                  @click="shareImage"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 15V4" />
+                    <path d="M8 8l4-4 4 4" />
+                    <path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />
+                  </svg>
+                  <span>分享圖片</span>
+                </button>
+                <span class="beta">BETA</span>
+              </span>
             </div>
             <div class="imgs">
               <div v-for="im in images" :key="im.id" class="imgs__cell">
@@ -1257,6 +1469,41 @@ function save() {
 .sheet__close:hover {
   background: var(--surface-3);
   color: var(--text);
+}
+/* 0.1.69：標題列的上一頁／下一頁 icon 組（排在 .sheet__close 左手邊） */
+.sheet__nav {
+  flex: none;
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.sheet__navbtn {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    opacity 0.15s;
+}
+.sheet__navbtn svg {
+  width: 18px;
+  height: 18px;
+}
+.sheet__navbtn:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.sheet__navbtn:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 .sheet__body {
   padding: 14px 16px 16px;
@@ -1773,6 +2020,47 @@ function save() {
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+}
+/* 0.1.69：標題列右側的「複製圖片／分享圖片」＋BETA；靠右推 */
+.ocrsec__acts {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ocrsec__act {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    opacity 0.15s;
+}
+.ocrsec__act svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ocrsec__act:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.ocrsec__act:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 .beta {
   padding: 2px 7px;

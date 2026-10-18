@@ -46,6 +46,8 @@ const props = withDefaults(
      * （預設 false ＝ 零行為變化）。做法見下面的 `vis`／`heights`。
      */
     virtual?: boolean
+    /** 0.1.69：時間標籤改顯示實際時間（'off' | 'time' | 'datetime'），往 RecordRow 傳 */
+    absTime?: 'off' | 'time' | 'datetime'
   }>(),
   {
     showTime: true,
@@ -56,6 +58,7 @@ const props = withDefaults(
     groupBy: 'day',
     totalsFrom: undefined,
     virtual: false,
+    absTime: 'off',
   },
 )
 const emit = defineEmits<{ edit: [id: string]; remove: [id: string] }>()
@@ -388,6 +391,7 @@ watch(() => visibleGroups.value.length, () => void measure())
                 :show-time="showTime"
                 :highlight="highlight"
                 :time-recent="dateBasis === 'created'"
+                :abs-time="absTime"
                 @edit="emit('edit', $event)"
                 @remove="emit('remove', $event)"
               />

@@ -465,14 +465,13 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
         <!-- ③ 快速記錄：類表格（原本獨立子頁面的內容搬過來） -->
         <template v-else>
           <div class="pane">
+            <!-- 0.1.69：標題列只留「快速記錄」＋建立時間；原本放在這裡的
+                 「刪除」鈕會讓這列跟下面的表格欄位走位，所以改成放進
+                 `.tbl__hd` 的最後一格（見下），跟「日期時間」同一列、對齊欄寬。 -->
             <div class="qrhead">
               <h4 class="qrhead__t">快速記錄</h4>
               <span class="qrhead__dt tiny muted">{{ nowText }}</span>
-              <button type="button" class="qrhead__del" @click="clearAll">刪除</button>
             </div>
-            <p class="tiny muted lead">
-              一列一筆，點格子就能編輯；不完整的列會標紅，提交時只會寫入完整的列。
-            </p>
 
             <div class="statline">
               <span>共 <b class="num">{{ rows.length }}</b> 列</span>
@@ -486,7 +485,16 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
               <div class="tbl">
                 <div class="tbl__hd">
                   <span v-for="c in COLS" :key="c.key" class="th">{{ c.label }}</span>
-                  <span class="th th--x"></span>
+                  <!-- 0.1.69：「刪除」標題放在最後一格（與每列的 ✕ 同欄），
+                       標題列因此與資料列完全對齊，不會再走位；點它＝清空整張表 -->
+                  <button
+                    type="button"
+                    class="th th--x th--del"
+                    title="清空全部列"
+                    @click="clearAll"
+                  >
+                    刪除
+                  </button>
                 </div>
                 <div v-for="(row, i) in rows" :key="i" class="tr">
                   <button
@@ -781,23 +789,21 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 .qrhead__dt {
   white-space: nowrap;
 }
-/* 0.1.68：標題行日期時間右方的「刪除」（清空整張表），靜態的灰階標籤樣式，平衡整列 */
-.qrhead__del {
-  padding: 0;
+/* 0.1.69：原本的 `.lead`（導言）與 `.qrhead__del`（標題列的刪除鈕）
+   都已從模板移除 —— 前者依需求刪除、後者改由 `.th--del` 承擔。 */
+/* 0.1.69：表格標題列最後一格的「刪除」鈕 —— 沿用 `.th` 的排版，
+   只多加「可點」與 hover 的紅色；`.th--x` 原本是 0 padding 的空欄，
+   現在要放字，所以補回左右 6px 讓字不貼邊。 */
+.th--del {
+  padding: 7px 6px;
   border: 0;
   background: none;
-  font: inherit;
-  font-size: 12.5px;
-  font-weight: 600;
+  font-family: inherit;
   color: var(--text-3);
   cursor: pointer;
 }
-.qrhead__del:hover {
+.th--del:hover {
   color: var(--expense, #bf563c);
-}
-.lead {
-  margin: -4px 0 0;
-  line-height: 1.5;
 }
 .statline {
   display: flex;
