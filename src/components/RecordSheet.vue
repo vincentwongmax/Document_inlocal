@@ -216,6 +216,68 @@ watch(statsOpen, (o) => {
   else document.removeEventListener('click', onDocPointer)
 })
 onBeforeUnmount(() => document.removeEventListener('click', onDocPointer))
+
+/* ── 0.1.68：旅行歸屬改為「點一下開下拉」選單（與統計同一套 .meta__row＋.statspop 語彙）──
+   需求：把旅行區搬到 <section class="meta"> 最底（新增時間／主幣金額之下），樣式與它們一致，
+   點擊開下拉選「不屬於任何旅行／旅行1／旅行2...」，參考修改分類頁的選擇分類下拉。 */
+const tripOpen = ref(false)
+const tripTrigger = ref<HTMLElement | null>(null)
+const tripPop = ref<HTMLElement | null>(null)
+const tripPopStyle = ref<Record<string, string>>({})
+const tripOpts = computed(() => {
+  const out: { id: string; label: string; match: boolean }[] = [
+    { id: '', label: '不屬於任何旅行', match: !tripId.value },
+  ]
+  for (const t of tripOptions.value) out.push({ id: t.id, label: t.label, match: t.id === tripId.value })
+  return out
+})
+/** 這一欄在 row 上顯示的字（有歸屬就顯示旅行名，否則「不屬於任何旅行」） */
+const tripLabel = computed(() => (currentTrip.value ? currentTrip.value.name : '不屬於任何旅行'))
+function placeTrip() {
+  const t = tripTrigger.value
+  if (!t) return
+  const r = t.getBoundingClientRect()
+  const w = Math.max(r.width, 220)
+  const vh = window.innerHeight || document.documentElement.clientHeight
+  const est = tripOpts.value.length * 42 + 16
+  let top = r.bottom + 6
+  // 下方空間不夠就往上翻
+  if (top + est > vh && r.top > est) top = r.top - 6 - est
+  tripPopStyle.value = {
+    position: 'fixed',
+    left: `${r.left}px`,
+    top: `${top}px`,
+    width: `${w}px`,
+    zIndex: '95',
+  }
+}
+function toggleTrip() {
+  if (tripOpen.value) {
+    tripOpen.value = false
+    return
+  }
+  tripOpen.value = true
+  nextTick(placeTrip)
+}
+function pickTrip(v: string) {
+  tripId.value = v
+  onTripChange()
+  // 0.1.68：像「統計」一樣即時存檔（不再等使用者按儲存）——旅行歸屬是單一離散選擇，即時寫更直覺；
+  //         一併把 note 也寫回（onTripChange 可能補了「_旅行名」後綴）。
+  if (props.record) records.update(props.record.id, { tripId: tripId.value || undefined, note: note.value.trim() })
+  tripOpen.value = false
+}
+function onDocPointerTrip(e: MouseEvent) {
+  if (!tripOpen.value) return
+  const t = e.target as Node
+  if (tripTrigger.value?.contains(t) || tripPop.value?.contains(t)) return
+  tripOpen.value = false
+}
+watch(tripOpen, (o) => {
+  if (o) setTimeout(() => document.addEventListener('click', onDocPointerTrip), 0)
+  else document.removeEventListener('click', onDocPointerTrip)
+})
+onBeforeUnmount(() => document.removeEventListener('click', onDocPointerTrip))
 const todoTotal = computed(() => todos.value.length)
 const todoDone = computed(() => todos.value.filter((t) => t.done).length)
 const todoLeft = computed(() => todoTotal.value - todoDone.value)
@@ -649,11 +711,6 @@ const tripOptions = computed(() => {
 /** 目前這筆歸屬的旅行（沒有則 null） */
 const currentTrip = computed(() => (tripId.value ? (settings.tripById(tripId.value) ?? null) : null))
 
-const tripHint = computed(() => {
-  if (currentTrip.value) return `這筆歸在「${currentTrip.value.name}」名下（記錄頁／統計頁會歸到它）`
-  return tripOptions.value.length ? '可把這筆歸進某個旅行（進行中或已結束的都可以）' : ''
-})
-
 /**
  * 改選旅行（select 的 change）。
  * ⚙ 拍板的規則（0.1.36）：
@@ -803,15 +860,7 @@ function save() {
             <CategoryPicker v-model="categoryId" :type="type" variant="select" />
           </div>
 
-          <!-- 旅行（0.1.35 膠囊＋按鈕 → 0.1.36 下拉）：把這筆歸進任何一個旅行（結束過的也行） -->
-          <div v-if="tripOptions.length" class="flat">
-            <span class="flat__label">旅行</span>
-            <select v-model="tripId" class="field tripsel" @change="onTripChange">
-              <option value="">不屬於任何旅行</option>
-              <option v-for="t in tripOptions" :key="t.id" :value="t.id">{{ t.label }}</option>
-            </select>
-            <p v-if="tripHint" class="tiny muted triprow__hint">{{ tripHint }}</p>
-          </div>
+          <!-- 0.1.68：旅行歸屬已搬到 <section class="meta"> 最底（見下方 .triprow），改為點擊開下拉 -->
 
           <!-- 日期時間 -->
           <label class="flat">
@@ -943,6 +992,35 @@ function save() {
                 </svg>
               </span>
             </button>
+
+            <!--
+              0.1.68：旅行歸屬從上方 .flat 區搬到這裡（meta 最底，新增時間／主幣金額之下），
+              與它們同一個 .meta__row 語彙；點擊開下拉選「不屬於任何旅行／旅行1／旅行2...」
+              （參考修改分類頁的選擇分類下拉：Teleport 到 body、fixed 定位、同一套 .statspop）。
+            -->
+            <button
+              type="button"
+              class="meta__row triprow"
+              ref="tripTrigger"
+              :data-trip="tripId"
+              :aria-expanded="tripOpen"
+              @click="toggleTrip"
+            >
+              <span class="tiny muted">旅行</span>
+              <span class="triprow__val">
+                <span class="tiny num triprow__name">{{ tripLabel }}</span>
+                <svg class="triprow__caret" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M6 9l6 6 6-6"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </span>
+            </button>
           </section>
 
           <!-- 0.1.67：統計下拉（Teleport 到 body，蓋在明細彈層之上） -->
@@ -955,6 +1033,24 @@ function save() {
                 class="statspop__item"
                 :class="{ 'is-on': o.match }"
                 @click="pickStats(o.value)"
+              >
+                <span class="statspop__name">{{ o.label }}</span>
+                <span v-if="o.match" class="statspop__tick">✓</span>
+              </button>
+            </div>
+          </Teleport>
+
+          <!-- 0.1.68：旅行下拉（Teleport 到 body，蓋在明細彈層之上；複用 .statspop 樣式） -->
+          <Teleport to="body">
+            <div v-if="tripOpen" ref="tripPop" class="statspop" :style="tripPopStyle" @click.stop>
+              <button
+                v-for="o in tripOpts"
+                :key="o.id"
+                type="button"
+                class="statspop__item"
+                :class="{ 'is-on': o.match }"
+                :data-trip="o.id"
+                @click="pickTrip(o.id)"
               >
                 <span class="statspop__name">{{ o.label }}</span>
                 <span v-if="o.match" class="statspop__tick">✓</span>
@@ -1409,12 +1505,35 @@ function save() {
 .sel2 {
   padding: 0 10px;
 }
-/* 旅行欄（0.1.36 改成下拉）：select 用全站的 .field 樣式，這裡只留滿寬與提示的位置 */
-.tripsel {
+/* 旅行欄（0.1.68 改成 meta 內的 .triprow 下拉，參考 .statsrow 語彙） */
+.triprow {
   width: 100%;
+  margin: 0;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.triprow__hint {
-  margin: -3px 0 0;
+.triprow:last-child {
+  border-bottom: 0;
+}
+.triprow__val {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.triprow__name {
+  color: var(--text-2);
+}
+.triprow__caret {
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+  flex: none;
 }
 .conv {
   grid-column: 1 / -1;

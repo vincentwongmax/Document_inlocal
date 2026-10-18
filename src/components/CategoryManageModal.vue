@@ -698,7 +698,7 @@ async function askRemove() {
 /* 內容區：共用 `.bsheet__body` 已經給了「自己捲 + 不連鎖」，
    這裡只補這個彈層自己的內距與欄距 */
 .box {
-  padding: 6px 18px 18px;
+  padding: 14px 18px 18px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1071,7 +1071,7 @@ async function askRemove() {
   gap: 10px;
   align-items: center;
   justify-content: flex-end;
-  padding: 12px 18px 16px;
+  padding: 12px 18px 10px;
   border-top: 1px solid var(--line);
 }
 .foot__del {

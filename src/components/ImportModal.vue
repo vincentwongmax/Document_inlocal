@@ -165,6 +165,11 @@ function removeRow(i: number) {
   rows.value.splice(i, 1)
 }
 
+/** 0.1.68：標題行的「刪除」＝清空整張快速記錄表（與每列 ✕ 同一套「不確認」行為；皆是未存檔的草稿） */
+function clearAll() {
+  rows.value = []
+}
+
 /* ── 格子編輯器 ───────────────────────────────────────────── */
 const editing = ref<{ row: number; col: ColKey } | null>(null)
 const editText = ref('')
@@ -463,6 +468,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
             <div class="qrhead">
               <h4 class="qrhead__t">快速記錄</h4>
               <span class="qrhead__dt tiny muted">{{ nowText }}</span>
+              <button type="button" class="qrhead__del" @click="clearAll">刪除</button>
             </div>
             <p class="tiny muted lead">
               一列一筆，點格子就能編輯；不完整的列會標紅，提交時只會寫入完整的列。
@@ -774,6 +780,20 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 }
 .qrhead__dt {
   white-space: nowrap;
+}
+/* 0.1.68：標題行日期時間右方的「刪除」（清空整張表），靜態的灰階標籤樣式，平衡整列 */
+.qrhead__del {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.qrhead__del:hover {
+  color: var(--expense, #bf563c);
 }
 .lead {
   margin: -4px 0 0;
