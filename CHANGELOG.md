@@ -154,6 +154,9 @@ JPEG 到處都相容，長期保存也人人讀得出。
 - 更新 `.smoke/v77.mjs`：斷言由 `image/webp` 改為 `image/jpeg`。
 - 更新 `.smoke/v143.mjs`：⑤ 改驗「只剩一顆分享圖片」、⑥ 跨日斷言改為 `日 HH:MM`。
 - 全回歸集加入 `v144`。
+- **線上守門員翻新**：`.smoke/*-live.mjs` 改成由本地守門員換 BASE 自動產生（`run-live.sh --regen`），
+  修正了 8 支過時的版本斷言與 6 支過時的期望值；新增 `.smoke/run-live.sh`，
+  一次跑完 14 支線上守門員 —— **14 支全綠**（線上多兩個本地抓不到的風險：`VITE_BASE` 路徑寫錯、Service Worker 留舊版）。
 
 ---
 
