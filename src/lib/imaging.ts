@@ -27,7 +27,7 @@ const SHRINKS = [0.8, 0.62]
 
 let webpOk: boolean | null = null
 
-/** 瀏覽器是否支援 WebP 編碼（同體積下畫質比 JPEG 好） */
+/** 瀏覽器是否支援 WebP 編碼 */
 export function supportsWebp(): boolean {
   if (webpOk !== null) return webpOk
   try {
@@ -41,8 +41,21 @@ export function supportsWebp(): boolean {
   return webpOk
 }
 
+/**
+ * 存檔／傳輸一律用 JPEG（0.1.70 起）。
+ *
+ * 為什麼放棄 WebP：0.1.44~0.1.69 優先存 WebP（同容量下畫質較好），
+ * 但實際使用上被回報兩件事——
+ *   1. 分享／傳送收據圖到 LINE、微信、AirDrop 時，WebP 常常不被當成「圖片」
+ *      預覽（要先下載才看得到），JPEG 則到處都相容。
+ *   2. 長期保存的資料，JPEG 是所有人都認得、也讀得出的格式。
+ * ⚠ 這只影響「之後新上傳的圖」；使用者已上傳的舊資料格式不動（不重編、不遷移），
+ *   所以現有的讀取路徑（`getImage` → Blob → `<img>`／分享）格式完全不變。
+ */
+const STORE_MIME = 'image/jpeg'
+
 function mime(): string {
-  return supportsWebp() ? 'image/webp' : 'image/jpeg'
+  return STORE_MIME
 }
 
 async function bitmapOf(file: Blob): Promise<ImageBitmap> {
@@ -154,6 +167,31 @@ export async function compressImage(
     }
   } catch (e) {
     console.warn('[imaging] 壓縮失敗，改用原檔', e)
+  }
+  // ⚠ 壓縮失敗仍要守住「新上傳一定是 JPEG」：原檔不是 JPEG（HEIC／WebP／PNG）
+  //   就再試一次最簡單的 canvas 轉檔；真的不行才放原檔（寧可格式不統一也不要中斷上傳）。
+  if (file.type !== STORE_MIME) {
+    try {
+      const bmp = await bitmapOf(file)
+      try {
+        const canvas = drawScaled(bmp, MAX_EDGE)
+        const blob = await toBlob(canvas, STORE_MIME, 0.82)
+        if (blob) {
+          return {
+            blob,
+            width: canvas.width,
+            height: canvas.height,
+            bytes: blob.size,
+            type: STORE_MIME,
+            originalBytes,
+          }
+        }
+      } finally {
+        bmp.close?.()
+      }
+    } catch {
+      /* 轉檔也失敗 → 下面回原檔 */
+    }
   }
   return { blob: file, width: 0, height: 0, bytes: originalBytes, type: file.type, originalBytes }
 }

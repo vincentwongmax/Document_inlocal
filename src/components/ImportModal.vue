@@ -489,7 +489,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
                        標題列因此與資料列完全對齊，不會再走位；點它＝清空整張表 -->
                   <button
                     type="button"
-                    class="th th--x th--del"
+                    class="th th--del"
                     title="清空全部列"
                     @click="clearAll"
                   >
@@ -793,12 +793,23 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
    都已從模板移除 —— 前者依需求刪除、後者改由 `.th--del` 承擔。 */
 /* 0.1.69：表格標題列最後一格的「刪除」鈕 —— 沿用 `.th` 的排版，
    只多加「可點」與 hover 的紅色；`.th--x` 原本是 0 padding 的空欄，
-   現在要放字，所以補回左右 6px 讓字不貼邊。 */
+   現在要放字，所以補回左右 6px 讓字不貼邊。
+   ⚠ 0.1.70 使用者回報「標題的刪除按鈕缺少灰色的底色（其他標題文字有）」。
+   原因：旁邊的 `.th` 是 <span>，底色來自 `.tbl__hd` 的 `var(--surface-3)`；
+   而「刪除」是 <button>，除了背景透明，瀏覽器／iOS 還會畫自己的
+   appearance（內建漸層與圓角），疊在灰底上就看成「沒有底色」。
+   這裡把它自己的底色**明確寫成跟標題列同色**，並關掉 appearance，兩邊就一致。 */
 .th--del {
   padding: 7px 6px;
   border: 0;
-  background: none;
+  background: var(--surface-3);
+  appearance: none;
+  -webkit-appearance: none;
+  border-radius: 0;
   font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   color: var(--text-3);
   cursor: pointer;
 }
@@ -857,9 +868,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
   letter-spacing: 0.06em;
   color: var(--text-3);
   white-space: nowrap;
-}
-.th--x {
-  padding: 0;
 }
 .tr {
   border-bottom: 1px solid var(--line);

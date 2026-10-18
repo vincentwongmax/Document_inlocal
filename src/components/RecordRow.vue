@@ -4,7 +4,7 @@ import type { TxRecord } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { fmtMoney } from '@/lib/currency'
 import { displayExpr } from '@/lib/calc'
-import { dayParts, formatFull, formatTime, relativeTime } from '@/lib/date'
+import { formatFull, formatTime, relativeTime } from '@/lib/date'
 import { iconForCategory } from '@/lib/icons'
 import { withAlpha, DEFAULT_TRIP_COLOR } from '@/lib/color'
 import CategoryIcon from './CategoryIcon.vue'
@@ -34,7 +34,7 @@ const props = withDefaults(
      * ⚠ 「同一天」的判斷在 **RecordsView** 做（它看得到整份清單），
      *   這裡只負責照指令組字串。
      */
-    absTime?: 'off' | 'time' | 'datetime'
+    absTime?: 'off' | 'time' | 'd' | 'md' | 'full'
   }>(),
   { showTime: false, highlight: '', timeRecent: false, absTime: 'off' },
 )
@@ -67,17 +67,40 @@ const isExpense = computed(() => props.record.type === 'expense')
  */
 const shownAmount = computed(() => settings.displayOf(props.record))
 
+/** 取本地時間的年／月／日（自己拆，不用 formatDay 以免混入「今天/週X」） */
+function ymd(iso: string): { y: number; m: number; d: number } {
+  const d = new Date(iso)
+  return { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() }
+}
+
 /**
  * 時間標籤的文字。
- * 「最近」檢視刻意**不加**「交易」二字（0.1.29）——改用沙漏 icon ＋ 淺綠底識別。
+ * 「最近」檢視刻意**不加**「交易」二字（0.1.29）——改用沙漏 icon ＋淺綠底識別。
+ *
+ * 0.1.70：「顯示實際時間」依**整個查詢結果**決定粒度（模式由父層 RecordsView 算好傳下來），
+ * 只顯示真正會變的那幾層，跨年才出現年份：
+ *   time → 22:08｜d → 18 22:08｜md → 10/18 22:08｜full → 2023/10/18 22:08
  */
 const timeText = computed(() => {
-  if (props.absTime === 'time') return formatTime(props.record.occurredAt)
-  if (props.absTime === 'datetime') {
-    const p = dayParts(props.record.occurredAt)
-    return `${p.mon}${p.num} ${formatTime(props.record.occurredAt)}`
+  const iso = props.record.occurredAt
+  const t = formatTime(iso)
+  const { y, m, d } = ymd(iso)
+  switch (props.absTime) {
+    // 年月日全同 → 只剩時間
+    case 'time':
+      return t
+    // 年月相同、日不同 → 「日 時:分」
+    case 'd':
+      return `${d} ${t}`
+    // 年相同、月或日不同 → 「月/日 時:分」
+    case 'md':
+      return `${m}/${d} ${t}`
+    // 跨年 → 「年/月/日 時:分」
+    case 'full':
+      return `${y}/${m}/${d} ${t}`
+    default:
+      return relativeTime(iso)
   }
-  return relativeTime(props.record.occurredAt)
 })
 
 /** 記錄的幣別跟「現在的顯示幣別」不同才要顯示換算說明（0.1.36：旅行中＝跟旅行貨幣比） */

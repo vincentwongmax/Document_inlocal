@@ -7,6 +7,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
 import { confirmDialog, notify } from '@/lib/alerts'
 import { getImage, putImage, deleteImage } from '@/lib/imageDb'
+import { buildZip } from '@/lib/zip'
 import { compressImage, makeThumb } from '@/lib/imaging'
 import { md5OfFile } from '@/lib/md5'
 import { uid } from '@/lib/id'
@@ -431,98 +432,97 @@ async function openImage(im: ImageRef) {
   await showNavImage(Math.max(0, images.value.findIndex((x) => x.id === im.id)))
 }
 
-/* ── 0.1.69：複製圖片／分享（匯出）圖片 ────────────────────────
- * 兩個按鈕都掛在收據圖片區的標題列右側（`.ocrsec__head`），一整區共用，
- * 對「目前看得到的那張」操作 —— 也就是燈箱正在看的那張，沒開燈箱時是縮圖
- * 順序裡的第一張（多張時使用者先點開想處理的圖）。
- * ⚠ 為什麼不用 navigator.share 當主力：桌機瀏覽器多半沒有 `canShare`，
- *   所以一律先準備 `<a download>` 匯出；只有真的能分享檔案時才走分享面板。
+/* ── 0.1.70：分享圖片（一次全部分享） ──────────────────────────
+ * 0.1.69 有兩個按鈕（複製圖片／分享圖片），實測 iOS PWA 兩個都不管用：
+ *   - 複製：iOS 的 `ClipboardItem` 對 `image/png` 幾乎每次都拒絕 → 一次都沒成功過。
+ *   - 分享：只帶「當下看到的那一張」，而且上一輪的狀態（分享面板未收乾淨、
+ *     AbortError 被當成失敗）會黏住，下一次點就是「沒反應」。
+ * 所以 0.1.70 收成**一個**按鈕「分享圖片」，一次過把這筆的所有圖片都帶出去：
+ *   - 能分享檔案（iOS／Android PWA）→ 直接開系統分享面板，可全選、傳多個 App。
+ *   - 桌機瀏覽器（多半沒有 canShare）→ 直接下載；只有一張就下載該張，
+ *     多張則用現成的 `buildZip` 打包成一個 zip（不會開一連串下載視窗）。
+ * ⚠ busy 旗標 + try/finally：`sharing` 一定會在 finally 歸零，
+ *   按鈕的 disabled／文案由它驅動，就算出錯或使用者取消也不會卡在「分享中」。
  */
 
-/** 要操作的圖：燈箱看著的那張優先，否則第一張 */
-const actImage = computed<ImageRef | null>(() => {
-  const list = images.value
-  if (!list.length) return null
-  const at = lbNav.value ? lbNav.value.idx : 0
-  return list[Math.min(Math.max(at, 0), list.length - 1)] ?? null
-})
-const actImageName = computed(() => actImage.value?.name || '收據圖片')
+/** 分享進行中（鎖按鈕，避免重複觸發與「上一次卡住」） */
+const sharing = ref(false)
 
-/** 取這一張的原始 blob（IndexedDB 讀不到就 null） */
-async function actBlob(): Promise<Blob | null> {
-  const im = actImage.value
-  if (!im) return null
-  return (await getImage(im.id)) ?? null
-}
+/** 圖片區的標題（zip / 分享標題用） */
+const imgTitle = computed(() => props.record?.note?.trim() || '收據圖片')
 
-/** 複製圖片到剪貼簿（以 PNG 貼上，微信／LINE 等可直接收圖） */
-async function copyImage() {
-  const im = actImage.value
-  if (!im) return
-  try {
-    const blob = await actBlob()
-    if (!blob) {
-      notify('圖片已不存在（可能已被清除）', 'warn')
-      return
-    }
-    // Safari 只收 PNG；其他瀏覽器也統一轉 PNG，貼上最通用
-    const png = blob.type === 'image/png' ? blob : await toPng(blob)
-    const file = new File([png], safeFileName(actImageName.value, 'png'), { type: 'image/png' })
-    if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
-      notify('這個瀏覽器不支援複製圖片，請改用「分享」', 'warn')
-      return
-    }
-    await navigator.clipboard.write([new ClipboardItem({ 'image/png': file })])
-    notify('已複製圖片到剪貼簿', 'ok')
-  } catch {
-    notify('複製圖片失敗，請改用「分享」', 'warn')
+/** 取這筆的所有圖片 blob（IndexedDB 讀不到的略過） */
+async function allImageBlobs(): Promise<{ name: string; blob: Blob }[]> {
+  const out: { name: string; blob: Blob }[] = []
+  for (const im of images.value) {
+    const blob = await getImage(im.id)
+    if (!blob) continue
+    out.push({ name: safeFileName(im.name || '', blob.type), blob })
   }
+  return out
 }
 
-/** 分享（匯出）圖片：能分享檔案就走分享面板，否則直接下載 */
-async function shareImage() {
-  const im = actImage.value
-  if (!im) return
+/** 分享／匯出這一筆的全部圖片 */
+async function shareAllImages() {
+  if (sharing.value || !images.value.length) return
+  sharing.value = true
   try {
-    const blob = await actBlob()
-    if (!blob) {
+    const list = await allImageBlobs()
+    if (!list.length) {
       notify('圖片已不存在（可能已被清除）', 'warn')
       return
     }
-    const file = new File([blob], safeFileName(actImageName.value, blob.type), { type: blob.type })
+    const files = list.map(
+      (x) => new File([x.blob], x.name, { type: x.blob.type || 'image/jpeg' }),
+    )
     const navAny = navigator as Navigator & { canShare?: (d: ShareData) => boolean }
-    if (navAny.canShare?.({ files: [file] })) {
+
+    // ── 有分享面板（PWA 手機）→ 直接開，一次過把全部圖片帶進去
+    if (navAny.canShare?.({ files }) && typeof navigator.share === 'function') {
       try {
-        await navigator.share({ files: [file], title: actImageName.value })
+        await navigator.share({ files, title: imgTitle.value })
         return
       } catch (e) {
-        // 使用者取消分享 → 不做任何事，也不要跳錯誤提示
+        // 使用者取消分享 → 靜靜返回，不要跳錯誤，也不要改成下載
         if ((e as Error)?.name === 'AbortError') return
       }
     }
-    downloadBlob(blob, safeFileName(actImageName.value, blob.type))
-    notify('已匯出圖片', 'ok')
-  } catch {
-    notify('分享圖片失敗', 'warn')
+
+    // ── 桌機／不支援分享 → 匯出下載
+    if (files.length === 1) {
+      downloadBlob(files[0], files[0].name)
+    } else {
+      // ⚠ 圖片本身已經壓縮過 → ZIP 內一律 STORE（不 deflate，省時間）
+      const entries = await Promise.all(
+        list.map(async (x) => ({
+          name: x.name,
+          data: new Uint8Array(await x.blob.arrayBuffer()),
+        })),
+      )
+      const zip = await buildZip(entries)
+      downloadBlob(
+        new Blob([zip as unknown as BlobPart], { type: 'application/zip' }),
+        `${imgTitle.value}.zip`,
+      )
+    }
+    notify(`已匯出 ${list.length} 張圖片`, 'ok')
+  } catch (e) {
+    console.warn('[RecordSheet] 分享圖片失敗', e)
+    notify('分享圖片失敗，請再試一次', 'warn')
+  } finally {
+    // ⚠ 一定要歸零，否則按鈕會永遠卡在「分享中⋯」
+    sharing.value = false
   }
 }
 
 /** 檔名清理：只留副檔名前的乾淨名字，避免路徑字元 */
 function safeFileName(name: string, mime: string) {
-  const ext = mime.split('/')[1] || 'png'
-  const base = name.replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]+/g, '_').trim()
+  const ext = mime.split('/')[1] || 'jpg'
+  const base = name
+    .replace(/\.[^.]+$/, '')
+    .replace(/[\\/:*?"<>|\r\n]+/g, ' ')
+    .trim()
   return `${base || 'image'}.${ext === 'jpeg' ? 'jpg' : ext}`
-}
-
-/** 非 PNG 就用 canvas 轉一張（複製貼上用） */
-async function toPng(blob: Blob): Promise<Blob> {
-  const bmp = await createImageBitmap(blob)
-  const c = document.createElement('canvas')
-  c.width = bmp.width
-  c.height = bmp.height
-  c.getContext('2d')!.drawImage(bmp, 0, 0)
-  bmp.close?.()
-  return await new Promise<Blob>((res) => c.toBlob((b) => res(b ?? blob), 'image/png'))
 }
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -1241,7 +1241,9 @@ function save() {
 
           <!-- 0.1.44：收據圖片合併進「收據辨識」（原本是分開的「收據圖片」flat 區塊）；
                0.1.69：標題改回「收據圖片」（使用者原話），並在標題列右側加
-               複製圖片／分享（匯出）圖片 —— 沒有圖片時兩顆 disabled。 -->
+               複製圖片／分享（匯出）圖片 —— 沒有圖片時兩顆 disabled；
+               0.1.70：iOS PWA 上複製從來沒成功過、分享又會黏住上一輪狀態，
+               收成一顆「分享圖片」，一次過分享這一筆的全部圖片。 -->
           <section class="flat ocrsec">
             <div class="ocrsec__head">
               <span class="flat__label">收據圖片</span>
@@ -1249,29 +1251,16 @@ function save() {
                 <button
                   type="button"
                   class="ocrsec__act"
-                  :disabled="!images.length"
-                  title="把圖片複製到剪貼簿"
-                  @click="copyImage"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <rect x="9" y="9" width="11" height="11" rx="2" />
-                    <path d="M5 15V6a2 2 0 0 1 2-2h9" />
-                  </svg>
-                  <span>複製圖片</span>
-                </button>
-                <button
-                  type="button"
-                  class="ocrsec__act"
-                  :disabled="!images.length"
-                  title="分享或匯出圖片"
-                  @click="shareImage"
+                  :disabled="!images.length || sharing"
+                  :title="images.length > 1 ? `一次過分享／匯出 ${images.length} 張圖片` : '分享或匯出圖片'"
+                  @click="shareAllImages"
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M12 15V4" />
                     <path d="M8 8l4-4 4 4" />
                     <path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />
                   </svg>
-                  <span>分享圖片</span>
+                  <span>{{ sharing ? '分享中…' : '分享圖片' }}</span>
                 </button>
                 <span class="beta">BETA</span>
               </span>

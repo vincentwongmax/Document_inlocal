@@ -178,10 +178,27 @@ const allSameDay = computed(() => {
   const k0 = dayKey(list[0].occurredAt)
   return list.every((r) => dayKey(r.occurredAt) === k0)
 })
-/** 傳給 RecordList → RecordRow 的時間顯示模式 */
-const absTimeMode = computed<'off' | 'time' | 'datetime'>(() => {
+/**
+ * 傳給 RecordList → RecordRow 的時間顯示粒度（0.1.70 改成四級）。
+ *
+ * 判斷順序由粗到細，看**目前篩選後的全部記錄**（`rows`）最細到哪裡相同：
+ *   'full'  → 年份有差異：2023/10/18 22:08
+ *   'md'    → 年份相同但月或日有差異：10/18 22:08
+ *   'd'     → 年月相同但日有差異：18 22:08
+ *   'time'  → 年月日全同（只有時間不同）：22:08
+ * ⚠ 只往「同」的方向顯示，不會多加永遠不會變的年／月 —— 在今天的清單裡
+ *   顯示「2026/10/18」只是雜訊，跨年才會出現年份。
+ */
+const absTimeMode = computed<'off' | 'time' | 'd' | 'md' | 'full'>(() => {
   if (!showAbsTime.value) return 'off'
-  return allSameDay.value ? 'time' : 'datetime'
+  const list = rows.value
+  if (!list.length || allSameDay.value) return 'time'
+  const y0 = monthKey(list[0].occurredAt).slice(0, 4)
+  const sameYear = list.every((r) => monthKey(r.occurredAt).slice(0, 4) === y0)
+  if (!sameYear) return 'full'
+  const m0 = monthKey(list[0].occurredAt)
+  const sameMonth = list.every((r) => monthKey(r.occurredAt) === m0)
+  return sameMonth ? 'd' : 'md'
 })
 
 /** 有這個標籤嗎（供 `rows` 過濾用） */

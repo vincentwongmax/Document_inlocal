@@ -47,7 +47,7 @@ const props = withDefaults(
      */
     virtual?: boolean
     /** 0.1.69：時間標籤改顯示實際時間（'off' | 'time' | 'datetime'），往 RecordRow 傳 */
-    absTime?: 'off' | 'time' | 'datetime'
+    absTime?: 'off' | 'time' | 'd' | 'md' | 'full'
   }>(),
   {
     showTime: true,
