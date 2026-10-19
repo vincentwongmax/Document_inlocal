@@ -122,6 +122,35 @@ export async function flushLevels(ids?: Iterable<string>): Promise<number> {
   return n
 }
 
+/**
+ * 0.1.72：一次把**所有還沒鎖定**的圖切成同一個等級（收據圖片標題列那一排全域鈕）。
+ * 已鎖定的（已寫入 DB、或舊記錄載入的）不動。
+ * 回傳真正有換的張數（供呼叫端決定要不要提示）。
+ */
+export async function setLevelAll(ims: ImageRef[], level: LevelKey): Promise<number> {
+  let n = 0
+  for (const im of ims) {
+    if (isLocked(im.id)) continue
+    const before = pend.value.get(im.id)?.level
+    await setLevel(im, level)
+    if (before !== level) n++
+  }
+  return n
+}
+
+/** 0.1.72：這一串圖是不是都同一個等級（決定全域鈕要不要亮） */
+export function commonLevel(ims: ImageRef[]): LevelKey | null {
+  const ls = ims.filter((im) => !isLocked(im.id))
+  if (!ls.length) return null
+  const first = ls[0].level
+  return ls.every((im) => im.level === first) ? (first ?? null) : null
+}
+
+/** 0.1.72：切換等級後讀回這張圖目前的 blob（給燈箱/縮圖重出 objectURL 用） */
+export async function currentBlob(id: string): Promise<Blob | undefined> {
+  return blobOf(id)
+}
+
 /** 從暫存區移除（放棄／移除圖片／記錄接手後都用它；DB 有無東西由呼叫端決定） */
 export function dropPending(id: string): void {
   pend.value.delete(id)

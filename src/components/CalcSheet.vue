@@ -35,6 +35,15 @@ const converted = computed(() => props.calc.done && props.curCode !== settings.b
 const convertedAmount = computed(() => Number((amount.value * settings.rate(props.curCode)).toFixed(2)))
 
 /**
+ * 0.1.72（使用者原話）：「小數點的點縮小一點，不要太大，最好佔半個字符
+ * （因為用戶很容易看不清整體）」。
+ * 等寬數字裡 `.` 跟數字一樣寬，整串數字會被它撐開、點本身又太顯眼 →
+ * 把小數點拆出來單獨渲染成一顆細一點、寬度約半個字符的 span（見 `.dotp`）。
+ */
+const exprSegs = computed(() => expr.value.split('.'))
+const displaySegs = computed(() => display.value.split('.'))
+
+/**
  * 背景不滑動：
  * 1. 捲動容器是 documentElement，彈窗期間直接在它上面關掉 overflow（useScrollLock）
  * 2. iOS Safari 只靠 overflow 擋不住手指滑動，useScrollLock 會另外 preventDefault touchmove
@@ -95,10 +104,17 @@ const {
         </header>
 
         <div class="calcdisp">
-          <div class="calcdisp__expr num">{{ expr || '\u00a0' }}</div>
+          <div class="calcdisp__expr num"
+            ><template v-for="(seg, i) in exprSegs" :key="i"
+              ><span v-if="i > 0" class="dotp">.</span>{{ seg }}</template
+            ></div>
           <div class="calcdisp__main">
             <span class="calcdisp__sym">{{ symbol }}</span>
-            <span class="calcdisp__num num" :class="{ 'is-long': displayLong }">{{ display }}</span>
+            <span class="calcdisp__num num" :class="{ 'is-long': displayLong }"
+              ><template v-for="(seg, i) in displaySegs" :key="i"
+                ><span v-if="i > 0" class="dotp">.</span>{{ seg }}</template
+              ></span
+            >
           </div>
           <div v-if="converted && amount > 0" class="calcdisp__conv num tiny">
             ≈ {{ fmtMoney(convertedAmount, settings.baseCurrency) }}
@@ -188,6 +204,25 @@ const {
   font-size: 24px;
   letter-spacing: -0.01em;
   white-space: nowrap;
+}
+/*
+ * 0.1.72：小數點單獨渲染，讓它視覺上小一點（使用者：「小數點的點縮小一點，不要太大，
+ * 最好佔半個字符」）。
+ *
+ * ⚠ 兩條限制同時成立：
+ *   1. 需求 7：點要小到「半個字符以內」（0.5ch ≈ 11px）
+ *   2. v82（0.1.27 使用者指定）：「11 位數字＋小數點＝12 個字元」也不能溢出顯示區，
+ *      數字維持 38px 不縮小
+ * 桌機等寬字體的 `.` 本來就只佔 ≈0.12em，所以要讓包起來的小點**比原始的還窄**，
+ * 唯一穩定的做法就是把字級壓到 ≈0.2em（實測：0.42em 時仍會溢出 3～5px）。
+ * 順手把自身的 letter-spacing 歸零，避免尾巴又多吃 1.14px。
+ * ⚠ 試過但沒用：負 margin（對 scrollWidth 不可靠）、`width:0 + overflow:visible`
+ *   （可見內容會被算進 scrollable overflow，反而更糟）。
+ */
+.dotp {
+  display: inline-block;
+  font-size: 0.2em;
+  letter-spacing: 0;
 }
 .calcdisp__conv {
   margin-top: 2px;

@@ -359,6 +359,14 @@ export interface Settings {  baseCurrency: string
    */
   homeDefaults: HomeDefaults
   /**
+   * 0.1.72（需求 5）：**切換頁面後，記帳頁輸入到一半的資料要保留還是清除**。
+   * true（預設）＝保留（金額／分類／幣別／備註／日期時間／已上傳還沒記錄的圖片都留著）；
+   * false＝回到以前的行為（離開記帳頁就清空）。
+   * ⚠ App.vue 用 `:key="route.path"` 掛元件 → 離開記帳頁元件會整個重掛，
+   *   「清除」其實是重掛的副作用；要保留就得自己存一份草稿。
+   */
+  keepDraft: boolean
+  /**
    * 旅行模式（0.1.35）：目前進行中的旅行；null＝沒有。
    * 一次只有一個（使用者拍板）；結束後清回 null（旅行本體移進 tripHistory）。
    */

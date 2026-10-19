@@ -482,8 +482,15 @@ const moreRecords = ref(false)
 /** 清單的分組方式：只有「年」用月分組 */
 const listGroupBy = computed<'day' | 'month'>(() => (mode.value === 'year' ? 'month' : 'day'))
 
+/**
+ * 0.1.72 需求 10：區間記錄**只顯示目前選擇的收支類型**（使用者：「如果用戶選擇了收入，
+ * 只顯示收入；選擇了支出，只顯示支出，不要混在一起」）。
+ * ⚠ 精選（pickedRows）與展開後的清單都吃這裡，切類型時筆數／「顯示更多」跟著變。
+ */
+const typedRows = computed(() => st.rows.value.filter((r) => r.type === donutType.value))
+
 const pickedRows = computed(() => {
-  const all = st.rows.value
+  const all = typedRows.value
   if (mode.value === 'custom') {
     // 自訂區間沒有日／月／年的語意 → 維持原本的「只顯示最近 10 筆」
     return [...all].sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1)).slice(0, PICKED)
@@ -495,15 +502,41 @@ const pickedRows = computed(() => {
 })
 
 /** 現在真正要顯示的清單 */
-const listRows = computed(() => (moreRecords.value ? st.rows.value : pickedRows.value))
+const listRows = computed(() => (moreRecords.value ? typedRows.value : pickedRows.value))
+
+/**
+ * 0.1.72 需求 9：標題最右方加一段「每組取幾筆」的說明。
+ * 行為完全沿用 0.1.27 的精選規則（沒改邏輯，只是把規則寫出來讓使用者一眼看懂）：
+ *   日 → 當天最大 10 筆（沒有「每組」的概念）
+ *   月 → 每日最大 2 筆（共 10 筆）
+ *   年 → 每月最大 2 筆（共 10 筆）
+ *   自訂 → 最近 10 筆
+ */
+const listPickLabel = computed(() => {
+  switch (mode.value) {
+    case 'day':
+      return '當日最大 10 筆'
+    case 'month':
+      return '每日最大 2 筆'
+    case 'year':
+      return '每月最大 2 筆'
+    default:
+      return '最近 10 筆'
+  }
+})
 
 /** 標題右邊的筆數：精選時要老實說「顯示 10 / 共 40 筆」 */
 const listCountLabel = computed(() =>
-  moreRecords.value ? `${st.rows.value.length} 筆` : `顯示 ${pickedRows.value.length} / 共 ${st.rows.value.length} 筆`,
+  moreRecords.value ? `${typedRows.value.length} 筆` : `顯示 ${pickedRows.value.length} / 共 ${typedRows.value.length} 筆`,
 )
 
 /** 還有被精選掉的部分可以展開嗎 */
-const canShowMore = computed(() => !moreRecords.value && pickedRows.value.length < st.rows.value.length)
+const canShowMore = computed(() => !moreRecords.value && pickedRows.value.length < typedRows.value.length)
+
+/** 0.1.72 需求 8：區間最大跟著收支類型走（標題與內容都換） */
+const topRows = computed(() => st.topRecordsOf(donutType.value))
+const topTitle = computed(() => (donutType.value === 'income' ? '區間最大收入' : '區間最大支出'))
+const topEmptyText = computed(() => (donutType.value === 'income' ? '沒有收入記錄' : '沒有支出記錄'))
 
 // 換範圍（日↔月↔年、換月、換年、改自訂日期）就把「顯示更多」收回來，
 // 不然會出現「在這個範圍按了顯示更多，換到別的範圍還開著」的錯亂
@@ -766,18 +799,18 @@ watch([mode, range], () => {
         </div>
       </section>
 
-      <!-- 前幾大支出 -->
+      <!-- 前幾大（0.1.72：跟著上面的「支出／收入」切換，標題與內容一起換） -->
       <section class="card block">
-        <header class="block__hd"><h2>區間最大支出</h2></header>
+        <header class="block__hd"><h2>{{ topTitle }}</h2></header>
         <ul class="tops">
-          <li v-for="(r, i) in st.topRecords.value" :key="r.id" class="top">
+          <li v-for="(r, i) in topRows" :key="r.id" class="top">
             <span class="top__rank num">{{ i + 1 }}</span>
             <span class="top__cat">{{ settings.category(r.categoryId)?.name ?? '未分類' }}</span>
             <span class="top__note tiny muted">{{ r.note }}</span>
             <span class="top__amt num">{{ fmtMoney(settings.displayOf(r), settings.displayCurrency) }}</span>
           </li>
         </ul>
-        <p v-if="!st.topRecords.value.length" class="muted tiny">沒有支出記錄</p>
+        <p v-if="!topRows.length" class="muted tiny">{{ topEmptyText }}</p>
       </section>
 
       <!--
@@ -789,11 +822,13 @@ watch([mode, range], () => {
       <section class="card block">
         <header class="block__hd">
           <h2>區間記錄</h2>
+          <!-- 0.1.72 需求 9：最右方加「每組取幾筆」的說明（精選規則不變，只是寫出來） -->
+          <span class="tiny muted">{{ listPickLabel }}</span>
           <span class="tiny muted">{{ listCountLabel }}</span>
         </header>
         <RecordList
           :records="listRows"
-          :totals-from="st.rows.value"
+          :totals-from="typedRows"
           :group-by="listGroupBy"
           :collapse-after="0"
           empty-text="這個範圍沒有記錄"
@@ -801,7 +836,7 @@ watch([mode, range], () => {
           @remove="removeRecord"
         />
         <button v-if="canShowMore" class="btn btn--ghost block__more" @click="moreRecords = true">
-          顯示更多（共 {{ st.rows.value.length }} 筆）
+          顯示更多（共 {{ typedRows.length }} 筆）
         </button>
         <button v-else-if="moreRecords" class="btn btn--ghost block__more" @click="moreRecords = false">
           收起，只看重點 {{ pickedRows.length }} 筆

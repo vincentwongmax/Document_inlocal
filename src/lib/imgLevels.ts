@@ -34,7 +34,8 @@ export const IMG_LEVELS: readonly ImgLevel[] = [
   { key: 'orig', label: '原', title: '原圖（不做任何壓縮，存原始檔案）', edge: null, targetBytes: Infinity },
   { key: 'a', label: 'A', title: 'A：長邊 1600px（現行標準）', edge: MAX_EDGE, targetBytes: TARGET_BYTES },
   { key: 'b', label: 'B', title: 'B：長邊 1080px（體積更細）', edge: 1080, targetBytes: 180 * 1024 },
-  { key: 'c', label: 'C', title: 'C：長邊 640px（體積更細）', edge: 640, targetBytes: 140 * 1024 },
+  // 0.1.72：C 再高一點壓縮率、跟 B 拉開（640/140KB → 540/110KB）
+  { key: 'c', label: 'C', title: 'C：長邊 540px（體積更細）', edge: 540, targetBytes: 110 * 1024 },
   { key: 'd', label: 'D', title: 'D：長邊 320px（體積最細）', edge: 320, targetBytes: 70 * 1024 },
 ]
 

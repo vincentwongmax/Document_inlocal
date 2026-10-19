@@ -50,6 +50,11 @@ export function defaultSettings(base = 'MOP'): Settings {
       dateOffset: '',
       images: [],
     },
+    /**
+     * 0.1.72（需求 5）：切換頁面後，記帳頁輸入到一半的資料要**保留**還是清除。
+     * 預設 true＝保留（使用者選的）；false＝回到以前「離開就清空」的行為。
+     */
+    keepDraft: true,
     // 只是給個起手式（打開就有東西可按），使用者可以在設定頁改掉或刪光
     quickNotes: ['M記', '麵'],
     /*

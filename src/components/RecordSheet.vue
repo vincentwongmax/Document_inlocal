@@ -11,12 +11,14 @@ import { buildZip } from '@/lib/zip'
 import { IMG_LEVELS } from '@/lib/imgLevels'
 import {
   blobOf,
+  commonLevel,
   dropPending,
   flushLevels,
   isLocked,
   isSaved,
   levelBusyId,
   setLevel,
+  setLevelAll,
   stageImage,
 } from '@/composables/useImgLevels'
 import { md5OfFile } from '@/lib/md5'
@@ -441,6 +443,49 @@ async function showNavImage(idx: number) {
 /** 點縮圖開圖（順便記住這是第幾張，導覽才有起點） */
 async function openImage(im: ImageRef) {
   await showNavImage(Math.max(0, images.value.findIndex((x) => x.id === im.id)))
+}
+
+/* ── 0.1.72：壓縮等級（需求 3）────────────────────────────
+ * 單張的等級鈕搬到**燈箱裡**（點開圖片才改，改完即時換圖＝實時預覽）；
+ * 這裡（收據圖片標題列）多一排**全域**鈕：一次套用到所有還沒儲存的圖片。
+ */
+/** 燈箱現在看的是哪一張（導覽位置） */
+const lbImage = computed(() => {
+  const i = lbNav.value?.idx ?? -1
+  return i >= 0 ? (images.value[i] ?? null) : null
+})
+const lbLevel = computed(() => lbImage.value?.level ?? null)
+const lbLocked = computed(() => (lbImage.value ? isLocked(lbImage.value.id) : true))
+const lbBytes = computed(() => lbImage.value?.bytes ?? 0)
+/** 還有任何一張能改等級嗎（全部已儲存 → 全域鈕鎖住） */
+const hasEditable = computed(() => images.value.some((im) => !isLocked(im.id)))
+const levelBusy = computed(() => !!levelBusyId.value)
+
+/** 標題列那一排：一次套用到所有還沒儲存的圖片（套完要換掉 object URL 才看得到效果） */
+async function applyAll(level: LevelKey) {
+  const n = await setLevelAll(images.value, level)
+  for (const im of images.value) await refreshUrl(im.id)
+  if (lbNav.value) lightbox.value = urls.value[lbImage.value?.id ?? ''] ?? lightbox.value
+  if (n) notify(`已把 ${n} 張還沒儲存的圖片改成 ${level.toUpperCase()} 級`, 'info')
+}
+
+/** 燈箱裡改這一張 → 換 blob → 換 object URL → 圖片當場重載（實時預覽） */
+async function onLightboxLevel(level: LevelKey) {
+  const im = lbImage.value
+  if (!im || isLocked(im.id)) return
+  await setLevel(im, level)
+  await refreshUrl(im.id)
+  lightbox.value = urls.value[im.id] ?? lightbox.value
+}
+
+/** 丟掉舊 object URL、用現在的 blob 重出一個（切等級後畫面才會跟著變） */
+async function refreshUrl(id: string) {
+  if (urls.value[id]) {
+    URL.revokeObjectURL(urls.value[id])
+    delete urls.value[id]
+  }
+  const blob = await blobOf(id)
+  if (blob) urls.value[id] = URL.createObjectURL(blob)
 }
 
 /* ── 0.1.70：分享圖片（一次全部分享） ──────────────────────────
@@ -1279,6 +1324,29 @@ async function save() {
           <section class="flat ocrsec">
             <div class="ocrsec__head">
               <span class="flat__label">收據圖片</span>
+              <!--
+                0.1.72（需求 3）：收據圖片文字的**最右邊**多一排全域等級鈕 ——
+                選了哪一級，**目前所有還沒儲存**的圖片都改成那一級；
+                使用者隨後可以點開圖片，在圖片頁面裡單張再改（只要還沒儲存）。
+              -->
+              <div v-if="images.length" class="imgs__lvall" :class="{ 'is-lock': !hasEditable }">
+                <button
+                  v-for="l in IMG_LEVELS"
+                  :key="l.key"
+                  class="imgs__lvab"
+                  type="button"
+                  :class="{ 'is-on': hasEditable && commonLevel(images) === l.key }"
+                  :disabled="!hasEditable || levelBusy"
+                  :title="
+                    hasEditable
+                      ? `${l.title}（套用到所有還沒儲存的圖片）`
+                      : `${l.title}（都已儲存，不能改了）`
+                  "
+                  @click="applyAll(l.key)"
+                >
+                  {{ l.label }}
+                </button>
+              </div>
               <span class="ocrsec__acts">
                 <button
                   type="button"
@@ -1305,24 +1373,6 @@ async function save() {
                     <img v-if="im.thumb" :src="im.thumb" alt="" />
                   </button>
                   <button class="imgs__x" type="button" title="移除圖片" @click="onRemoveImage(im)">✕</button>
-                </div>
-                <!-- 0.1.71：壓縮等級（原圖／A／B／C／D）。未儲存前可自由切換；
-                     儲存後（鎖定）整列 disabled，滑過去有說明 -->
-                <div class="imgs__lv" :class="{ 'is-lock': isLocked(im.id) }">
-                  <button
-                    v-for="l in IMG_LEVELS"
-                    :key="l.key"
-                    class="imgs__lvb"
-                    type="button"
-                    :class="{ 'is-on': im.level === l.key }"
-                    :disabled="isLocked(im.id) || levelBusyId === im.id"
-                    :title="
-                      isLocked(im.id) ? `${l.title}（記錄後就不能更改壓縮程度了）` : l.title
-                    "
-                    @click="setLevel(im, l.key as LevelKey)"
-                  >
-                    {{ l.label }}
-                  </button>
                 </div>
                 <span class="imgs__lvsz num" :title="`原始 ${fmtBytes(im.originalBytes || 0)}`">{{
                   fmtBytes(im.bytes || 0)
@@ -1395,6 +1445,10 @@ async function save() {
     ref="lbEl"
     :src="lightbox"
     :nav="lbNavInfo"
+    :level="lbLevel"
+    :level-locked="lbLocked"
+    :level-bytes="lbBytes"
+    @set-level="onLightboxLevel"
     @close="closeLightbox"
     @prev-image="lbPrevImage"
     @next-image="lbNextImage"
@@ -1576,16 +1630,16 @@ async function save() {
   gap: 8px;
   flex-wrap: wrap;
 }
-/* 0.1.71：一張圖＝縮圖＋等級列＋體積，寬度放到 108px 才塞得下 5 顆等級鈕 */
+/* 0.1.72：等級鈕搬到燈箱與標題列了，一張圖回到「縮圖＋體積」的寬度 */
 .imgs__cell {
   position: relative;
-  width: 108px;
+  width: 76px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 3px;
 }
-/* 縮圖＋✕ 包一層（relative）：✕ 永遠貼在縮圖右上角，不受等級列寬度影響 */
+/* 縮圖＋✕ 包一層（relative）：✕ 永遠貼在縮圖右上角 */
 .imgs__tw {
   position: relative;
   width: 76px;
@@ -1623,42 +1677,30 @@ async function save() {
   background: var(--expense);
   color: #fff;
 }
-/* ── 0.1.71：壓縮等級列 ──────────────────────────────────── */
-.imgs__lv {
+/* ── 0.1.72：單張等級鈕搬到燈箱裡了；這裡是收據圖片標題列的**全域**等級鈕 ── */
+.imgs__lvall {
   display: flex;
-  gap: 2px;
-  width: 100%;
+  gap: 3px;
+  margin-left: 4px;
 }
-.imgs__lvb {
-  flex: 1;
-  min-width: 0;
-  height: 20px;
-  padding: 0;
+.imgs__lvab {
+  min-width: 26px;
+  height: 22px;
+  padding: 0 5px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 999px;
   background: var(--surface);
-  color: var(--text-3);
-  font-size: 10px;
-  font-weight: 700;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
   line-height: 1;
-  cursor: pointer;
-  transition:
-    background 0.12s,
-    border-color 0.12s,
-    color 0.12s;
 }
-.imgs__lvb:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-/* 目前選定的等級＝墨綠實底（跟全站「選中」語意一致） */
-.imgs__lvb.is-on {
+.imgs__lvab.is-on {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
 }
-/* 儲存後鎖定：整列淡掉不可按，title 說明原因 */
-.imgs__lv.is-lock .imgs__lvb {
+.imgs__lvall.is-lock .imgs__lvab {
   opacity: 0.45;
   cursor: not-allowed;
 }

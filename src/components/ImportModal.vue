@@ -43,8 +43,15 @@ const props = defineProps<{
   /**
    * 0.1.71：開啟時要落在哪個分頁（記帳頁「快速記帳」區塊跳過來用）。
    * 不給＝照原本的行為（有保留草稿 → 快速記錄，否則 JSON）。
+   * ⚠ 0.1.72：給的分頁若不在 `tabs` 裡就忽略（例如記帳頁只有兩頁時不能落在 JSON）。
    */
-  initialTab?: 'json' | 'paste' | 'quick'
+  initialTab?: Tab
+  /**
+   * 0.1.72（需求 2）：只顯示這幾個分頁。
+   * 記帳頁的「快速記帳」會給 `['paste','quick']` —— 匯入 JSON（含設定還原）
+   * 本來就只該在設定頁做（使用者決定）。不給＝三個分頁全顯示。
+   */
+  tabs?: Tab[]
 }>()
 const emit = defineEmits<{
   close: []
@@ -87,11 +94,18 @@ const catMap = computed(() => new Map(ctx.value.categories.map((c) => [c.id, c])
 
 /* ── 分頁 ─────────────────────────────────────────────────── */
 type Tab = 'json' | 'paste' | 'quick'
-const TABS: { key: Tab; label: string }[] = [
+const TABS_ALL: { key: Tab; label: string }[] = [
   { key: 'json', label: '匯入 JSON' },
   { key: 'paste', label: '貼上資料' },
   { key: 'quick', label: '快速記錄' },
 ]
+/** 0.1.72：實際要顯示的分頁（記帳頁只給貼上資料／快速記錄） */
+const tabs = computed(() => {
+  const want = props.tabs?.length ? props.tabs : ['json', 'paste', 'quick'] as Tab[]
+  return TABS_ALL.filter((t) => want.includes(t.key))
+})
+/** 落在哪個分頁：`initialTab` 不在可顯示的清單裡就退回第一個 */
+const defaultTab = computed(() => (savedRows && tabs.value.some((t) => t.key === 'quick') ? 'quick' : tabs.value[0]?.key ?? 'json'))
 const tab = ref<Tab>('json')
 const text = ref('')
 /** 標題旁的「現在」日期時間（開啟時定格一次，不會一直跳） */
@@ -181,9 +195,11 @@ watch(
   () => props.open,
   (open) => {
     if (!open) return
-    // 0.1.71：有指定分頁（從記帳頁跳過來的）就優先；否則照原本的行為
-    // （有上次保留的資料 → 直接回到快速記錄分頁讓使用者看到；否則從 JSON 分頁開始）
-    tab.value = props.initialTab ?? (savedRows ? 'quick' : 'json')
+    // 0.1.72：指定的分頁要在可顯示清單裡才算數；否則退回預設（有草稿→快速記錄）
+    tab.value =
+      props.initialTab && tabs.value.some((t) => t.key === props.initialTab)
+        ? props.initialTab
+        : defaultTab.value
     text.value = ''
     rows.value = savedRows
       ? (JSON.parse(JSON.stringify(savedRows)) as QuickDraft[])
@@ -402,7 +418,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
         <!-- 三個分頁 -->
         <div class="seg" role="tablist">
           <button
-            v-for="t in TABS"
+            v-for="t in tabs"
             :key="t.key"
             class="seg__btn"
             :class="{ 'is-on': tab === t.key }"

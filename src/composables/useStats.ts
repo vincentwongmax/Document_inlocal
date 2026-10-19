@@ -1,7 +1,7 @@
 import { computed, type Ref } from 'vue'
 import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
-import type { TxRecord } from '@/types'
+import type { TxRecord, TxType } from '@/types'
 import { dayKey, monthKey, recentMonths, previousRange, daysInclusive } from '@/lib/date'
 
 export interface CatStat {
@@ -296,12 +296,22 @@ export function useStats(range: Ref<DateRange>) {
     return (expense.value - prevExpense.value) / prevExpense.value
   })
 
-  const topRecords = computed(() =>
-    [...rows.value]
-      .filter((r) => r.type === 'expense')
+  /**
+   * 區間最大（前 5 筆）。
+   * 0.1.72：改成**依收支類型**取 —— 使用者原話：「如果用戶選擇了收入的話，
+   * 區間最大的支出，改成區間最大的收入；若用戶選擇了支出，則保持不變」（需求 8）。
+   * ⚠ 用一般函式（不是 computed）：類型是 StatsView 的狀態，這裡不方便吃它；
+   *   呼叫端用 computed 包就有快取。
+   */
+  function topRecordsOf(type: TxType): TxRecord[] {
+    return [...rows.value]
+      .filter((r) => r.type === type)
       .sort((a, b) => amt(b) - amt(a))
-      .slice(0, 5),
-  )
+      .slice(0, 5)
+  }
+
+  /** 相容舊呼叫：區間最大**支出** */
+  const topRecords = computed(() => topRecordsOf('expense'))
 
   /**
    * 累計（全部時間）。0.1.63：收支改吃 store 的 `totalIncome`／`totalExpense`
@@ -329,6 +339,7 @@ export function useStats(range: Ref<DateRange>) {
     prevExpense,
     momChange,
     topRecords,
+    topRecordsOf,
     allTime,
     monthList: (n = 24) => recentMonths(n).reverse(),
   }

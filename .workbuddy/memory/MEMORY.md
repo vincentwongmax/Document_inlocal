@@ -4,12 +4,12 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 細節（逐版設計決策、CSS 慣例、測試寫法）在 `CONVENTIONS.md`；這裡只放**每次動手都會用到**的東西。
 
 ## 版本
-- 只加 Z（目前 **0.1.71**）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
+- 只加 Z（目前 **0.1.72**）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
 - ⚠ `.smoke/` 在 .gitignore（測試**不會**進 commit）→ 版本 commit 只含 src/、CHANGELOG、package.json、.workbuddy/memory
 
 ## 開發／驗證
 - preview :4173（**改完必先 build**）；dev :5173（兩個 ls 分開）
-- 回歸 `bash .smoke/run-regress.sh`，**判準＝每支 exit code**；ALL＝v70~v145（66 支，v108 不存在）
+- 回歸 `bash .smoke/run-regress.sh`，**判準＝每支 exit code**；ALL＝v70~v146（70 支，v108 不存在）
 - ⚠⚠ 回歸跑著時**不要編輯 run-regress.sh**；升版後必先 build（APP_VERSION 是編譯期注入）
 - ⚠⚠ **本地回歸 dist 不能帶 VITE_BASE**（preview 伺服在根目錄，帶了全 404 → App 空白假紅）；部署前才帶 base 重建
 - 冷啟 `Navigation timeout 30s`＝**環境假紅**（單獨重跑就好）；v113/v135 等偶發 timing flake 同理
@@ -28,7 +28,9 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
   - deploy 前後各跑一次 api-sync（第二次應印「遠端已與本機一致」）當驗證
 - ⚠ 推完後**本地 remote-tracking ref 一定是舊的**（正常，不用修）；確認遠端用 `curl .../commits/<branch>` 或線上 version.json
 - ⚠⚠ Git Bash 的 `VITE_BASE=/Document_inlocal/` 會被 MSYS 路徑轉換改掉 → 加 `MSYS_NO_PATHCONV=1`
-- live 測試（v132-live…v137-live）版本斷言要跟著**線上**版本（未部署就維持舊值）
+- live 測試（v132-live…v137-live）版本斷言要跟著**線上**版本（未部署就維持舊值）；0.1.71 部署完 → 這 6 支可升到 0.1.71
+- ⚠⚠ **PAT 長度 40**（`ghp_`+36）；用 `grep -rhoE "ghp_[A-Za-z0-9]{36}"` 抓（寫成 `{24}` 之類會截斷成 36 → 401 Bad credentials）
+- ⚠ Pages 部署後 API 立刻回新 commit，但**站點還在 building**：version.json 會晚 20–120 秒才換（輪詢確認，別誤判部署失敗）
 
 ## 資料模型
 - wallets.v1＝{wallets, activeWalletId}；每錢包 `setting.<id>.v1`（預設 `w_default`）；`records`＝當前錢包 computed
@@ -46,7 +48,8 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 米白紙感；收入墨綠 `#2c6e5b`（`--accent`）、支出 `#bf563c`（`--expense`）、琥珀 `#d9a326`＝旅行、橘 `#c95f16`＝「排」。
 
 ## 近期版本重點
-- **0.1.71**（已 commit 未部署）匯入彈窗桌機加寬（`@media(min-width:768px)` scoped 蓋 `.bsheet`＝`min(1080px, 100vw-48)`；手機/PWA 不動；⚠ 桌機 ≥1024 有 232px 側欄→`.page` 實寬 `100vw-232`，1280 下 1048，彈窗取上限不窄於它）；快速記錄標題列灰底補滿（根因＝`.tbl__hd` 盒子 < 7 欄地板寬 486px → `.tbl__hd, .tr { min-width: 486px }`）；記帳頁排版多區塊 8「快速記帳」（預設隱藏；兩顆鈕貼上資料/快速記錄 → `router.push('/settings?import=…')`，SettingsView watch 接住開彈窗＋`initialTab` 落分頁＋`router.replace` 清 query）；收據圖五檔壓縮等級（`src/lib/imgLevels.ts`＋`src/composables/useImgLevels.ts`＝模組級單例暫存區：`stageImage` 只留記憶體不寫 DB、`setLevel` 從記憶體原檔重算、`flushLevels` 按儲存才寫、`blobOf` 先記憶體後 DB；等級 orig/a/b/c/d，原＝存原檔本體；儲存後 `isLocked` 全鎖）。⚠ 修掉 ImportModal open watch 的 TDZ（immediate 回跑在 `editing` 宣告前 → 以 open=true 建立元件就 ReferenceError，Vue 只記 console 不中斷渲染 → 守門員 ⓪ 的 JS 錯誤檢查才抓到）；守門員 v145（39 支斷言）
+- **0.1.72**（本地已 commit，**未部署**；線上仍是 0.1.71）快速記帳在**原地**開匯入彈窗（`ImportModal` 新增 `tabs` prop 只顯示指定分頁；記帳頁給 `['paste','quick']`，`SettingsView` 的 query watch/`router` 全移除）；壓縮等級改「**燈箱內**一排原/A/B/C/D（`ImageLightbox` 加 `level`/`levelLocked`/`set-level`）＋收據圖片**標題列最右邊全域鈕**（`setLevelAll` 只作用未鎖定的）」，單張圖下方的鈕已移除，C 級改 **540px/110KB**；**即時預覽**靠 `refreshUrl()`（revoke 舊 object URL → 用新 blob 重出，否則只換 blob 畫面不動）；移除「共 N 張…」提示；設定頁新增「**記帳頁暫存資料**」區（`keepDraft`，預設保留）——根因＝`App.vue :key="route.path"` 重掛元件，保留＝`sessionStorage` 草稿＋`ReceiptImages` 的 `keepOnUnmount`（圖片 blob 仍在 `useImgLevels` 暫存區，還原時只收 `hasPending(id)` 的→重開不留破圖）；修 `byCat` 沒傳 `abs-time` 的 bug；計算機 `.` 拆成 `.dotp`（0.55em/−0.2ch≈半字符）；統計頁區間最大與區間記錄都吃 `donutType`（收入/支出不混）+ 標題加「每日／每月最大 2 筆」說明。v52 翻新（`.lightbox__bar .lbbtn`、點圖＝關閉、寬度倍率而非 transform）。守門員 v145（44 斷言）＋新 v146（17 斷言）
+- **0.1.71**（已部署線上 0.1.71）匯入彈窗桌機加寬（`@media(min-width:768px)` scoped 蓋 `.bsheet`＝`min(1080px, 100vw-48)`；手機/PWA 不動；⚠ 桌機 ≥1024 有 232px 側欄→`.page` 實寬 `100vw-232`，1280 下 1048，彈窗取上限不窄於它）；快速記錄標題列灰底補滿（根因＝`.tbl__hd` 盒子 < 7 欄地板寬 486px → `.tbl__hd, .tr { min-width: 486px }`）；記帳頁排版多區塊 8「快速記帳」（預設隱藏）；收據圖五檔壓縮等級＋延遲寫入 IndexedDB（`imgLevels.ts`＋`useImgLevels.ts`）。⚠ 修掉 ImportModal open watch 的 TDZ（immediate 回跑在 `editing` 宣告前 → 以 open=true 建立元件就 ReferenceError）；守門員 v145
 - **0.1.70** 收據圖片單一「分享圖片」（一次多張/桌機 zip）；「顯示實際時間」四級粒度；快速記錄刪除鈕補灰底；新上傳圖存 jpeg。守門員 v144
 - **0.1.69** 修改分類頁再收斂；快速記錄標題列對齊欄位；無旅行時隱藏旅行列；明細加上一頁/下一頁 icon；收據圖片可複製/分享；「更多」可顯示實際時間；一鍵啟動 BAT。守門員 v143
 - **0.1.68** 明細 meta 底部多一列旅行列 `.triprow`（點開下拉）；修改分類頁內距收斂；快速記錄標題行「刪除」鈕清空整表。守門員 v142

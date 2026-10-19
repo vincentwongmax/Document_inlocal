@@ -200,6 +200,11 @@ function merge(base: Settings, saved: Partial<Settings>): Settings {
     homeLayoutV: 2,
     // 隱藏區塊的預設值（0.1.46）
     homeDefaults: normHomeDefaults(saved.homeDefaults),
+    /**
+     * 0.1.72（需求 5）：切換頁面後記帳頁的暫存資料要不要保留。
+     * 舊資料沒有這個欄位 → 預設 true（保留），符合使用者要的預設值。
+     */
+    keepDraft: typeof saved.keepDraft === 'boolean' ? saved.keepDraft : true,
     // 旅行模式（0.1.35）：舊資料沒有這個欄位 → null＝沒有旅行；形狀不對也當沒有
     activeTrip: normTrip(saved.activeTrip),
     // 旅行模式（0.1.36）：已結束的旅行。每一筆照樣過一次 normTrip（形狀不對的丟掉）

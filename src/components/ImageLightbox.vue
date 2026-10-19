@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import type { LevelKey } from '@/types'
+import { IMG_LEVELS } from '@/lib/imgLevels'
+import { formatBytes } from '@/lib/imaging'
 
 /**
  * 導覽狀態（0.1.57）。
@@ -31,14 +34,43 @@ export interface LightboxNav {
  *   - `nav` 有給 → 底部多一列 ICON（上一張／下一張圖片、上一筆／下一筆記錄）
  *   - 點圖片＝關閉（跟右上角 ✕ 同一招；但拖曳不算，見 `onImgClick`）
  */
-const props = defineProps<{ src: string | null; nav?: LightboxNav | null }>()
+/**
+ * @param src      圖片的 object URL（null＝關閉）
+ * @param nav      導覽狀態（0.1.57）
+ * @param level    0.1.72：這張圖目前的壓縮等級。**給了才會顯示等級列**
+ *                 （記錄明細／記帳頁會給；純檢視舊圖時不給）
+ * @param levelLocked 已記錄／已儲存 → 等級列鎖住不能改
+ * @param levelBytes  目前這個等級的體積（顯示在等級列右邊）
+ */
+const props = defineProps<{
+  src: string | null
+  nav?: LightboxNav | null
+  level?: LevelKey | null
+  levelLocked?: boolean
+  levelBytes?: number
+}>()
 const emit = defineEmits<{
   close: []
   'prev-image': []
   'next-image': []
   'prev-record': []
   'next-record': []
+  /** 0.1.72：在圖片頁裡改壓縮等級；父層換完 blob 會把新的 object URL 回傳給 `src` */
+  'set-level': [LevelKey]
 }>()
+
+/** 有顯示等級列嗎（父層有給 level 就顯示） */
+const showLevels = computed(() => !!props.level)
+
+/**
+ * 0.1.72：切等級時**不要**關掉燈箱，也不要重置縮放 ——
+ * 使用者要的就是「按了馬上看到這一級長什麼樣」，
+ * 所以父層換 src 的當下圖片會自己重載（<img :src> 變了就換圖）。
+ */
+function pickLevel(k: LevelKey) {
+  if (props.levelLocked || k === props.level) return
+  emit('set-level', k)
+}
 
 /** 1 = 原始大小（已等比縮進畫面），往上每階 ×1.4 */
 const zoom = ref(1)
@@ -257,6 +289,28 @@ defineExpose({ stageEl })
         </div>
       </div>
 
+      <!--
+        0.1.72（需求 3）：壓縮等級搬到**圖片頁面裡**（使用者原話：「把原,A,B,C,D 的按鈕
+        放在圖片頁面內(即用戶點擊圖片後)」）。按了會即時換圖，使用者可以直接比對。
+      -->
+      <div v-if="showLevels" class="lightbox__lv" @click.stop>
+        <span class="lightbox__lvlb tiny muted">壓縮</span>
+        <button
+          v-for="l in IMG_LEVELS"
+          :key="l.key"
+          type="button"
+          class="lvb"
+          :class="{ 'is-on': l.key === level }"
+          :disabled="levelLocked"
+          :title="levelLocked ? `${l.title}（記錄後就不能更改壓縮程度了）` : l.title"
+          :aria-pressed="l.key === level"
+          @click="pickLevel(l.key)"
+        >
+          {{ l.label }}
+        </button>
+        <span v-if="levelBytes" class="lightbox__lvsz tiny num">{{ formatBytes(levelBytes) }}</span>
+      </div>
+
       <div class="lightbox__bar" @click.stop>
         <button
           class="lbbtn"
@@ -373,6 +427,42 @@ defineExpose({ stageEl })
   letter-spacing: 0.1em;
 }
 /* 工具列固定在底部，不隨圖片捲動 */
+/* 0.1.72：圖片頁裡的壓縮等級列（原/A/B/C/D ＋ 體積） */
+.lightbox__lv {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 16px 2px;
+}
+.lightbox__lvlb {
+  flex: none;
+}
+.lightbox__lv .lvb {
+  min-width: 34px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.lightbox__lv .lvb.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.lightbox__lv .lvb:disabled {
+  opacity: 0.45;
+}
+.lightbox__lvsz {
+  flex: none;
+  min-width: 52px;
+  text-align: right;
+}
 .lightbox__bar {
   flex: none;
   display: flex;

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { QUICK_NOTE_MAX, useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
 import { notify, confirmDialog, askRemoteUpdate } from '@/lib/alerts'
@@ -31,7 +31,6 @@ import type { Settings, TxType } from '@/types'
 const settings = useSettingsStore()
 const records = useRecordsStore()
 const route = useRoute()
-const router = useRouter()
 
 /**
  * BETA：收據辨識記帳（0.1.26 從記帳頁搬過來）。
@@ -500,36 +499,22 @@ const exportOpen = ref(false)
 
 /* ── 0.1.66：匯入彈窗（三分頁：JSON／貼上資料／快速記錄） ─────────── */
 const importOpen = ref(false)
-/**
- * 0.1.71 需求3：匯入彈窗開啟時要落在哪個分頁。
- * 記帳頁「快速記帳」區塊的兩顆鈕（貼上資料／快速記錄）是用
- * `#/settings?import=paste|quick` 跳過來的，下面的 watch 接住後開彈窗。
- */
-const importTab = ref<'json' | 'paste' | 'quick'>('json')
 
 /**
- * 0.1.71：接住「從記帳頁跳過來」的 query → 開匯入彈窗並落在對應分頁，
- * 然後立刻把 query 清掉。不清有兩個壞處：
- *   1. 使用者之後手動開匯入，會被 `initialTab` 強制跳去同一個分頁
- *   2. 從設定頁返回再進來（或重整）會再觸發一次，彈窗自己跑出來
- * ⚠ App.vue 用 `:key="route.path"` 掛元件 → 同 path 的 query 變化**不會重載**
- *   SettingsView，所以必須用 watch 接（onMounted 只在真正掛載時跑一次）。
+ * 0.1.72（需求 2）：記帳頁的「快速記帳」改成**在記帳頁自己開彈窗**，
+ * 不再用 `#/settings?import=…` 跳過來 → 這個 watch 與 `initialTab` 都不需要了。
+ * 設定頁的匯入彈窗維持原本的行為：三個分頁都在，開在哪一頁由 ImportModal 自己決定。
  */
-watch(
-  () => route.query.import,
-  (q) => {
-    if (q !== 'paste' && q !== 'quick') return
-    importTab.value = q
-    importOpen.value = true
-    void router.replace({ path: '/settings', query: {} })
-  },
-  { immediate: true },
-)
 
-/** 彈窗關掉（✕／下拉／取消）→ 重置指定分頁，下次手動開啟回到原本的行為 */
-watch(importOpen, (open) => {
-  if (!open) importTab.value = 'json'
-})
+/** 0.1.72（需求 5）：記帳頁暫存資料＝保留／清除（預設保留，見 lib/defaults.ts） */
+function setKeepDraft(v: boolean) {
+  if (settings.state.keepDraft === v) return
+  // ⚠ store 的 state 是巢狀的（`$patch` 要往 `s.state` 裡寫才會觸發存檔）
+  settings.$patch((s) => {
+    s.state.keepDraft = v
+  })
+  notify(v ? '離開記帳頁會保留輸入到一半的資料' : '離開記帳頁會清空輸入的資料', 'info')
+}
 
 /** JSON 分頁：關掉彈窗再開檔案選擇器（原本的匯入流程完全沒變） */
 function onPickJson() {
@@ -1222,6 +1207,63 @@ const activeWalletName = computed(() => settings.activeWallet.name)
     </section>
 
     <!--
+      0.1.72（需求 5）：記帳頁暫存資料 —— 切換頁面後要「保留」還是「清除」。
+      使用者原話：「用戶切換頁面後，會清除用戶臨時在記帳頁輸入的資料的行為，
+      在設定頁中新增一個區域，給用戶設定要清除還是保留（預設是保留）」
+      ⚠ 根因要寫給使用者看：App.vue 用路由 path 當 key，離開記帳頁元件會整個重掛，
+        「清除」其實是重掛的副作用；選保留時我們存一份草稿（只存在這次開啟期間）。
+    -->
+    <section id="sec-keepdraft" class="card sec">
+      <header class="sec__hd">
+        <span class="sec__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M5 5.6h14v12.8H5z" />
+            <path d="M9 9.4h6M9 12.6h4" />
+          </svg>
+        </span>
+        <div class="sec__meta">
+          <h2 class="sec__title">記帳頁暫存資料</h2>
+          <p class="sec__desc">
+            離開記帳頁（去記錄／統計／設定）再回來時，輸入到一半的資料要保留還是清除
+          </p>
+        </div>
+      </header>
+
+      <div class="panel">
+        <div class="kd__row">
+          <button
+            type="button"
+            class="kd__opt"
+            :class="{ 'is-on': settings.state.keepDraft }"
+            @click="setKeepDraft(true)"
+          >
+            <span class="kd__dot" aria-hidden="true"></span>
+            <span class="kd__txt">
+              <strong>保留</strong>
+              <span class="tiny muted">金額、分類、幣別、備註、日期與已上傳還沒記錄的圖片都留著</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            class="kd__opt"
+            :class="{ 'is-on': !settings.state.keepDraft }"
+            @click="setKeepDraft(false)"
+          >
+            <span class="kd__dot" aria-hidden="true"></span>
+            <span class="kd__txt">
+              <strong>清除</strong>
+              <span class="tiny muted">回到以前的行為：離開記帳頁就清空（重新開始記下一筆）</span>
+            </span>
+          </button>
+        </div>
+        <p class="tiny muted kd__note">
+          ⚠ 保留只限這一次開啟期間（重開 App 會清空）—— 還沒記錄的圖片只存在記憶體裡，
+          關掉就沒了，硬留會變成打不開的破圖。
+        </p>
+      </div>
+    </section>
+
+    <!--
       快速金額（0.1.29 → 0.1.31 精簡）：
       本區**只留「記帳頁會長這樣」的即時預覽**（使用者：「按鈕內容的外框和以下文字移除」），
       「詳細」按鈕移到**標題列最右邊**；新增／修改／刪除都在 QuickAmountSheet 子頁面裡。
@@ -1440,7 +1482,6 @@ const activeWalletName = computed(() => settings.activeWallet.name)
     -->
     <ImportModal
       :open="importOpen"
-      :initial-tab="importTab"
       @close="importOpen = false"
       @pick-json="onPickJson"
     />
@@ -2059,6 +2100,49 @@ const activeWalletName = computed(() => settings.activeWallet.name)
   font-size: 10px;
   font-weight: 650;
   color: var(--text-3);
+}
+
+/* ── 0.1.72：記帳頁暫存資料（保留／清除）────────────────── */
+.kd__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.kd__opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  text-align: left;
+}
+.kd__opt.is-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.kd__dot {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  border: 1.5px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+}
+.kd__opt.is-on .kd__dot {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 3px var(--surface);
+}
+.kd__txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.kd__note {
+  margin-top: 8px;
 }
 
 /* ── 自訂貨幣（0.1.44；0.1.45 新增列收合）────────────── */

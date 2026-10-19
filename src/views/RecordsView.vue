@@ -1203,6 +1203,7 @@ function removeEditing(id: string) {
               :show-time="true"
               :highlight="kw"
               :time-recent="recent"
+              :abs-time="absTimeMode"
               @edit="editingId = $event"
               @remove="removeEditing($event)"
             />

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
 import { confirmDialog, notify } from '@/lib/alerts'
@@ -11,6 +10,8 @@ import ClearableInput from '@/components/ClearableInput.vue'
 import QuickNotePicker from '@/components/QuickNotePicker.vue'
 import DateTimeField from '@/components/DateTimeField.vue'
 import ReceiptImages from '@/components/ReceiptImages.vue'
+import ImportModal from '@/components/ImportModal.vue'
+import { hasPending } from '@/composables/useImgLevels'
 import CategoryIcon from '@/components/CategoryIcon.vue'
 import { withAlpha, DEFAULT_TRIP_COLOR } from '@/lib/color'
 import {
@@ -87,17 +88,18 @@ const hiddenBlocks = computed<Set<number>>(() => {
 })
 
 /**
- * 0.1.71 需求3：記帳頁「快速記帳」區塊的兩顆鈕 —— 跳到設定頁的匯入資料彈窗，
- * 並直接落在對應的分頁（貼上資料／快速記錄）。
+ * 0.1.72 需求 2：記帳頁「快速記帳」區塊的兩顆鈕 —— **留在記帳頁**直接開匯入彈窗
+ * （使用者原話：「打開子頁面的時候不要跳到設定頁中（在記帳頁打開要保留在記帳頁，
+ * 在設定頁打開就要保留在設定頁）」）。
  *
- * 做法：`router.push('/settings?import=paste|quick')`，SettingsView 監看這個 query
- * 開彈窗後立刻 `router.replace` 清掉（不然返回記帳頁會再觸發一次）。
- * ⚠ App.vue 用 `:key="route.path"` 掛元件 —— 同 path 的 query 變化不會重載，
- *   所以 SettingsView 那邊是用 watch（不是 onMounted）接的。
+ * ⚠ 0.1.71 原本是 `router.push('/settings?import=…')` 跳到設定頁再開 —— 已改掉。
+ * 這裡只給「貼上資料／快速記錄」兩個分頁：匯入 JSON（含設定還原）仍只在設定頁。
  */
-const router = useRouter()
+const importOpen = ref(false)
+const importTab = ref<'paste' | 'quick'>('quick')
 function gotoImport(tab: 'paste' | 'quick') {
-  void router.push({ path: '/settings', query: { import: tab } })
+  importTab.value = tab
+  importOpen.value = true
 }
 
 /**
@@ -377,6 +379,8 @@ function clearForm() {
   resetForm()
   // 還沒存檔的圖片要一起丟掉（連 IndexedDB 的 blob 也刪，不留孤兒）
   if (hadImages) imgEl?.discard()
+  // 0.1.72：使用者按「清空」＝要乾淨 → 草稿也要清掉
+  clearDraft()
   if (dirty) notify('已清空', 'info')
 }
 
@@ -470,6 +474,8 @@ async function submit() {
   notify(`已記錄 ${label}`, 'ok', { label: '復原', run: () => records.remove(rec.id) })
 
   resetForm()
+  // 0.1.72：已經記完 → 草稿要清掉（不然回到記帳頁又長出同一筆）
+  clearDraft()
 }
 
 /*
@@ -481,8 +487,96 @@ async function submit() {
  * 這裡不必再掛任何拖放監聽，也就不會再有那個整頁的「放開即可上傳收據」遮罩。
  */
 
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+/* ── 0.1.72 需求 5：記帳頁暫存草稿 ─────────────────────────
+ *
+ * ⚠ 根因：App.vue 用 `:key="route.path"` 掛元件 → 離開記帳頁（去記錄／統計／設定）
+ *   再回來，HomeView 是**整個重新掛載**，所有 ref 回到初始值＝「資料被清掉」。
+ *   這不是有人主動清的，所以要「保留」就得自己存一份草稿。
+ *
+ * - 存 `sessionStorage`：切頁（同一個分頁／PWA 沒關掉）才留著；
+ *   **重開 App 就沒有**（重開後圖片的 blob 也不在記憶體了，硬留會變破圖）。
+ * - 圖片只存 metadata，blob 仍在 `useImgLevels` 的暫存區（模組級，切頁不會掉）；
+ *   還原時只收「暫存區裡還在的」那幾張（reload 後就自動丟掉，避免破圖）。
+ */
+const DRAFT_KEY = 'mop-ledger.home.draft.v1'
+
+/** 這次的輸入算不算「有東西」（沒東西就不用存、也不用提示） */
+const isDirty = () =>
+  calc.value.tokens.length > 0 ||
+  note.value !== '' ||
+  images.value.length > 0 ||
+  !!categoryId.value
+
+function saveDraft() {
+  if (!settings.state.keepDraft) return
+  if (!isDirty()) {
+    sessionStorage.removeItem(DRAFT_KEY)
+    return
+  }
+  try {
+    sessionStorage.setItem(
+      DRAFT_KEY,
+      JSON.stringify({
+        calc: calc.value,
+        type: type.value,
+        note: note.value,
+        occurredAt: occurredAt.value,
+        categoryId: categoryId.value,
+        curCode: curCode.value,
+        images: images.value,
+      }),
+    )
+  } catch {
+    /* 存不進去（隱私模式等）就算了，不要擋著使用者 */
+  }
+}
+
+function clearDraft() {
+  sessionStorage.removeItem(DRAFT_KEY)
+}
+
+/**
+ * 還原草稿。⚠ 只在「設定成保留」時做；
+ * 圖片要一張張對暫存區（reload 後 blob 不在了 → 那幾張不還原，避免破圖）。
+ */
+function restoreDraft() {
+  if (!settings.state.keepDraft) return
+  const raw = sessionStorage.getItem(DRAFT_KEY)
+  if (!raw) return
+  try {
+    const d = JSON.parse(raw) as Partial<{
+      calc: CalcState
+      type: TxType
+      note: string
+      occurredAt: string
+      categoryId: string
+      curCode: string
+      images: ImageRef[]
+    }>
+    if (d.calc) calc.value = d.calc
+    if (d.type === 'expense' || d.type === 'income') type.value = d.type
+    if (typeof d.note === 'string') note.value = d.note
+    if (typeof d.occurredAt === 'string' && d.occurredAt) occurredAt.value = d.occurredAt
+    if (typeof d.categoryId === 'string') categoryId.value = d.categoryId
+    if (typeof d.curCode === 'string' && d.curCode) curCode.value = d.curCode
+    if (Array.isArray(d.images)) images.value = d.images.filter((im) => hasPending(im.id))
+  } catch {
+    clearDraft()
+  }
+}
+
+/** 表單一有變動就更新草稿（不必等到卸載，中途關掉瀏覽器也比較安全） */
+watch([calc, type, note, occurredAt, categoryId, curCode, images], () => saveDraft(), { deep: true })
+
+onMounted(() => {
+  window.addEventListener('keydown', onKey)
+  restoreDraft()
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKey)
+  // 設定成「清除」時，草稿要真的不見（不然下次進來又復活）
+  if (!settings.state.keepDraft) clearDraft()
+})
 </script>
 
 <template>
@@ -625,7 +719,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <DateTimeField v-else-if="b === 5" v-model="occurredAt" />
 
           <!-- 6＝收據圖片 -->
-          <ReceiptImages v-else-if="b === 6" :ref="setImgEl" v-model="images" />
+          <ReceiptImages
+            v-else-if="b === 6"
+            :ref="setImgEl"
+            v-model="images"
+            :keep-on-unmount="settings.state.keepDraft"
+          />
 
           <!-- 8＝快速記帳（0.1.71：匯入彈窗的捷徑，兩顆鈕直接跳到對應分頁） -->
           <div v-else-if="b === 8" class="qrow">
@@ -671,6 +770,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       :cur-code="curCode"
       @press="press"
       @close="keypadOpen = false"
+    />
+
+    <!--
+      0.1.72 需求 2：記帳頁的匯入彈窗 —— 開在**記帳頁自己身上**，不跳去設定頁。
+      只給「貼上資料／快速記錄」兩頁（匯入 JSON 仍在設定頁）。
+    -->
+    <ImportModal
+      :open="importOpen"
+      :initial-tab="importTab"
+      :tabs="['paste', 'quick']"
+      @close="importOpen = false"
     />
   </div>
 </template>
