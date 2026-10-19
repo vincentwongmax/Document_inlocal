@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { QUICK_NOTE_MAX, useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
 import { notify, confirmDialog, askRemoteUpdate } from '@/lib/alerts'
@@ -31,6 +31,7 @@ import type { Settings, TxType } from '@/types'
 const settings = useSettingsStore()
 const records = useRecordsStore()
 const route = useRoute()
+const router = useRouter()
 
 /**
  * BETA：收據辨識記帳（0.1.26 從記帳頁搬過來）。
@@ -233,10 +234,11 @@ const cxOpen = ref(false)
 const cxDraftName = ref<Record<string, string>>({})
 const cxDraftRate = ref<Record<string, string>>({})
 
-/* ── 記帳頁排版（0.1.45；0.1.46 加入「分類」變 1..7）──────────
+/* ── 記帳頁排版（0.1.45；0.1.46 加入「分類」變 1..7；0.1.71 加 8＝快速記帳）──
  * 1=支出/收入＋幣別、2=金額＋快速金額、3=分類、4=備註、5=日期時間、
- * 6=收據圖片、7=清空＋記錄。點擊順序＝顯示順序；沒點＝不顯示
- * （隱藏區塊的預設值在「預設值」子頁面裡設）。
+ * 6=收據圖片、7=清空＋記錄、8=快速記帳（跳到匯入資料的貼上資料／快速記錄）。
+ * 點擊順序＝顯示順序；沒點＝不顯示（隱藏區塊的預設值在「預設值」子頁面裡設）。
+ * ⚠ 8 預設不顯示：它只是匯入彈窗的捷徑，要的人自己點進來開。
  */
 const layoutItems: { n: number; label: string; icon: string }[] = [
   { n: 1, label: '支出/收入＋幣別', icon: 'M4 8h10M4 8l3-3M4 8l3 3M20 16H10M20 16l-3-3M20 16l-3 3' },
@@ -246,6 +248,7 @@ const layoutItems: { n: number; label: string; icon: string }[] = [
   { n: 5, label: '日期時間', icon: 'M4.4 6.4h15.2v13.2H4.4zM4.4 10.6h15.2M8.4 3.8v4M15.6 3.8v4' },
   { n: 6, label: '收據圖片', icon: 'M6 3h12v18l-2-1.4L14 21l-2-1.4L10 21l-2-1.4L6 21V3ZM9.5 8h5M9.5 12h5' },
   { n: 7, label: '清空＋記錄', icon: 'M5 12.6 9.4 17 19 7.4' },
+  { n: 8, label: '快速記帳', icon: 'M13 2.8 5.6 12.4h5.2l-.6 8.8 8.2-9.6h-5.2z' },
 ]
 
 /** 「預設值」子頁面（0.1.46）：隱藏區塊提交時要用的預設內容 */
@@ -497,6 +500,36 @@ const exportOpen = ref(false)
 
 /* ── 0.1.66：匯入彈窗（三分頁：JSON／貼上資料／快速記錄） ─────────── */
 const importOpen = ref(false)
+/**
+ * 0.1.71 需求3：匯入彈窗開啟時要落在哪個分頁。
+ * 記帳頁「快速記帳」區塊的兩顆鈕（貼上資料／快速記錄）是用
+ * `#/settings?import=paste|quick` 跳過來的，下面的 watch 接住後開彈窗。
+ */
+const importTab = ref<'json' | 'paste' | 'quick'>('json')
+
+/**
+ * 0.1.71：接住「從記帳頁跳過來」的 query → 開匯入彈窗並落在對應分頁，
+ * 然後立刻把 query 清掉。不清有兩個壞處：
+ *   1. 使用者之後手動開匯入，會被 `initialTab` 強制跳去同一個分頁
+ *   2. 從設定頁返回再進來（或重整）會再觸發一次，彈窗自己跑出來
+ * ⚠ App.vue 用 `:key="route.path"` 掛元件 → 同 path 的 query 變化**不會重載**
+ *   SettingsView，所以必須用 watch 接（onMounted 只在真正掛載時跑一次）。
+ */
+watch(
+  () => route.query.import,
+  (q) => {
+    if (q !== 'paste' && q !== 'quick') return
+    importTab.value = q
+    importOpen.value = true
+    void router.replace({ path: '/settings', query: {} })
+  },
+  { immediate: true },
+)
+
+/** 彈窗關掉（✕／下拉／取消）→ 重置指定分頁，下次手動開啟回到原本的行為 */
+watch(importOpen, (open) => {
+  if (!open) importTab.value = 'json'
+})
 
 /** JSON 分頁：關掉彈窗再開檔案選擇器（原本的匯入流程完全沒變） */
 function onPickJson() {
@@ -1407,6 +1440,7 @@ const activeWalletName = computed(() => settings.activeWallet.name)
     -->
     <ImportModal
       :open="importOpen"
+      :initial-tab="importTab"
       @close="importOpen = false"
       @pick-json="onPickJson"
     />

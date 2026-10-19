@@ -38,7 +38,14 @@ import {
 } from '@/lib/quickParse'
 import { formatFull, fromLocalInput, parseLooseDateTime, toLocalInput } from '@/lib/date'
 
-const props = defineProps<{ open: boolean }>()
+const props = defineProps<{
+  open: boolean
+  /**
+   * 0.1.71：開啟時要落在哪個分頁（記帳頁「快速記帳」區塊跳過來用）。
+   * 不給＝照原本的行為（有保留草稿 → 快速記錄，否則 JSON）。
+   */
+  initialTab?: 'json' | 'paste' | 'quick'
+}>()
 const emit = defineEmits<{
   close: []
   /** JSON 分頁：請父層開 hidden file input（原本的匯入流程） */
@@ -98,22 +105,6 @@ const nowText = ref('')
 let savedRows: QuickDraft[] | null = null
 
 const rows = ref<QuickDraft[]>([])
-
-watch(
-  () => props.open,
-  (open) => {
-    if (!open) return
-    // 有上次保留的資料 → 直接回到快速記錄分頁讓使用者看到；否則從 JSON 分頁開始
-    tab.value = savedRows ? 'quick' : 'json'
-    text.value = ''
-    rows.value = savedRows
-      ? (JSON.parse(JSON.stringify(savedRows)) as QuickDraft[])
-      : [blankDraft(ctx.value)]
-    editing.value = null
-    nowText.value = formatFull(new Date().toISOString())
-  },
-  { immediate: true },
-)
 
 function selectTab(k: Tab) {
   tab.value = k
@@ -176,6 +167,32 @@ const editText = ref('')
 const editErr = ref('')
 /** 內部剪貼簿：navigator.clipboard 沒權限時的落點（同一支 App 內一定可用） */
 const clip = ref('')
+
+/**
+ * 開啟時重置狀態（分頁／草稿／格子編輯器／「現在」時間）。
+ * ⚠⚠ 這個 watch 必須放在 `editing` 等 ref 宣告**之後**：
+ *   `immediate: true` 的回調會在 `watch()` 建立時就同步執行，
+ *   而 0.1.71 起「從記帳頁快速記帳跳過來」會讓元件以 `open=true` 建立
+ *   （SettingsView 的 query watch 在掛載時就把 importOpen 設成 true），
+ *   回調當場就會跑到 `editing.value = null` —— 太晚宣告會 TDZ
+ *   （ReferenceError: Cannot access 'xxx' before initialization）。
+ */
+watch(
+  () => props.open,
+  (open) => {
+    if (!open) return
+    // 0.1.71：有指定分頁（從記帳頁跳過來的）就優先；否則照原本的行為
+    // （有上次保留的資料 → 直接回到快速記錄分頁讓使用者看到；否則從 JSON 分頁開始）
+    tab.value = props.initialTab ?? (savedRows ? 'quick' : 'json')
+    text.value = ''
+    rows.value = savedRows
+      ? (JSON.parse(JSON.stringify(savedRows)) as QuickDraft[])
+      : [blankDraft(ctx.value)]
+    editing.value = null
+    nowText.value = formatFull(new Date().toISOString())
+  },
+  { immediate: true },
+)
 
 const editColLabel = computed(() => COLS.find((c) => c.key === editing.value?.col)?.label ?? '')
 const editHint = computed(() => {
@@ -567,6 +584,22 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 .mask {
   z-index: 90;
 }
+/**
+ * 需求1（0.1.71）：「在電腦版的模式下，頁面的畫面左右的寬度放大一點
+ * （可以參考記錄頁面框框的寬度），手機或 PWA 模式則維持原有比例」。
+ *
+ * 記錄頁面那張卡的寬度上限是 1080px（見 HomeView 的 `.home__grid`），
+ * 所以這裡桌機（≥768px）放到 min(1080px, 100vw-48px)：
+ *   - `100vw - 48px`：`.bsheet-mask` 在 ≥768px 有 24px 左右 padding，減掉才不會溢出
+ *   - 手機／PWA（<768px）完全不寫 → 沿用 style.css 的全域 `.bsheet { width:100% }`
+ * ⚠ 這是 scoped 樣式（`.bsheet[data-v-xxx]`，特異度 (0,2,0)），
+ *   剛好蓋得過 style.css 裡 `@media (min-width:768px){ .bsheet{width:480px} }`（(0,1,0)）。
+ */
+@media (min-width: 768px) {
+  .bsheet {
+    width: min(1080px, calc(100vw - 48px));
+  }
+}
 /* 需求1：右上角關閉 ✕（蓋在整張卡片上，任何分頁都看得到） */
 .qr__close {
   position: absolute;
@@ -848,6 +881,18 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 .tbl__hd,
 .tr {
   display: grid;
+  /**
+   * 需求2（0.1.71）：「標題中，備註和日期時間的中間是有灰色底色的，
+   * 日期時間和刪除的中間是缺失了灰色底色，請修補」。
+   *
+   * 根因：`.tbl__hd` 是區塊級 grid，**元素盒子**只有容器寬（手機約 350px），
+   * 但 7 欄的最小總寬是 486px → 格子溢出到盒子外，而 `background` 只畫盒子範圍，
+   * 右邊幾欄（日期時間／刪除）就「沒有灰底」。資料列 `.tr` 的底線同理被切斷。
+   * 修法：給兩列都鋪最小寬度 486px（48+54+68+84+84+116+32），
+   * 盒子跟格子一樣寬 → 灰底／底線涵蓋整行；`.tblwrap` 的 `overflow-x:auto`
+   * 讓窄屏照樣橫滑。桌機（現在可到 1080px）盒子比 486 寬，fr 欄均分放大，兩列仍對齊。
+   */
+  min-width: 486px;
   /* 地板寬度讓窄屏整張表橫滑，而不是把格子壓成亂碼 */
   grid-template-columns:
     48px 54px 68px

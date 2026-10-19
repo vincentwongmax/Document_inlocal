@@ -81,11 +81,12 @@ function MAP_HAS_BUILTIN(code: string): boolean {
 }
 
 /**
- * 排版編號的正規化（0.1.46）：只留 1..7 的整數、去重。
+ * 排版編號的正規化（0.1.46；0.1.71 起放寬到 1..8）：
+ * 只留 1..8 的整數、去重。8＝快速記帳（匯入彈窗捷徑，預設不排進去）。
  */
 function normLayout(v: unknown): number[] {
   if (!Array.isArray(v)) return []
-  return [...new Set(v.filter((n) => Number.isInteger(n) && n >= 1 && n <= 7))]
+  return [...new Set(v.filter((n) => Number.isInteger(n) && n >= 1 && n <= 8))]
 }
 
 /**
@@ -95,7 +96,8 @@ function normLayout(v: unknown): number[] {
  */
 function migrateHomeLayout(raw: number[]): number[] {
   const map: Record<number, number> = { 1: 1, 2: 2, 3: 4, 4: 5, 5: 6, 6: 7 }
-  const mapped = raw.map((n) => map[n] ?? n).filter((n) => n >= 1 && n <= 7)
+  // 0.1.71：上限跟著放寬到 8（8 不會出現在舊資料，map 沒有對映 → 原值帶過）
+  const mapped = raw.map((n) => map[n] ?? n).filter((n) => n >= 1 && n <= 8)
   if (!mapped.length) return []
   const a2 = mapped.indexOf(2)
   const at = a2 !== -1 ? a2 + 1 : mapped.indexOf(1) !== -1 ? mapped.indexOf(1) + 1 : 0

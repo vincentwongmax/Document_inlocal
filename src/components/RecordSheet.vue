@@ -2,13 +2,23 @@
 import { computed, nextTick, onBeforeUnmount, ref, toRef, watch } from 'vue'
 import { useScrollLock } from '@/composables/useScrollLock'
 import { usePullToClose } from '@/composables/usePullToClose'
-import type { ImageRef, TodoItem, TxRecord, TxType } from '@/types'
+import type { ImageRef, LevelKey, TodoItem, TxRecord, TxType } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { useRecordsStore } from '@/stores/records'
 import { confirmDialog, notify } from '@/lib/alerts'
-import { getImage, putImage, deleteImage } from '@/lib/imageDb'
+import { deleteImage } from '@/lib/imageDb'
 import { buildZip } from '@/lib/zip'
-import { compressImage, makeThumb } from '@/lib/imaging'
+import { IMG_LEVELS } from '@/lib/imgLevels'
+import {
+  blobOf,
+  dropPending,
+  flushLevels,
+  isLocked,
+  isSaved,
+  levelBusyId,
+  setLevel,
+  stageImage,
+} from '@/composables/useImgLevels'
 import { md5OfFile } from '@/lib/md5'
 import { uid } from '@/lib/id'
 import { dupNotice } from '@/lib/receiptDup'
@@ -414,7 +424,8 @@ async function showNavImage(idx: number) {
   }
   const im = list[at]
   if (!urls.value[im.id]) {
-    const blob = await getImage(im.id)
+    // 0.1.71：先看記憶體（本次新上傳、還沒寫 DB 的），再退回 IndexedDB
+    const blob = await blobOf(im.id)
     if (!blob) {
       notify('圖片已不存在（可能已被清除）', 'warn')
       navEmpty.value = true
@@ -451,11 +462,12 @@ const sharing = ref(false)
 /** 圖片區的標題（zip / 分享標題用） */
 const imgTitle = computed(() => props.record?.note?.trim() || '收據圖片')
 
-/** 取這筆的所有圖片 blob（IndexedDB 讀不到的略過） */
+/** 取這筆的所有圖片 blob（讀不到的略過） */
 async function allImageBlobs(): Promise<{ name: string; blob: Blob }[]> {
   const out: { name: string; blob: Blob }[] = []
   for (const im of images.value) {
-    const blob = await getImage(im.id)
+    // 0.1.71：還沒儲存的新圖在記憶體裡，走 blobOf 才拿得到
+    const blob = await blobOf(im.id)
     if (!blob) continue
     out.push({ name: safeFileName(im.name || '', blob.type), blob })
   }
@@ -611,8 +623,9 @@ function pickImages() {
 }
 
 /**
- * 真正把檔案收進來：MD5 去重 → 壓縮（同主頁流程）→ 存 IndexedDB → 產生縮圖。
- * 上傳（檔案選擇器）與貼上（剪貼簿）都走這裡，兩邊行為才會一致。
+ * 真正把檔案收進來：MD5 去重 → 壓縮到預設等級（A）→ **只留記憶體**（0.1.71 延遲寫入）
+ * → 產生縮圖。上傳（檔案選擇器）與貼上（剪貼簿）都走這裡，兩邊行為才會一致。
+ * DB 要等 `save()` 的 `flushLevels()` 才寫；使用者在此之前可自由切換壓縮等級。
  *
  * ⚠⚠ 去重是「兩級」的（0.1.22 使用者指定，跟主頁 ReceiptImages 同一套規則）：
  *   - **這一筆裡面**已有同一張 → 靜默略過
@@ -636,20 +649,7 @@ async function addFiles(files: File[]) {
       if (records.ownersOfMd5(md5, selfId).length) dupOther++
       batch.add(md5)
       const id = uid('img')
-      const comp = await compressImage(file)
-      await putImage(id, comp.blob)
-      const thumb = await makeThumb(comp.blob)
-      images.value.push({
-        id,
-        md5,
-        shotAt: null,
-        name: file.name,
-        thumb,
-        w: comp.width || undefined,
-        h: comp.height || undefined,
-        bytes: comp.bytes,
-        originalBytes: comp.originalBytes || file.size,
-      })
+      images.value.push(await stageImage(file, id, md5))
       addedIds.add(id)
     }
     if (skipped) notify(`已略過 ${skipped} 張重複圖片`, 'warn')
@@ -704,6 +704,13 @@ function removeImage(im: ImageRef) {
     URL.revokeObjectURL(urls.value[im.id])
     delete urls.value[im.id]
   }
+  // 0.1.71：本次新上傳、還沒寫 DB 的 → 收回記憶體就好（DB 裡沒有東西）
+  if (addedIds.has(im.id)) {
+    addedIds.delete(im.id)
+    // 只有已經 flush 過（儲存瞬間的極窄窗口）才需要補刪 DB
+    if (isSaved(im.id)) void deleteImage(im.id)
+    dropPending(im.id)
+  }
 }
 
 /**
@@ -727,9 +734,13 @@ async function onRemoveImage(im: ImageRef) {
   removeImage(im)
 }
 
-/** 丟棄尚未儲存的新圖片，避免 IndexedDB 殘留孤兒 */
+/**
+ * 0.1.71：丟棄尚未儲存的新圖片。
+ * 圖片改成「儲存時才寫 DB」→ 還沒 flush 過的 DB 裡根本沒有東西，
+ * 收回記憶體就不留孤兒；已 flush 的（剛按過儲存）保留給那筆記錄。
+ */
 function discardPending() {
-  for (const id of addedIds) void deleteImage(id)
+  for (const id of addedIds) dropPending(id)
   addedIds.clear()
 }
 
@@ -874,14 +885,35 @@ function onTripChange() {
   }
 }
 
-function save() {
+/**
+ * 儲存。
+ * 0.1.71：圖片改成「儲存時才寫 DB」→ 這裡先把本次新上傳的圖
+ * （各自選定的壓縮等級）flush 進 IndexedDB，記錄送出當下 blob 必須已經在，
+ * 不然重新載入會看到破圖。寫完就從暫存區收回記憶體——等級從此鎖定。
+ * ⚠ `saving` 旗標防連點（flush 是非同步的，快速按兩次會送出兩次）。
+ */
+const saving = ref(false)
+async function save() {
+  if (saving.value) return
   if (!(numeric.value > 0)) {
     notify('金額必須大於 0', 'warn')
     return
   }
+  saving.value = true
+  try {
+    await flushLevels(images.value.map((i) => i.id))
+  } catch (e) {
+    console.warn('[RecordSheet] 圖片寫入失敗', e)
+    notify('圖片儲存失敗，請再試一次', 'warn')
+    return
+  } finally {
+    saving.value = false
+  }
   // 清掉在明細中被移除的既有圖片
   const keep = new Set(images.value.map((i) => i.id))
   for (const im of originalImages) if (!keep.has(im.id)) void deleteImage(im.id)
+  // 0.1.71：blob 已進 DB → 收回暫存區的記憶體（等級鎖定，不許再改）
+  for (const im of images.value) dropPending(im.id)
   // 本批新圖將隨記錄一起儲存，清掉 pending 標記
   addedIds.clear()
   // 金額被改過，原本的算式就不再成立了 → 一併清掉，免得列表上寫的算式對不上金額
@@ -1267,10 +1299,34 @@ function save() {
             </div>
             <div class="imgs">
               <div v-for="im in images" :key="im.id" class="imgs__cell">
-                <button class="imgs__item" :title="im.name || '收據圖片'" @click="openImage(im)">
-                  <img v-if="im.thumb" :src="im.thumb" alt="" />
-                </button>
-                <button class="imgs__x" type="button" title="移除圖片" @click="onRemoveImage(im)">✕</button>
+                <!-- 縮圖＋✕ 包一層：等級列把 cell 放寬後，✕ 還是要貼在縮圖右上角 -->
+                <div class="imgs__tw">
+                  <button class="imgs__item" :title="im.name || '收據圖片'" @click="openImage(im)">
+                    <img v-if="im.thumb" :src="im.thumb" alt="" />
+                  </button>
+                  <button class="imgs__x" type="button" title="移除圖片" @click="onRemoveImage(im)">✕</button>
+                </div>
+                <!-- 0.1.71：壓縮等級（原圖／A／B／C／D）。未儲存前可自由切換；
+                     儲存後（鎖定）整列 disabled，滑過去有說明 -->
+                <div class="imgs__lv" :class="{ 'is-lock': isLocked(im.id) }">
+                  <button
+                    v-for="l in IMG_LEVELS"
+                    :key="l.key"
+                    class="imgs__lvb"
+                    type="button"
+                    :class="{ 'is-on': im.level === l.key }"
+                    :disabled="isLocked(im.id) || levelBusyId === im.id"
+                    :title="
+                      isLocked(im.id) ? `${l.title}（記錄後就不能更改壓縮程度了）` : l.title
+                    "
+                    @click="setLevel(im, l.key as LevelKey)"
+                  >
+                    {{ l.label }}
+                  </button>
+                </div>
+                <span class="imgs__lvsz num" :title="`原始 ${fmtBytes(im.originalBytes || 0)}`">{{
+                  fmtBytes(im.bytes || 0)
+                }}</span>
               </div>
               <button class="imgs__add" type="button" :disabled="busyImg" @click="pickImages">
                 <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1310,8 +1366,8 @@ function save() {
                 pasteMode
                   ? '長按「貼上圖片」磚 → 選「貼上」（電腦可直接 Ctrl／⌘ + V）'
                   : images.length
-                    ? '可上傳或貼上多張；點圖片放大檢視'
-                    : '可上傳或貼上多張圖片（自動壓縮，保留文字清晰度）'
+                    ? '可上傳或貼上多張；點圖片放大檢視；每張圖可切換壓縮等級（儲存後鎖定）'
+                    : '可上傳或貼上多張圖片（每張圖可選壓縮等級，儲存後鎖定）'
               }}
             </p>
             <details v-if="record.ocr?.text" class="raw">
@@ -1325,7 +1381,9 @@ function save() {
 
         <footer class="sheet__foot">
           <button class="btn btn--danger" @click="onDelete">刪除</button>
-          <button class="btn btn--primary" :disabled="!(numeric > 0)" @click="save">儲存</button>
+          <button class="btn btn--primary" :disabled="saving || !(numeric > 0)" @click="save">
+            {{ saving ? '儲存中…' : '儲存' }}
+          </button>
         </footer>
       </div>
     </div>
@@ -1518,8 +1576,19 @@ function save() {
   gap: 8px;
   flex-wrap: wrap;
 }
+/* 0.1.71：一張圖＝縮圖＋等級列＋體積，寬度放到 108px 才塞得下 5 顆等級鈕 */
 .imgs__cell {
   position: relative;
+  width: 108px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+/* 縮圖＋✕ 包一層（relative）：✕ 永遠貼在縮圖右上角，不受等級列寬度影響 */
+.imgs__tw {
+  position: relative;
+  width: 76px;
 }
 .imgs__item {
   width: 76px;
@@ -1553,6 +1622,54 @@ function save() {
 .imgs__x:hover {
   background: var(--expense);
   color: #fff;
+}
+/* ── 0.1.71：壓縮等級列 ──────────────────────────────────── */
+.imgs__lv {
+  display: flex;
+  gap: 2px;
+  width: 100%;
+}
+.imgs__lvb {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+.imgs__lvb:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* 目前選定的等級＝墨綠實底（跟全站「選中」語意一致） */
+.imgs__lvb.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+/* 儲存後鎖定：整列淡掉不可按，title 說明原因 */
+.imgs__lv.is-lock .imgs__lvb {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.imgs__lvsz {
+  font-size: 9px;
+  line-height: 1.2;
+  color: var(--text-3);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .imgs__add {
   width: 76px;

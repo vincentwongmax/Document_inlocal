@@ -1,6 +1,9 @@
 export type TxType = 'expense' | 'income'
 export type RecordSource = 'manual' | 'image'
 
+/** 0.1.71：收據圖片的壓縮等級（原圖／A 1600px／B 1080px／C 640px／D 320px） */
+export type LevelKey = 'orig' | 'a' | 'b' | 'c' | 'd'
+
 /** 自訂貨幣（0.1.44）：code＝1~12 碼大寫字母/數字（0.1.49 放寬）、name＝顯示名（例如「澳門幣」） */
 export interface CustomCurrency {
   code: string
@@ -68,6 +71,11 @@ export interface ImageRef {
   bytes?: number
   /** 原始檔案位元組數（供顯示省了多少） */
   originalBytes?: number
+  /**
+   * 0.1.71：儲存時選用的壓縮等級（orig／a／b／c／d）。
+   * 舊資料沒有這個欄位 → undefined（不明，等級鈕顯示為鎖定）。
+   */
+  level?: LevelKey
 }
 
 export interface AmountCandidate {

@@ -4,15 +4,17 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 細節（逐版設計決策、CSS 慣例、測試寫法）在 `CONVENTIONS.md`；這裡只放**每次動手都會用到**的東西。
 
 ## 版本
-- 只加 Z（目前 **0.1.67**）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
+- 只加 Z（目前 **0.1.71**）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
 - ⚠ `.smoke/` 在 .gitignore（測試**不會**進 commit）→ 版本 commit 只含 src/、CHANGELOG、package.json、.workbuddy/memory
 
 ## 開發／驗證
 - preview :4173（**改完必先 build**）；dev :5173（兩個 ls 分開）
-- 回歸 `bash .smoke/run-regress.sh`，**判準＝每支 exit code**；ALL＝v70~v141（65 支，v108 不存在）
+- 回歸 `bash .smoke/run-regress.sh`，**判準＝每支 exit code**；ALL＝v70~v145（66 支，v108 不存在）
 - ⚠⚠ 回歸跑著時**不要編輯 run-regress.sh**；升版後必先 build（APP_VERSION 是編譯期注入）
 - ⚠⚠ **本地回歸 dist 不能帶 VITE_BASE**（preview 伺服在根目錄，帶了全 404 → App 空白假紅）；部署前才帶 base 重建
 - 冷啟 `Navigation timeout 30s`＝**環境假紅**（單獨重跑就好）；v113/v135 等偶發 timing flake 同理
+- ⚠ 升版後**每支測試的「版本是 X」斷言都要跟著改**（v132~v144 這種老測試也有；`-live` 系列除外＝跟線上版本）
+- ⚠ 測試 seed 別寫「當天絕對時間」（例 14:30）→ 在該時刻之前跑，記錄時間在未來 → 相對時間退回絕對值 → 假紅（v143 ⑥ 實慘，已改成相對現在回推）
 - ⚠⚠ 測「無限滾動/餵食」不能用 `scrollTo(0, scrollHeight)` 一次跳到底 → 一律 `scrollBy` 小段滑模擬手指
 - ⚠⚠ **puppeteer 在 headless 下 `input[type=file].click()` 不會發 `filechooser` 事件** → `await` 它會**永遠卡死**（0.1.66 實慘）。改監測「input.click 被呼叫幾次」（覆寫 `HTMLInputElement.prototype.click` 計數）
 - 測試殺手：`deleteDatabase` 只能 reload 後；`isRealErr()+ENV_NOISE` 照抄；等狀態不等時間；防空集合假通過
@@ -44,6 +46,10 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 米白紙感；收入墨綠 `#2c6e5b`（`--accent`）、支出 `#bf563c`（`--expense`）、琥珀 `#d9a326`＝旅行、橘 `#c95f16`＝「排」。
 
 ## 近期版本重點
+- **0.1.71**（已 commit 未部署）匯入彈窗桌機加寬（`@media(min-width:768px)` scoped 蓋 `.bsheet`＝`min(1080px, 100vw-48)`；手機/PWA 不動；⚠ 桌機 ≥1024 有 232px 側欄→`.page` 實寬 `100vw-232`，1280 下 1048，彈窗取上限不窄於它）；快速記錄標題列灰底補滿（根因＝`.tbl__hd` 盒子 < 7 欄地板寬 486px → `.tbl__hd, .tr { min-width: 486px }`）；記帳頁排版多區塊 8「快速記帳」（預設隱藏；兩顆鈕貼上資料/快速記錄 → `router.push('/settings?import=…')`，SettingsView watch 接住開彈窗＋`initialTab` 落分頁＋`router.replace` 清 query）；收據圖五檔壓縮等級（`src/lib/imgLevels.ts`＋`src/composables/useImgLevels.ts`＝模組級單例暫存區：`stageImage` 只留記憶體不寫 DB、`setLevel` 從記憶體原檔重算、`flushLevels` 按儲存才寫、`blobOf` 先記憶體後 DB；等級 orig/a/b/c/d，原＝存原檔本體；儲存後 `isLocked` 全鎖）。⚠ 修掉 ImportModal open watch 的 TDZ（immediate 回跑在 `editing` 宣告前 → 以 open=true 建立元件就 ReferenceError，Vue 只記 console 不中斷渲染 → 守門員 ⓪ 的 JS 錯誤檢查才抓到）；守門員 v145（39 支斷言）
+- **0.1.70** 收據圖片單一「分享圖片」（一次多張/桌機 zip）；「顯示實際時間」四級粒度；快速記錄刪除鈕補灰底；新上傳圖存 jpeg。守門員 v144
+- **0.1.69** 修改分類頁再收斂；快速記錄標題列對齊欄位；無旅行時隱藏旅行列；明細加上一頁/下一頁 icon；收據圖片可複製/分享；「更多」可顯示實際時間；一鍵啟動 BAT。守門員 v143
+- **0.1.68** 明細 meta 底部多一列旅行列 `.triprow`（點開下拉）；修改分類頁內距收斂；快速記錄標題行「刪除」鈕清空整表。守門員 v142
 - **0.1.67** 快速記錄併入匯入彈窗（移除獨立 QuickRecordSheet；ImportModal 三頁籤含快速記錄表格、`savedRows` 關閉保留資料、複製/貼上＝套用＋關閉）；明細「統計」三顆 radio 改「點一下開下拉」（`.statsrow`＋Teleport `.statspop`，三態不變：統計＝false／不統計＝true／由分類控制＝undefined）；管理分類頁收斂高度（gap/igrid 高度/icon）。守門員 v138~v141 改寫對應新 UI
 - **0.1.66** 匯入改三分頁彈窗（JSON／貼上資料／快速記錄表格；**QuickRecordSheet 在 0.1.67 已併入 ImportModal 移除**）：
   - `ImportModal`（頁籤 seg、JSON 分頁 emit `pick-json` 沿用 hidden file input 的原本流程）；`QuickRecordSheet`（div grid 類表格可橫滑、空白列 `--`、點格子開編輯器（輸入框＋複製/貼上/清空/確定一排）、✕ 刪列不確認、只提交完整列）

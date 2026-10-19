@@ -1,10 +1,21 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { ImageRef } from '@/types'
+import type { ImageRef, LevelKey } from '@/types'
 import { useRecordsStore } from '@/stores/records'
 import { md5OfFile } from '@/lib/md5'
-import { deleteImage, getImage, putImage } from '@/lib/imageDb'
-import { compressImage, makeThumb } from '@/lib/imaging'
+import { deleteImage } from '@/lib/imageDb'
+import { formatBytes } from '@/lib/imaging'
+import { IMG_LEVELS } from '@/lib/imgLevels'
+import {
+  blobOf,
+  dropPending,
+  flushLevels,
+  isLocked,
+  isSaved,
+  levelBusyId,
+  setLevel,
+  stageImage,
+} from '@/composables/useImgLevels'
 import { uid } from '@/lib/id'
 import { notify } from '@/lib/alerts'
 import { IMG_MIME } from '@/lib/clipboard'
@@ -16,10 +27,12 @@ import ImageLightbox from '@/components/ImageLightbox.vue'
  * 「收據圖片」區塊：上傳／貼上／拖曳收圖，縮圖排排站，點一下放大檢視。
  *
  * 生命週期（這個元件只管**還沒存檔**的圖片）：
- *   - 使用者按 ✕ 移除 → 直接刪 blob（這時候還沒有任何記錄引用它）
+ *   - 0.1.71 起圖片**延遲寫入**：上傳當下只壓縮到預設等級（A）留在記憶體，
+ *     父層在 `records.add` 前呼叫 `flush()` 才寫進 IndexedDB（見 useImgLevels）
+ *   - 使用者按 ✕ 移除 → 收回記憶體（沒寫過 DB，什麼都不用刪）
  *   - 存檔成功 → 呼叫 `release()`：清空清單但**保留 blob**（現在歸那筆記錄所有）
  *   - 清空表單／離開頁面 → 呼叫 `discard()`（或由 onBeforeUnmount 自動處理）：
- *     把本次新增的 blob 全刪掉，不讓 IndexedDB 留孤兒
+ *     把本次新增的記憶體全收回，不讓 IndexedDB 留孤兒
  *
  * ⚠ 記錄明細（`RecordSheet.vue`）用的是另一套政策（要跟「原始圖片」比對才知道誰該刪），
  *   所以那邊沒有改用這個元件；但剪貼簿解析與放大檢視是共用的
@@ -56,7 +69,8 @@ function revoke(id: string) {
 
 async function openImage(im: ImageRef) {
   if (!urls.value[im.id]) {
-    const blob = await getImage(im.id)
+    // 0.1.71：先看記憶體（還沒寫 DB 的新圖），再退回 IndexedDB
+    const blob = await blobOf(im.id)
     if (!blob) {
       notify('圖片已不存在（可能已被清除）', 'warn')
       return
@@ -92,20 +106,8 @@ async function addFiles(files: File[]) {
       if (records.ownersOfMd5(md5).length) dupOther++
       batch.add(md5)
       const id = uid('img')
-      const comp = await compressImage(file)
-      await putImage(id, comp.blob)
-      const thumb = await makeThumb(comp.blob)
-      next.push({
-        id,
-        md5,
-        shotAt: null,
-        name: file.name,
-        thumb,
-        w: comp.width || undefined,
-        h: comp.height || undefined,
-        bytes: comp.bytes,
-        originalBytes: comp.originalBytes || file.size,
-      })
+      // 0.1.71：只壓縮到預設等級（A）留記憶體，DB 等 flush() 才寫
+      next.push(await stageImage(file, id, md5))
       added.add(id)
     }
     emit('update:modelValue', next)
@@ -138,7 +140,10 @@ function remove(im: ImageRef) {
   revoke(im.id)
   if (added.has(im.id)) {
     added.delete(im.id)
-    void deleteImage(im.id)
+    // 0.1.71：沒 flush 過 → DB 裡根本沒有東西，收回記憶體即可；
+    //   只有已經寫進 DB 的（送出瞬間的極窄窗口）才需要補刪
+    if (isSaved(im.id)) void deleteImage(im.id)
+    dropPending(im.id)
   }
 }
 
@@ -195,22 +200,34 @@ async function onDrop(e: DragEvent) {
 }
 
 /* ── 生命週期 ───────────────────────────────────────────── */
+/**
+ * 0.1.71：把本次上傳的圖（各自選定的等級）寫進 IndexedDB。
+ * 父層（HomeView.submit）在 `records.add` **之前**呼叫 ——
+ * 記錄送出的當下 blob 就必須已經在 DB 裡，不然重新載入會看到破圖。
+ */
+async function flush() {
+  await flushLevels(added)
+}
+
 /** 存檔成功：清單清空，但 blob 歸那筆記錄所有，不能刪 */
 function release() {
   kept = true
   for (const id of Object.keys(urls.value)) revoke(id)
+  // 0.1.71：blob 已經在 flush() 時寫進 DB → 從暫存區收回記憶體
+  for (const id of added) dropPending(id)
   added.clear()
   lightbox.value = null
   emit('update:modelValue', [])
 }
 
-/** 放棄（清空表單／離開頁面）：把這次新增的 blob 全刪掉 */
+/** 放棄（清空表單／離開頁面）：把這次新增的記憶體全收回 */
 function discard() {
-  for (const id of added) void deleteImage(id)
+  // 0.1.71：還沒 flush 過 → DB 裡沒有東西可刪，收回記憶體就不留孤兒
+  for (const id of added) dropPending(id)
   added.clear()
   for (const id of Object.keys(urls.value)) revoke(id)
   lightbox.value = null
-  // ⚠ 一定要清空清單：blob 刪了但縮圖還掛著的話，畫面會留著一張點不開的破圖，
+  // ⚠ 一定要清空清單：縮圖還掛著的話，畫面會留著一張點不開的圖，
   //   而且「清空」看起來像沒生效（張數沒歸零）。
   if (props.modelValue.length) emit('update:modelValue', [])
 }
@@ -221,12 +238,13 @@ onBeforeUnmount(() => {
   if (!kept) discard()
 })
 
-defineExpose({ addFiles, release, discard })
+defineExpose({ addFiles, release, discard, flush })
 
 const hintText = computed(() => {
   if (pasteMode.value) return '長按「貼上圖片」磚 → 選「貼上」（電腦可直接 Ctrl／⌘ + V）'
-  if (props.modelValue.length) return `共 ${props.modelValue.length} 張 · 點圖片放大檢視、✕ 可移除`
-  return '可上傳、貼上或拖曳圖片（自動壓縮，保留文字清晰度）'
+  if (props.modelValue.length)
+    return `共 ${props.modelValue.length} 張 · 點圖片放大檢視、✕ 可移除、可切換壓縮等級（記錄後鎖定）`
+  return '可上傳、貼上或拖曳圖片（每張圖可選壓縮等級，記錄後鎖定）'
 })
 </script>
 
@@ -244,12 +262,39 @@ const hintText = computed(() => {
 
     <div class="rec__grid">
       <div v-for="im in modelValue" :key="im.id" class="rec__cell">
-        <button class="rec__item" type="button" :title="im.name || '收據圖片'" @click="openImage(im)">
-          <img v-if="im.thumb" :src="im.thumb" alt="" />
-        </button>
-        <button class="rec__x" type="button" title="移除圖片" aria-label="移除圖片" @click="remove(im)">
-          ✕
-        </button>
+        <!-- 縮圖＋✕ 包一層：等級列把cell 放寬到 108px 後，✕ 還是要貼在縮圖右上角 -->
+        <div class="rec__tw">
+          <button class="rec__item" type="button" :title="im.name || '收據圖片'" @click="openImage(im)">
+            <img v-if="im.thumb" :src="im.thumb" alt="" />
+          </button>
+          <button class="rec__x" type="button" title="移除圖片" aria-label="移除圖片" @click="remove(im)">
+            ✕
+          </button>
+        </div>
+
+        <!-- 0.1.71：壓縮等級（原圖／A／B／C／D）。未記錄前可自由切換；
+             已儲存的圖（鎖定）整列 disabled，滑過去有說明 -->
+        <div class="rec__lv" :class="{ 'is-lock': isLocked(im.id) }">
+          <button
+            v-for="l in IMG_LEVELS"
+            :key="l.key"
+            class="rec__lvb"
+            type="button"
+            :class="{ 'is-on': im.level === l.key }"
+            :disabled="isLocked(im.id) || levelBusyId === im.id"
+            :title="
+              isLocked(im.id)
+                ? `${l.title}（記錄後就不能更改壓縮程度了）`
+                : l.title
+            "
+            @click="setLevel(im, l.key as LevelKey)"
+          >
+            {{ l.label }}
+          </button>
+        </div>
+        <span class="rec__lvsz num" :title="`原始 ${formatBytes(im.originalBytes || 0)}`">{{
+          formatBytes(im.bytes || 0)
+        }}</span>
       </div>
 
       <button class="rec__add" type="button" :disabled="busy" @click="pick">
@@ -328,8 +373,19 @@ const hintText = computed(() => {
   flex-wrap: wrap;
   gap: 8px;
 }
+/* 0.1.71：一張圖＝縮圖＋等級列＋體積，寬度放到 108px 才塞得下 5 顆等級鈕 */
 .rec__cell {
   position: relative;
+  width: 108px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+/* 縮圖＋✕ 包一層（relative）：✕ 永遠貼在縮圖右上角，不受等級列寬度影響 */
+.rec__tw {
+  position: relative;
+  width: 76px;
 }
 .rec__item {
   display: block;
@@ -375,6 +431,54 @@ const hintText = computed(() => {
 .rec__x:hover {
   background: var(--expense);
   color: #fff;
+}
+/* ── 0.1.71：壓縮等級列 ──────────────────────────────────── */
+.rec__lv {
+  display: flex;
+  gap: 2px;
+  width: 100%;
+}
+.rec__lvb {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+.rec__lvb:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* 目前選定的等級＝墨綠實底（跟全站「選中」語意一致） */
+.rec__lvb.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+/* 記錄後鎖定：整列淡掉不可按，標題列說明原因 */
+.rec__lv.is-lock .rec__lvb {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.rec__lvsz {
+  font-size: 9px;
+  line-height: 1.2;
+  color: var(--text-3);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .rec__add {
   width: 76px;

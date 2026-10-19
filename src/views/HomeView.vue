@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
 import { confirmDialog, notify } from '@/lib/alerts'
@@ -70,19 +71,34 @@ function setImgEl(el: unknown) {
 }
 
 /**
- * 記帳頁區塊排序（0.1.45；0.1.46 起 1..7 含分類）：
+ * 記帳頁區塊排序（0.1.45；0.1.46 起 1..7 含分類；0.1.71 加 8＝快速記帳）：
  * 設定頁「記帳頁排版」決定顯示哪些區塊、什麼順序。
  * 空陣列＝全部照預設（1→7）；有值＝只顯示有排進去的。
+ * ⚠ 8（快速記帳）**預設不顯示**——它只是匯入彈窗的捷徑，要的人自己去排版裡開。
  */
 const layout = computed<number[]>(() =>
   settings.state.homeLayout.length ? settings.state.homeLayout : [1, 2, 3, 4, 5, 6, 7],
 )
 /** 目前被隱藏的區塊（提交時要用「預設值」補） */
 const hiddenBlocks = computed<Set<number>>(() => {
-  const all = new Set([1, 2, 3, 4, 5, 6, 7])
+  const all = new Set([1, 2, 3, 4, 5, 6, 7, 8])
   for (const n of layout.value) all.delete(n)
   return all
 })
+
+/**
+ * 0.1.71 需求3：記帳頁「快速記帳」區塊的兩顆鈕 —— 跳到設定頁的匯入資料彈窗，
+ * 並直接落在對應的分頁（貼上資料／快速記錄）。
+ *
+ * 做法：`router.push('/settings?import=paste|quick')`，SettingsView 監看這個 query
+ * 開彈窗後立刻 `router.replace` 清掉（不然返回記帳頁會再觸發一次）。
+ * ⚠ App.vue 用 `:key="route.path"` 掛元件 —— 同 path 的 query 變化不會重載，
+ *   所以 SettingsView 那邊是用 watch（不是 onMounted）接的。
+ */
+const router = useRouter()
+function gotoImport(tab: 'paste' | 'quick') {
+  void router.push({ path: '/settings', query: { import: tab } })
+}
 
 /**
  * 預設日期偏移（0.1.49）：隱藏日期區塊時的 occurredAt。
@@ -421,6 +437,15 @@ async function submit() {
   const trip = settings.activeTrip
   const noteBase = v.note.trim()
   const noteOut = trip?.mode2 && noteBase ? `${noteBase}_${trip.name}` : noteBase
+  // 0.1.71：圖片改成「記錄時才寫入 DB」→ 送出前先把本次上傳的圖
+  //   （各自選定的壓縮等級）flush 進 IndexedDB，記錄裡才不會有沒 blob 的圖
+  try {
+    await imgEl?.flush()
+  } catch (e) {
+    console.warn('[home] 圖片寫入失敗', e)
+    notify('圖片儲存失敗，請再試一次', 'warn')
+    return
+  }
   const rec = records.add({
     type: v.type,
     categoryId: v.categoryId,
@@ -601,6 +626,26 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
           <!-- 6＝收據圖片 -->
           <ReceiptImages v-else-if="b === 6" :ref="setImgEl" v-model="images" />
+
+          <!-- 8＝快速記帳（0.1.71：匯入彈窗的捷徑，兩顆鈕直接跳到對應分頁） -->
+          <div v-else-if="b === 8" class="qrow">
+            <button class="qrow__btn" type="button" @click="gotoImport('paste')">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="8" y="3.2" width="8" height="3.6" rx="1.2" />
+                <path
+                  d="M9.4 5H6.8A1.8 1.8 0 0 0 5 6.8v11.4A1.8 1.8 0 0 0 6.8 20h10.4a1.8 1.8 0 0 0 1.8-1.8V6.8A1.8 1.8 0 0 0 17.2 5h-2.6"
+                />
+                <path d="M8.6 11.6h6.8M8.6 15.2h4.4" />
+              </svg>
+              <span>貼上資料</span>
+            </button>
+            <button class="qrow__btn" type="button" @click="gotoImport('quick')">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M13 2.8 5.6 12.4h5.2l-.6 8.8 8.2-9.6h-5.2z" />
+              </svg>
+              <span>快速記錄</span>
+            </button>
+          </div>
 
           <!-- 7＝清空＋記錄 -->
           <div v-else class="pad__row">
@@ -937,6 +982,45 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 9px;
+}
+/* 0.1.71：快速記帳區塊（兩顆等寬鈕，直接跳匯入彈窗的對應分頁） */
+.qrow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+.qrow__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 600;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+.qrow__btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.qrow__btn svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .btn--save {
   min-width: 96px;
