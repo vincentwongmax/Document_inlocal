@@ -697,7 +697,14 @@ onBeforeUnmount(() => {
                   <path d="M8.6 14.6h.01M12 14.6h.01M15.4 14.6h.01" />
                   <path d="M8.6 17.8h3.6" />
                 </svg>
-                <em class="tiny">{{ calc.tokens.length ? '點擊修改' : '點擊輸入金額' }}</em>
+                <!--
+                  0.1.74（需求 2·使用者原話「移除在計算機區域的『點擊修改』的文字」）：
+                  只在**還沒輸入金額**時提示「點擊輸入金額」（引導首次操作）；
+                  已經有數字之後整段不出現 —— 使用者看數字就知道可以點，
+                  那四個字只是雜訊（而且會跟算式／數字搶視覺）。
+                  ⚠ 條件寫在模板上（`v-if`），不要退回成 `calc.tokens.length ? ... : ...` 的三元。
+                -->
+                <em v-if="!calc.tokens.length" class="tiny">點擊輸入金額</em>
               </span>
               <span class="amount__val">
                 <span class="amount__expr num">{{ expr || '\u00a0' }}</span>

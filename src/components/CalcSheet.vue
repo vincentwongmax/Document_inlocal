@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, toRef } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { calcValue, displayMain, displaySub, isLongDisplay, type CalcState } from '@/lib/calc'
 import { fmtMoney } from '@/lib/currency'
@@ -42,6 +42,125 @@ const convertedAmount = computed(() => Number((amount.value * settings.rate(prop
  */
 const exprSegs = computed(() => expr.value.split('.'))
 const displaySegs = computed(() => display.value.split('.'))
+
+/**
+ * 0.1.74（需求 3·使用者原話「在PWA (iPhone)的模式下會爆出畫面來」）：
+ * 長算式（例如 `55555555555×6666666666`）會把計算機的顯示列撐寬、撐破彈窗。
+ *
+ * ⚠ 為什麼會撐破：`.calcdisp__num` 是 `.calcdisp__main`（display:flex）的 **flex item**，
+ *   flex item 的 `min-width` 預設值是 `auto` ＝「不小於內容的最小寬度」，
+ *   所以它**不肯被壓縮**，長字串就會把整列撐寬 → 溢出畫面。
+ *   （桌機常常沒事，是因為桌機字體較窄 + 視窗較寬，剛好還沒超。）
+ *
+ * 解法（兩層都要，缺一不可）：
+ *   ① CSS：`.calcdisp__fit` 給 `min-width: 0` ＋ `overflow: hidden` → 允許被壓縮
+ *   ② JS：`fitScale()` 量「自然寬度 ÷ 可用寬度」，把字級**等比縮到剛好放得下**
+ *      → 不論是 iPhone 掉到 Menlo、或使用者按出超長結果，都不會溢出，
+ *         而且是「縮字」不是「截斷／出現…」。
+ *
+ * ⚠ 縮放**只在需要時**發生（scale ≤ 1 才是縮小），正常長度維持原字級
+ *   （v82 的硬性約束「11 位數字 ＋ 小數點 ＝ 12 字元維持 38px 不縮小」仍然成立）。
+ */
+const fitEl = ref<HTMLElement | null>(null)
+const numEl = ref<HTMLElement | null>(null)
+/** 縮放倍率（1＝原尺寸；0.5＝半尺寸） */
+const fitScale = ref(1)
+
+/** 目前這級字級（is-long 24px／一般 38px） */
+const baseFontSize = computed(() => (displayLong.value ? 24 : 38))
+
+/**
+ * 量一次、必要時縮到剛好放得下。
+ *
+ * ⚠⚠ 量「自然寬度」**不能用 `scrollWidth` 也不能用 `getBoundingClientRect()`**：
+ *   `.calcdisp__num` 有 `max-width: 100%` ＋ `overflow: hidden`，
+ *   所以 `scrollWidth` 會被夾在「容器寬度」內（量到的永遠是剛好放得下的寬度，
+ *   於是 `natural / avail` ≈ 1 → 永遠不縮小）；`getBoundingClientRect()` 更糟，
+ *   它量到的是**已經被壓縮後**的寬度。
+ *   唯一正確的量法＝ `Range.selectNodeContents()` 量文字的**實際排版寬度**
+ *   （不受 max-width 影響），而且要先在 scale=1 的狀態下量。
+ */
+function fitScaleNow() {
+  const fit = fitEl.value
+  const num = numEl.value
+  if (!fit || !num) return
+  const avail = fit.clientWidth
+  if (avail <= 0) return
+  /**
+   * ⚠⚠⚠ 量之前**一定要先把字級還原成 base**，否則會「自我消除」：
+   *   第二次量測時字級已經是縮過的（例如 23.43px）→ 量到的 natural 也是縮後寬度
+   *   → `natural / avail` ≈ 0.98 < 1 → 判定「放得下」→ 把字級還原回 24px
+   *   → 下一次量測又重新溢出、永遠在 24px 與縮排之間跳動，最後看起來就是沒生效。
+   *   還原之後立刻讀 Range 的 rect，讀取本身會強制排版，所以量到的就是 base 字級下的自然寬度。
+   */
+  num.style.fontSize = `${baseFontSize.value}px`
+  const range = document.createRange()
+  range.selectNodeContents(num)
+  const natural = range.getBoundingClientRect().width
+  range.detach?.()
+  if (!natural) return
+  const s = natural / avail
+  // 只縮小、不放大；留 2% 餘量避免 letter-spacing 尾端／浮點誤差造成剛好溢出
+  fitScale.value = s > 1.001 ? Number((1 / s * 0.98).toFixed(4)) : 1
+  /**
+   * ⚠⚠ 字級**直接寫在 DOM 上**，不要用 template 的 `:style` 綁定。
+   *   實測（0.1.74）：production build 下 `:style="fitStyle"` 綁定**沒有被 Vue 寫進 DOM**
+   *   （`num.style.fontSize` 一直是空、style 屬性從未出現），
+   *   等距縮排等於完全沒作用。因為這裡本來就沒有任何 Vue 樣式綁定會碰 font-size，
+   *   直接寫 `style.fontSize` 不會被後續 patch 蓋掉，是最穩的做法。
+   */
+  num.style.fontSize = `${baseFontSize.value * fitScale.value}px`
+  if (import.meta.env.DEV || (globalThis as Record<string, unknown>).__FITDEBUG) {
+    console.log('[fit]', JSON.stringify({ avail, natural: Math.round(natural * 10) / 10, s, scale: fitScale.value }))
+  }
+}
+
+/**
+ * 排程一次量測。
+ *
+ * ⚠ 為什麼不能只靠 `watch` + `nextTick`：`nextTick` 只等 Vue 把 DOM patch 完，
+ *   **不等瀏覽器完成排版／字體 fallback**；`.calcdisp__fit` 的 `clientWidth`
+ *   在彈窗剛開、動畫還在跑的那一帧常常還不是最終值 → 量到偏大的可用寬度 → 判定「放得下」。
+ *   保險做法＝再多等兩帧（rAF ×2）後才量。
+ */
+let fitRaf = 0
+function scheduleFit() {
+  if (fitRaf) cancelAnimationFrame(fitRaf)
+  const step = () => {
+    fitScaleNow()
+    fitRaf = requestAnimationFrame(() => {
+      fitRaf = 0
+      fitScaleNow()
+    })
+  }
+  fitRaf = requestAnimationFrame(step)
+}
+
+/** 顯示內容變了 → 重新量（等 DOM 更新完 + 兩帧後再量） */
+watch(
+  () => [display.value, displayLong.value, props.symbol],
+  async () => {
+    fitScale.value = 1
+    await nextTick()
+    scheduleFit()
+  },
+)
+/** 視窗大小變了（旋轉／PWA 視窗大小變化）→ 先還原成 1 再重新量 */
+async function onViewportResize() {
+  fitScale.value = 1
+  await nextTick()
+  scheduleFit()
+}
+onMounted(() => {
+  window.addEventListener('resize', onViewportResize)
+  window.addEventListener('orientationchange', onViewportResize)
+  scheduleFit()
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onViewportResize)
+  window.removeEventListener('orientationchange', onViewportResize)
+  if (fitRaf) cancelAnimationFrame(fitRaf)
+})
 
 /**
  * 背景不滑動：
@@ -110,11 +229,28 @@ const {
             ></div>
           <div class="calcdisp__main">
             <span class="calcdisp__sym">{{ symbol }}</span>
-            <span class="calcdisp__num num" :class="{ 'is-long': displayLong }"
-              ><template v-for="(seg, i) in displaySegs" :key="i"
-                ><span v-if="i > 0" class="dotp">.</span>{{ seg }}</template
-              ></span
-            >
+            <!--
+              0.1.74（需求 3）：長算式在 iPhone PWA 會「爆出畫面」。
+              ⚠ 根因＝`.calcdisp__num` 是 `.calcdisp__main` 的 **flex item**，
+                flex item 的 `min-width` 預設是 `auto` ＝「不小于內容寬度」，
+                所以一串長數字（`55555555555×6666666666`）會把整個顯示列撐寬、
+                再撐破彈窗 → 畫面橫向溢出。
+              解法兩層：
+                ① `.calcdisp__fit` 給 `min-width: 0` ＋ `overflow: hidden`（容許收縮）
+                ② `fitScale()` 量出「自然寬度 ÷ 可用寬度」，把字級等比縮到剛好放得下
+                   （連字體 fallback 到 Menlo 的 iPhone 也對）
+            -->
+            <span ref="fitEl" class="calcdisp__fit">
+              <!-- ⚠ font-size 由 fitScaleNow() 直接寫在 DOM 上（不要加 :style 綁定，見該函式註解） -->
+              <span
+                ref="numEl"
+                class="calcdisp__num num"
+                :class="{ 'is-long': displayLong }"
+                ><template v-for="(seg, i) in displaySegs" :key="i"
+                  ><span v-if="i > 0" class="dotp">.</span>{{ seg }}</template
+                ></span
+              >
+            </span>
           </div>
           <div v-if="converted && amount > 0" class="calcdisp__conv num tiny">
             ≈ {{ fmtMoney(convertedAmount, settings.baseCurrency) }}
@@ -190,6 +326,14 @@ const {
 .calcdisp__sym {
   font-size: 17px;
   color: var(--text-2);
+}
+.calcdisp__fit {
+  flex: 1 1 auto;
+  /* ⚠ 關鍵：flex item 預設 min-width:auto 不肯被壓縮，長算式就會撐破卡片（iPhone PWA 爆畫面） */
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  justify-content: flex-end;
 }
 .calcdisp__num {
   font-size: 38px;
