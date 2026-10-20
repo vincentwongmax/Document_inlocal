@@ -41,14 +41,19 @@ export interface LightboxNav {
  *                 （記錄明細／記帳頁會給；純檢視舊圖時不給）
  * @param levelLocked 已記錄／已儲存 → 等級列鎖住不能改
  * @param levelBytes  目前這個等級的體積（顯示在等級列右邊）
+ * @param bytes       0.1.73（需求 5）：這張圖的**檔案體積**（跟像素尺寸一起顯示在右上角）
  */
-const props = defineProps<{
-  src: string | null
-  nav?: LightboxNav | null
-  level?: LevelKey | null
-  levelLocked?: boolean
-  levelBytes?: number
-}>()
+const props = withDefaults(
+  defineProps<{
+    src: string | null
+    nav?: LightboxNav | null
+    level?: LevelKey | null
+    levelLocked?: boolean
+    levelBytes?: number
+    bytes?: number
+  }>(),
+  { bytes: 0 },
+)
 const emit = defineEmits<{
   close: []
   'prev-image': []
@@ -59,8 +64,41 @@ const emit = defineEmits<{
   'set-level': [LevelKey]
 }>()
 
-/** 有顯示等級列嗎（父層有給 level 就顯示） */
-const showLevels = computed(() => !!props.level)
+/**
+ * 0.1.73（需求 5／ 6）：
+ *  - **圖片大小**＝像素尺寸＋檔案體積，顯示在右上角關閉鈕的**最左方**
+ *  - 已儲存／已記錄（＝`levelLocked`）時**不再顯示**壓縮等級列
+ *    （使用者原話：「用戶儲存圖片後或用戶記錄圖片後，不要再顯示壓縮『原ABCD』的按鈕」）
+ */
+const showLevels = computed(() => !!props.level && !props.levelLocked)
+
+/** 像素尺寸：`<img>` 載入後量（naturalWidth/Height 是解碼後的原始尺寸） */
+const pxW = ref(0)
+const pxH = ref(0)
+const sizeText = computed(() => {
+  const bits: string[] = []
+  if (pxW.value && pxH.value) bits.push(`${pxW.value}×${pxH.value}`)
+  // 體積優先用 props.bytes，沒給才退回等級列的體積
+  const b = props.bytes || props.levelBytes || 0
+  if (b) bits.push(formatBytes(b))
+  return bits.join(' · ')
+})
+watch(
+  () => props.src,
+  () => {
+    pxW.value = 0
+    pxH.value = 0
+  },
+)
+/** 圖片 decode 完成後記下像素尺寸（右上角那行文字要用） */
+function onImgLoad() {
+  const im = zoomImg.value
+  if (im?.naturalWidth) {
+    pxW.value = im.naturalWidth
+    pxH.value = im.naturalHeight
+  }
+  measureFit()
+}
 
 /**
  * 0.1.72：切等級時**不要**關掉燈箱，也不要重置縮放 ——
@@ -217,7 +255,7 @@ defineExpose({ stageEl })
           :src="src ?? ''"
           alt=""
           :style="zoomStyle"
-          @load="measureFit"
+          @load="onImgLoad"
           @click.stop="onImgClick"
         />
       </div>
@@ -344,6 +382,12 @@ defineExpose({ stageEl })
           </svg>
         </button>
       </div>
+
+      <!--
+        0.1.73（需求 5）：右上角關閉鈕的**最左方**加一行「圖片大小」
+        （像素尺寸 ＋ 檔案體積）。放在關閉鈕左邊、跟它同一列的最右側。
+      -->
+      <span v-if="sizeText" class="lightbox__size num">{{ sizeText }}</span>
 
       <button class="lightbox__x" type="button" title="關閉" aria-label="關閉" @click="close">✕</button>
     </div>
@@ -517,6 +561,24 @@ defineExpose({ stageEl })
 }
 .lbzoom:disabled {
   cursor: default;
+}
+.lightbox__size {
+  position: absolute;
+  top: 14px;
+  /* ⚠ 關閉鈕 38px ＋ 間距：讓這行文字緊貼在✕ 的左邊，不被圖片蓋掉 */
+  right: 62px;
+  max-width: 46vw;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(20, 19, 17, 0.55);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 2;
 }
 .lightbox__x {
   position: absolute;

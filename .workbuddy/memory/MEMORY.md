@@ -4,12 +4,12 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 細節（逐版設計決策、CSS 慣例、測試寫法）在 `CONVENTIONS.md`；這裡只放**每次動手都會用到**的東西。
 
 ## 版本
-- 只加 Z（目前 **0.1.72**）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
+- 只加 Z（目前 **0.1.73**）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
 - ⚠ `.smoke/` 在 .gitignore（測試**不會**進 commit）→ 版本 commit 只含 src/、CHANGELOG、package.json、.workbuddy/memory
 
 ## 開發／驗證
 - preview :4173（**改完必先 build**）；dev :5173（兩個 ls 分開）
-- 回歸 `bash .smoke/run-regress.sh`，**判準＝每支 exit code**；ALL＝v70~v146（70 支，v108 不存在）
+- 回歸 `bash .smoke/run-regress.sh`，**判準＝每支 exit code**；ALL＝v70~v147（71 支，v108 不存在）
 - ⚠⚠ 回歸跑著時**不要編輯 run-regress.sh**；升版後必先 build（APP_VERSION 是編譯期注入）
 - ⚠⚠ **本地回歸 dist 不能帶 VITE_BASE**（preview 伺服在根目錄，帶了全 404 → App 空白假紅）；部署前才帶 base 重建
 - 冷啟 `Navigation timeout 30s`＝**環境假紅**（單獨重跑就好）；v113/v135 等偶發 timing flake 同理
@@ -48,6 +48,7 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 米白紙感；收入墨綠 `#2c6e5b`（`--accent`）、支出 `#bf563c`（`--expense`）、琥珀 `#d9a326`＝旅行、橘 `#c95f16`＝「排」。
 
 ## 近期版本重點
+- **0.1.73** 記帳頁燈箱**即時預覽**修好（根因＝`ReceiptImages.refreshUrl()` **漏了 `await`**；`RecordSheet` 同一函式有 → 沒 await 時下一行讀 `urls.value[id]` 拿到 undefined，`?? lightbox.value` 就保留舊 src。`applyAll`/`onLightboxLevel` 兩處補上）；需求 2「記錄後鎖定＋只存當前等級」經 v147 實測已由 0.1.71 延遲寫入模型滿足；**已儲存/已記錄 → 等級鈕整排不渲染**（`RecordSheet` 改 `v-if="images.length && hasEditable"`、`ImageLightbox` 改 `showLevels = !!level && !levelLocked`，不是灰掉是消失，下次重開也不長）；**所有燈箱右上角關閉鈕左方有「圖片大小」**（像素＋體積如 `1200×1600 · 65 KB`；`.lightbox__size{right:62px}`＋`bytes` prop＋`onImgLoad()` 量 naturalWidth/Height，`ReviewSheet` 也補）；`.dotp` **0.2em→0.3em**（v82 的 12 字元不溢出仍成立）；記帳頁金額**拿掉 `text-overflow: ellipsis`**（「...」的來源）改三級字級 `≤10→32px / 11→24px(is-mid) / ≥12→22px(is-xlong) / >12→19px(is-long)`——⚠ 實測 `.amount__main` 淨寬 207px、扣幣別符號 41px → 數字只有 **166px**，11 位 32px 要 211px、必然裁 36px，別憑感覺猜字級。守門員新 **v147（38 斷言）**；v145 ④ 兩條「全鎖 disabled」斷言改寫為「完全不渲染」
 - **0.1.72**（已部署線上 0.1.72）快速記帳在**原地**開匯入彈窗（`ImportModal` 新增 `tabs` prop 只顯示指定分頁；記帳頁給 `['paste','quick']`，`SettingsView` 的 query watch/`router` 全移除）；壓縮等級改「**燈箱內**一排原/A/B/C/D（`ImageLightbox` 加 `level`/`levelLocked`/`set-level`）＋收據圖片**標題列最右邊全域鈕**（`setLevelAll` 只作用未鎖定的）」，單張圖下方的鈕已移除，C 級改 **540px/110KB**；**即時預覽**靠 `refreshUrl()`（revoke 舊 object URL → 用新 blob 重出，否則只換 blob 畫面不動）；移除「共 N 張…」提示；設定頁新增「**記帳頁暫存資料**」區（`keepDraft`，預設保留）——根因＝`App.vue :key="route.path"` 重掛元件，保留＝`sessionStorage` 草稿＋`ReceiptImages` 的 `keepOnUnmount`（圖片 blob 仍在 `useImgLevels` 暫存區，還原時只收 `hasPending(id)` 的→重開不留破圖）；修 `byCat` 沒傳 `abs-time` 的 bug；計算機 `.` 拆成 `.dotp`（**只能 0.2em＋letter-spacing:0**，見 2026-10-20.md 的實測序列）；統計頁區間最大與區間記錄都吃 `donutType`（收入/支出不混）+ 標題加「每日／每月最大 2 筆」說明。v52 翻新（`.lightbox__bar .lbbtn`、點圖＝關閉、寬度倍率而非 transform）。守門員 v145（44 斷言）＋新 v146（17 斷言）
 - ⚠ **v84 是既有紅燈**（sweetalert2 對話框 padding/按鈕數）：`git stash` 回到 0.1.71 重跑一樣紅 → 與新版無關，未修
 - **0.1.71**（已部署線上 0.1.71）匯入彈窗桌機加寬（`@media(min-width:768px)` scoped 蓋 `.bsheet`＝`min(1080px, 100vw-48)`；手機/PWA 不動；⚠ 桌機 ≥1024 有 232px 側欄→`.page` 實寬 `100vw-232`，1280 下 1048，彈窗取上限不窄於它）；快速記錄標題列灰底補滿（根因＝`.tbl__hd` 盒子 < 7 欄地板寬 486px → `.tbl__hd, .tr { min-width: 486px }`）；記帳頁排版多區塊 8「快速記帳」（預設隱藏）；收據圖五檔壓縮等級＋延遲寫入 IndexedDB（`imgLevels.ts`＋`useImgLevels.ts`）。⚠ 修掉 ImportModal open watch 的 TDZ（immediate 回跑在 `editing` 宣告前 → 以 open=true 建立元件就 ReferenceError）；守門員 v145

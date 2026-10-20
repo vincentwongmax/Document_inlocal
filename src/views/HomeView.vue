@@ -187,8 +187,24 @@ async function resolveHiddenDefaults(): Promise<{
     images: imagesOut,
   }
 }
-/** 只有長公式／很大的結果才縮小字級（單一數字最多 11 位，永遠不會觸發） */
+/**
+ * 只有長公式／很大的結果才縮小字級（單一數字最多 11 位，永遠不會觸發）
+ * 0.1.73（需求 8）：記帳頁的金額跟計算機頁**一樣**——
+ *   11 位以內就用 32px 原級顯示，**不再出現「...」**（CSS 的 ellipsis 已拿掉）。
+ *   12 字元（11 位 ＋ 小數點／負號）降一級、>12 再降一級，確保完整顯示不會被裁掉。
+ */
 const displayLong = computed(() => isLongDisplay(display.value))
+/**
+ * 0.1.73（需求 8·使用者原話「要同樣顯示 11 位，和計算機頁面要一樣，
+ * 在顯示不超過 11 位時，不要用 ...」）：
+ *   記帳頁的金額框淨寬只有 ~166px（390px 手機扣掉幣別符號 41px），
+ *   等寬數字 0.586em → **11 位 32px 需要 211px，必然被裁**。
+ *   既然不能省略、又要完整顯示，就照字元數分三級縮字級（實測值，v147⑧ 驗不裁切）：
+ *   ≤10 字元 32px／11 字元 24px／≥12 字元 22px。
+ */
+const displayMid = computed(() => !displayLong.value && display.value.length >= 11)
+/** 12 字元（11 位 ＋ 小數點／負號）：再降一級 */
+const displayXLong = computed(() => display.value.length >= 12)
 /** 還沒按 = 之前不顯示換算預覽，答案要按了等於才出現 */
 const converted = computed(() => calc.value.done && curCode.value !== settings.baseCurrency)
 
@@ -687,7 +703,15 @@ onBeforeUnmount(() => {
                 <span class="amount__expr num">{{ expr || '\u00a0' }}</span>
                 <span class="amount__main">
                   <span class="amount__sym">{{ currency(curCode).symbol }}</span>
-                  <span class="amount__num num" :class="{ 'is-long': displayLong }">{{ display }}</span>
+                  <span
+                    class="amount__num num"
+                    :class="{
+                      'is-long': displayLong,
+                      'is-mid': displayMid,
+                      'is-xlong': displayXLong,
+                    }"
+                    >{{ display }}</span
+                  >
                 </span>
                 <span v-if="converted && amount > 0" class="amount__conv num tiny">
                   ≈ {{ fmtMoney(convertedAmount, settings.baseCurrency) }}
@@ -1033,11 +1057,25 @@ onBeforeUnmount(() => {
   line-height: 1.1;
   letter-spacing: -0.03em;
   overflow: hidden;
-  text-overflow: ellipsis;
   max-width: 100%;
+  /* 0.1.73（需求 8·使用者原話「在顯示不超過 11 位時，不要用 ...」）：
+     拿掉 text-overflow: ellipsis —— 記帳頁的金額跟計算機頁一樣，
+     11 位以內一定要**完整顯示**，不該被省略號取代。
+     真的太多位時靠下面兩級字級（is-mid／is-long）縮小，而不是截斷。 */
+}
+/* 11 字元（11 位整）：降一級，仍完整顯示、不用「...」 */
+.amount__num.is-mid {
+  font-size: 24px;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+/* 12 字元（11 位 ＋ 小數點／負號）：再降一級 */
+.amount__num.is-xlong {
+  font-size: 22px;
+  letter-spacing: -0.01em;
 }
 .amount__num.is-long {
-  font-size: 22px;
+  font-size: 19px;
   letter-spacing: -0.01em;
   white-space: nowrap;
 }

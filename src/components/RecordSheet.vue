@@ -1328,20 +1328,19 @@ async function save() {
                 0.1.72（需求 3）：收據圖片文字的**最右邊**多一排全域等級鈕 ——
                 選了哪一級，**目前所有還沒儲存**的圖片都改成那一級；
                 使用者隨後可以點開圖片，在圖片頁面裡單張再改（只要還沒儲存）。
+                0.1.73（需求 3／4·使用者澄清）：**只有還沒儲存時才顯示這一排**；
+                一旦按了「儲存」（或打開的是早就記好的那一筆），整排不渲染 ——
+                不是灰掉，是完全不見，下次再打開這一筆也不會長出來。
               -->
-              <div v-if="images.length" class="imgs__lvall" :class="{ 'is-lock': !hasEditable }">
+              <div v-if="images.length && hasEditable" class="imgs__lvall">
                 <button
                   v-for="l in IMG_LEVELS"
                   :key="l.key"
                   class="imgs__lvab"
                   type="button"
-                  :class="{ 'is-on': hasEditable && commonLevel(images) === l.key }"
-                  :disabled="!hasEditable || levelBusy"
-                  :title="
-                    hasEditable
-                      ? `${l.title}（套用到所有還沒儲存的圖片）`
-                      : `${l.title}（都已儲存，不能改了）`
-                  "
+                  :class="{ 'is-on': commonLevel(images) === l.key }"
+                  :disabled="levelBusy"
+                  :title="`${l.title}（套用到所有還沒儲存的圖片）`"
                   @click="applyAll(l.key)"
                 >
                   {{ l.label }}
@@ -1448,6 +1447,7 @@ async function save() {
     :level="lbLevel"
     :level-locked="lbLocked"
     :level-bytes="lbBytes"
+    :bytes="lbBytes"
     @set-level="onLightboxLevel"
     @close="closeLightbox"
     @prev-image="lbPrevImage"

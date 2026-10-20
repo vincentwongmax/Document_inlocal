@@ -108,7 +108,11 @@ const levelBusy = computed(() => !!levelBusyId.value)
  */
 async function applyAll(level: LevelKey) {
   const n = await setLevelAll(props.modelValue, level)
-  for (const im of props.modelValue) refreshUrl(im.id)
+  // ⚠⚠ 0.1.73（需求 1）：這裡與 onLightboxLevel 都**必須 await refreshUrl**。
+  //   refreshUrl 會先 revoke 舊的 object URL、再用新 blob 重出一個；沒 await 的話
+  //   下一行讀 `urls.value[id]` 讀到的還是 undefined → `?? lightbox.value` 保留舊 src，
+  //   圖片就不會換（記錄明細那邊有 await，所以只有記帳頁犯這個錯）。
+  for (const im of props.modelValue) await refreshUrl(im.id)
   if (lbId.value) lightbox.value = urls.value[lbId.value] ?? lightbox.value
   if (n) notify(`已把 ${n} 張還沒記錄的圖片改成 ${level.toUpperCase()} 級`, 'info')
 }
@@ -118,7 +122,7 @@ async function onLightboxLevel(level: LevelKey) {
   const im = lbImage.value
   if (!im || isLocked(im.id)) return
   await setLevel(im, level)
-  refreshUrl(im.id)
+  await refreshUrl(im.id)
   lightbox.value = urls.value[im.id] ?? lightbox.value
 }
 
@@ -409,6 +413,7 @@ const hintText = computed(() => {
       :level="lbLevel"
       :level-locked="lbLocked"
       :level-bytes="lbBytes"
+      :bytes="lbBytes"
       @set-level="onLightboxLevel"
       @close="closeLightbox"
     />

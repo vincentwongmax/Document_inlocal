@@ -221,7 +221,9 @@ const {
  */
 .dotp {
   display: inline-block;
-  font-size: 0.2em;
+  /* 0.1.73（需求 7·使用者回饋「太小請大一點點」）：0.2em → 0.3em。
+     ⚠ 仍受v82 的硬性約束：11 位數字 ＋ 小數點 ＝ 12 字元不能溢出顯示框。 */
+  font-size: 0.3em;
   letter-spacing: 0;
 }
 .calcdisp__conv {

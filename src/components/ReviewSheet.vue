@@ -45,6 +45,8 @@ const lbEl = ref<InstanceType<typeof ImageLightbox> | null>(null)
 useScrollLock(computed(() => up.reviewOpen.value), { scrollable: () => lbEl.value?.stageEl ?? bodyEl.value })
 
 const lightboxSrc = ref<string | null>(null)
+/** 0.1.73（需求 5）：右上角「圖片大小」＝像素尺寸 ＋ 體積（像素由燈箱量，體積在這裡給） */
+const lightboxBytes = ref(0)
 const objectUrls = new Set<string>()
 async function openImage(d: DraftRecord) {
   const im = d.images[0]
@@ -53,6 +55,7 @@ async function openImage(d: DraftRecord) {
   if (!blob) return
   const url = URL.createObjectURL(blob)
   objectUrls.add(url)
+  lightboxBytes.value = im.bytes || blob.size
   lightboxSrc.value = url
 }
 function closeLightbox() {
@@ -60,6 +63,7 @@ function closeLightbox() {
     URL.revokeObjectURL(lightboxSrc.value)
     objectUrls.delete(lightboxSrc.value)
   }
+  lightboxBytes.value = 0
   lightboxSrc.value = null
 }
 onBeforeUnmount(() => {
@@ -270,7 +274,7 @@ function applyDate(d: DraftRecord, iso: string) {
   </Transition>
 
   <!-- 0.1.47：圖片放大檢視（跟記錄明細共用同一顆 ImageLightbox，不另寫查看頁） -->
-  <ImageLightbox ref="lbEl" :src="lightboxSrc" @close="closeLightbox" />
+  <ImageLightbox ref="lbEl" :src="lightboxSrc" :bytes="lightboxBytes" @close="closeLightbox" />
 </template>
 
 <style scoped>
