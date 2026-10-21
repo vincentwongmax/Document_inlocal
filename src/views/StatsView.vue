@@ -72,6 +72,12 @@ const years = computed(() => {
 const st = useStats(range)
 // 0.1.36：顯示幣別——旅行進行中＝旅行貨幣，平時＝主幣別（所有 fmtMoney 的幣別都靠它）
 const base = computed(() => settings.displayCurrency)
+/**
+ * 0.1.76：傳給 `fmtMoney` 的幣別 code —— 數量模式一律 ''（純數字，沒有符號）。
+ * 統計頁所有「完整數字」（title、明細列、甜甜圈中心…）都改吃這一個，
+ * 就不必每個 call site 各自判斷 quantityMode。
+ */
+const moneyCode = computed(() => (settings.quantityMode ? '' : base.value))
 
 const months = computed(() => st.monthList(24))
 const monthIndex = computed(() => months.value.indexOf(month.value))
@@ -231,6 +237,10 @@ function goExcluded() {
 }
 
 const donutType = ref<'expense' | 'income'>('expense')
+/**
+ * 0.1.76：數量模式也有收支 → 甜甜圈跟金錢模式一樣依 `donutType` 切。
+ * （0.1.75 的「不分類型」分支已撤回。）
+ */
 const donutItems = computed(() =>
   donutType.value === 'expense' ? st.expenseByCat.value : st.incomeByCat.value,
 )
@@ -303,8 +313,13 @@ const donutRows = computed<CatRow[]>(() => {
 })
 
 const dailyPoints = computed(() => st.daily.value)
-const dailyTitle = computed(() => (st.granularity.value === 'month' ? '每月收支' : '每日收支'))
+/** 0.1.76：數量模式也有收支 → 標題跟金錢模式一樣說「收支」 */
+const dailyTitle = computed(() => {
+  const unit = st.granularity.value === 'month' ? '每月' : '每日'
+  return `${unit}收支`
+})
 
+/** 「較前期」的百分比（0.1.76：數量模式也依收支，撤回 0.1.75 的合計版） */
 const mom = computed(() => st.momChange.value)
 
 /* ── 摘要卡詳情（0.1.22）───────────────────────────────────
@@ -320,17 +335,17 @@ const expenseRows = computed<DetailRow[]>(() => {
   if (mom.value !== null) {
     out.push({
       label: `前期（${prevLabel.value}）`,
-      value: fmtMoney(st.prevExpense.value, base.value),
+      value: fmtMoney(st.prevExpense.value, moneyCode.value),
     })
     const diff = st.expense.value - st.prevExpense.value
     out.push({
       label: diff >= 0 ? '比前期多' : '比前期少',
-      value: (diff >= 0 ? '+' : '−') + fmtMoney(Math.abs(diff), base.value),
+      value: (diff >= 0 ? '+' : '−') + fmtMoney(Math.abs(diff), moneyCode.value),
       tone: diff >= 0 ? 'up' : 'down',
     })
   }
   const days = Math.max(1, st.spanDays.value)
-  out.push({ label: '本期日均', value: fmtMoney(st.expense.value / days, base.value) })
+  out.push({ label: '本期日均', value: fmtMoney(st.expense.value / days, moneyCode.value) })
   out.push({ label: '支出筆數', value: `${st.rows.value.filter((r) => r.type === 'expense').length} 筆` })
   return out
 })
@@ -348,7 +363,7 @@ const incomeRanks = computed<DetailRank[]>(() => {
   const grand = top[0]?.total || 1
   return top.map((c) => ({
     name: c.name,
-    value: fmtMoney(c.total, base.value),
+    value: fmtMoney(c.total, moneyCode.value),
     ratio: c.total / grand,
     color: c.color,
   }))
@@ -360,7 +375,7 @@ const incomeRows = computed<DetailRow[]>(() => {
   return [
     { label: '來源數', value: `${st.incomeByCat.value.length} 個` },
     { label: '收入筆數', value: `${rows.length} 筆` },
-    { label: '平均每筆', value: fmtMoney(avg, base.value) },
+    { label: '平均每筆', value: fmtMoney(avg, moneyCode.value) },
   ]
 })
 
@@ -370,10 +385,10 @@ const balanceRows = computed<DetailRow[]>(() => {
   const inc = st.rows.value.filter((r) => r.type === 'income').length
   const exp = st.rows.value.filter((r) => r.type === 'expense').length
   return [
-    { label: '收入合計', value: fmtMoney(st.income.value, base.value), tone: 'down' },
-    { label: '支出合計', value: fmtMoney(st.expense.value, base.value), tone: 'up' },
+    { label: '收入合計', value: fmtMoney(st.income.value, moneyCode.value), tone: 'down' },
+    { label: '支出合計', value: fmtMoney(st.expense.value, moneyCode.value), tone: 'up' },
     { label: '記錄筆數', value: `${st.rows.value.length} 筆（收 ${inc}／支 ${exp}）` },
-    { label: '平均每日結餘', value: fmtMoney(st.balance.value / days, base.value) },
+    { label: '平均每日結餘', value: fmtMoney(st.balance.value / days, moneyCode.value) },
   ]
 })
 
@@ -383,7 +398,7 @@ const sumDetail = computed(() => {
   if (k === 'expense') {
     return {
       title: '支出明細',
-      amount: fmtMoney(st.expense.value, base.value),
+      amount: fmtMoney(st.expense.value, moneyCode.value),
       tone: 'up' as const,
       caption: expenseCaption.value,
       rows: expenseRows.value,
@@ -394,7 +409,7 @@ const sumDetail = computed(() => {
   if (k === 'income') {
     return {
       title: '收入明細',
-      amount: fmtMoney(st.income.value, base.value),
+      amount: fmtMoney(st.income.value, moneyCode.value),
       tone: 'down' as const,
       caption: `${st.incomeByCat.value.length} 個來源 · ${st.rows.value.filter((r) => r.type === 'income').length} 筆`,
       rows: incomeRows.value,
@@ -404,7 +419,7 @@ const sumDetail = computed(() => {
   }
   return {
     title: '結餘明細',
-    amount: fmtMoney(st.balance.value, base.value),
+    amount: fmtMoney(st.balance.value, moneyCode.value),
     tone: (st.balance.value < 0 ? 'up' : 'down') as 'up' | 'down',
     caption: rangeLabel.value,
     rows: balanceRows.value,
@@ -486,6 +501,7 @@ const listGroupBy = computed<'day' | 'month'>(() => (mode.value === 'year' ? 'mo
  * 0.1.72 需求 10：區間記錄**只顯示目前選擇的收支類型**（使用者：「如果用戶選擇了收入，
  * 只顯示收入；選擇了支出，只顯示支出，不要混在一起」）。
  * ⚠ 精選（pickedRows）與展開後的清單都吃這裡，切類型時筆數／「顯示更多」跟著變。
+ * 0.1.76：數量模式也有收支 → 跟金錢模式同一套規則。
  */
 const typedRows = computed(() => st.rows.value.filter((r) => r.type === donutType.value))
 
@@ -533,10 +549,15 @@ const listCountLabel = computed(() =>
 /** 還有被精選掉的部分可以展開嗎 */
 const canShowMore = computed(() => !moreRecords.value && pickedRows.value.length < typedRows.value.length)
 
-/** 0.1.72 需求 8：區間最大跟著收支類型走（標題與內容都換） */
+/** 0.1.72 需求 8：區間最大跟著收支類型走（標題與內容都換）。
+ *  0.1.76：數量模式也有收支 → 跟金錢模式一樣。 */
 const topRows = computed(() => st.topRecordsOf(donutType.value))
-const topTitle = computed(() => (donutType.value === 'income' ? '區間最大收入' : '區間最大支出'))
-const topEmptyText = computed(() => (donutType.value === 'income' ? '沒有收入記錄' : '沒有支出記錄'))
+const topTitle = computed(() =>
+  donutType.value === 'income' ? '區間最大收入' : '區間最大支出',
+)
+const topEmptyText = computed(() =>
+  donutType.value === 'income' ? '沒有收入記錄' : '沒有支出記錄',
+)
 
 // 換範圍（日↔月↔年、換月、換年、改自訂日期）就把「顯示更多」收回來，
 // 不然會出現「在這個範圍按了顯示更多，換到別的範圍還開著」的錯亂
@@ -550,13 +571,17 @@ watch([mode, range], () => {
     <div class="page-head">
       <div>
         <h1 class="page-title">統計</h1>
+        <!--
+          0.1.76：數量模式也有收支 → 「累計結餘」恢復（收入 − 支出）；
+          幣別膠囊仍只在金錢模式顯示（數量模式沒有任何貨幣）。
+        -->
         <p class="page-sub">
           共 {{ st.allTime.value.count }} 筆記錄 · 累計結餘
-          {{ fmtMoney(st.allTime.value.income - st.allTime.value.expense, base) }}
+          {{ fmtMoney(st.allTime.value.income - st.allTime.value.expense, moneyCode) }}
         </p>
       </div>
       <!-- 整頁金額都是這個幣別，只在標題右邊標一次，摘要卡就不重複帶符號 -->
-      <span class="page-cur">{{ base }}</span>
+      <span v-if="!settings.quantityMode" class="page-cur">{{ base }}</span>
     </div>
 
     <!-- 區間選擇 -->
@@ -649,29 +674,20 @@ watch([mode, range], () => {
         所以現在卡片裡只有三行：標籤／金額／比較說明，三張卡自然等高。
         點卡片開明細的行為完全不變（整張卡就是一顆 <button>）。
         ⚠ 不要再把任何箭頭／提示加回來。
+        0.1.76：數量模式也有收支 → 三張卡恢復（0.1.75 的「合計」單卡已撤回），
+        金額走 `fmtCompact`（本來就沒有符號），title 吃 `moneyCode`。
     -->
     <div class="sums">
-      <!--
-        0.1.54（使用者原話）：「統計的頁面中，分類佔比的上方，支出、收入、結餘，
-        用 K(千) → 1000 → 1K，M(百萬) → 1,000,000 → 1M 等等顯示
-        （在主頁，子頁面要詳細）」。
-        ⚠⚠ HTML 註解裡不能出現「兩個連字號加右箭頭」的字樣 ——
-          第一次寫的時候把使用者原話的箭頭寫成「--＞」（兩個減號），
-          結果註解在那裡提前結束，後半段變成頁面上看得到的文字（線下截圖抓到）。
-          註解內一律用「→」。
-        → 卡片上的數字走 `fmtCompact`（縮寫）；`title` 與點開後的子頁面
-          （SumDetailSheet／`sumDetail.amount`）維持 `fmtMoney` 的完整數字。
-      -->
       <button class="card sum" type="button" @click="sumOpen = 'expense'">
         <span class="tiny muted">支出</span>
-        <strong class="num sum__exp" :title="fmtMoney(st.expense.value, base)">
+        <strong class="num sum__exp" :title="fmtMoney(st.expense.value, moneyCode)">
           {{ fmtCompact(st.expense.value) }}
         </strong>
         <span
           v-if="mom !== null"
           class="tiny"
           :class="mom > 0 ? 'up' : 'down'"
-          :title="`前期 ${prevLabel}：${fmtMoney(st.prevExpense.value, base)}`"
+          :title="`前期 ${prevLabel}：${fmtMoney(st.prevExpense.value, moneyCode)}`"
         >
           較前期 {{ mom > 0 ? '+' : '' }}{{ (mom * 100).toFixed(0) }}%
         </span>
@@ -679,7 +695,7 @@ watch([mode, range], () => {
       </button>
       <button class="card sum" type="button" @click="sumOpen = 'income'">
         <span class="tiny muted">收入</span>
-        <strong class="num sum__inc" :title="fmtMoney(st.income.value, base)">
+        <strong class="num sum__inc" :title="fmtMoney(st.income.value, moneyCode)">
           {{ fmtCompact(st.income.value) }}
         </strong>
         <span class="tiny muted">{{ st.incomeByCat.value.length }} 個來源</span>
@@ -689,7 +705,7 @@ watch([mode, range], () => {
         <strong
           class="num"
           :class="st.balance.value < 0 ? 'sum__exp' : 'sum__inc'"
-          :title="fmtMoney(st.balance.value, base)"
+          :title="fmtMoney(st.balance.value, moneyCode)"
         >
           {{ fmtCompact(st.balance.value) }}
         </strong>
@@ -719,6 +735,7 @@ watch([mode, range], () => {
       <section class="card block">
         <header class="block__hd">
           <h2>分類佔比</h2>
+          <!-- 0.1.76：數量模式也有收支 → 切換鈕兩種模式都渲染 -->
           <div class="seg2">
             <button :class="{ 'is-on': donutType === 'expense' }" @click="donutType = 'expense'">
               支出
@@ -731,10 +748,10 @@ watch([mode, range], () => {
 
         <div class="donutwrap">
           <div class="donut">
-            <DonutChart :items="donutItems" :currency="base" />
+            <DonutChart :items="donutItems" :currency="moneyCode" />
             <div class="donut__center">
               <span class="tiny muted">{{ donutType === 'expense' ? '總支出' : '總收入' }}</span>
-              <strong class="num">{{ fmtMoney(donutTotal, base) }}</strong>
+              <strong class="num">{{ fmtMoney(donutTotal, moneyCode) }}</strong>
             </div>
           </div>
 
@@ -776,7 +793,7 @@ watch([mode, range], () => {
                   :style="{ width: `${Math.max(2, r.ratio * 100)}%`, background: r.color }"
                 />
               </span>
-              <span class="cat__val num">{{ fmtMoney(r.total, base) }}</span>
+              <span class="cat__val num">{{ fmtMoney(r.total, moneyCode) }}</span>
               <span class="cat__pct num tiny muted">{{ (r.ratio * 100).toFixed(0) }}%</span>
             </li>
           </ul>
@@ -787,7 +804,8 @@ watch([mode, range], () => {
       <section class="card block">
         <header class="block__hd"><h2>{{ dailyTitle }}</h2></header>
         <div class="chartbox chartbox--tall">
-          <DailyChart :points="dailyPoints" :currency="base" />
+          <!-- 0.1.76：數量模式也有收支 → 兩種模式都是「支出／收入」兩條線（撤回 single） -->
+          <DailyChart :points="dailyPoints" :currency="moneyCode" />
         </div>
       </section>
 
@@ -795,7 +813,7 @@ watch([mode, range], () => {
       <section class="card block">
         <header class="block__hd"><h2>近六個月趨勢</h2></header>
         <div class="chartbox">
-          <TrendChart :points="st.trend.value" :currency="base" />
+          <TrendChart :points="st.trend.value" :currency="moneyCode" />
         </div>
       </section>
 
@@ -807,7 +825,9 @@ watch([mode, range], () => {
             <span class="top__rank num">{{ i + 1 }}</span>
             <span class="top__cat">{{ settings.category(r.categoryId)?.name ?? '未分類' }}</span>
             <span class="top__note tiny muted">{{ r.note }}</span>
-            <span class="top__amt num">{{ fmtMoney(settings.displayOf(r), settings.displayCurrency) }}</span>
+            <span class="top__amt num">{{
+              fmtMoney(settings.displayOf(r), moneyCode)
+            }}</span>
           </li>
         </ul>
         <p v-if="!topRows.length" class="muted tiny">{{ topEmptyText }}</p>
@@ -862,15 +882,18 @@ watch([mode, range], () => {
         <span class="exclsum__t">未計入統計</span>
         <span class="tiny muted">{{ st.excludedRows.value.length }} 筆</span>
       </span>
-      <span class="tiny muted excl__hint">不計入上面的收支、分類佔比與圖表；點擊在記錄頁查看這些記錄</span>
+      <span class="tiny muted excl__hint">
+        不計入上面的收支、分類佔比與圖表；點擊在記錄頁查看這些記錄
+      </span>
       <span class="exclsum__nums">
+        <!-- 0.1.76：數量模式也有收支 → 支出／收入兩格恢復（title 吃 moneyCode） -->
         <span class="exclsum__col">
           <span class="tiny muted">支出</span>
-          <strong class="num sum__exp" :title="fmtMoney(exclExpense, base)">{{ fmtCompact(exclExpense) }}</strong>
+          <strong class="num sum__exp" :title="fmtMoney(exclExpense, moneyCode)">{{ fmtCompact(exclExpense) }}</strong>
         </span>
         <span v-if="exclIncome > 0" class="exclsum__col">
           <span class="tiny muted">收入</span>
-          <strong class="num sum__inc" :title="fmtMoney(exclIncome, base)">{{ fmtCompact(exclIncome) }}</strong>
+          <strong class="num sum__inc" :title="fmtMoney(exclIncome, moneyCode)">{{ fmtCompact(exclIncome) }}</strong>
         </span>
       </span>
     </button>
@@ -1018,6 +1041,7 @@ watch([mode, range], () => {
   gap: 8px;
   margin-bottom: 18px;
 }
+/* 0.1.75 的 `.sums--one`（數量模式單卡）已隨 0.1.76 收支恢復而移除 */
 .sum {
   padding: 12px 12px;
   display: flex;

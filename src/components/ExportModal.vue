@@ -180,8 +180,10 @@ const groups = computed<ExcelWalletGroup[]>(() => {
       walletId: w.id,
       name: w.name,
       records: mine,
-      pathNamesOf: (id) => pathNamesOfIn(s.categories, id),
+      // 0.1.75：數量模式用獨立的分類樹（qCategories），Excel 欄位也會跟著少幾欄
+      pathNamesOf: (id) => pathNamesOfIn(s.quantityMode ? s.qCategories : s.categories, id),
       baseCurrency: s.baseCurrency,
+      quantityMode: s.quantityMode === true,
     })
   }
   return out
@@ -427,7 +429,8 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
           這個範圍裡沒有記錄，換個區間或選「全部記錄」
         </p>
         <p v-else-if="format === 'excel'" class="tiny muted sum__hint">
-          只含記錄，不含分類樹、匯率、常用備註等設定
+          <!-- 0.1.75：數量模式沒有匯率 → 提示不提「匯率」 -->
+          {{ settings.quantityMode ? '只含記錄，不含分類樹、常用備註等設定' : '只含記錄，不含分類樹、匯率、常用備註等設定' }}
         </p>
         <p v-else class="tiny muted sum__hint">
           設定會跟著記錄一起帶走，之後可以匯入還原

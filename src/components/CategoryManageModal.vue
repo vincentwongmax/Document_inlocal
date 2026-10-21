@@ -15,13 +15,17 @@ const props = withDefaults(
     open: boolean
     /** 可選的分類（由外部給，通常為未封存的支出＋收入） */
     categories: Category[]
+    /**
+     * 0.1.75（數量模式）：不分收支 → 整塊「類型」選項不出現（分類照樣可建可改）。
+     */
+    noType?: boolean
     defaultType?: TxType
     /** 每個分類被幾筆記錄使用，用來在刪除前提醒 */
     usage?: Record<string, number>
     /** 目前設定的「預設分類」id（記帳頁每次打開都自動預選的那一個） */
     defaultId?: string
   }>(),
-  { defaultType: 'expense', usage: () => ({}), defaultId: '' },
+  { noType: false, defaultType: 'expense', usage: () => ({}), defaultId: '' },
 )
 const emit = defineEmits<{
   close: []
@@ -396,8 +400,11 @@ async function askRemove() {
         <div ref="boxEl" class="box bsheet__body">
           <h3>{{ title }}</h3>
 
-        <!-- 類型放最上面：它決定下面兩個下拉各會列出哪些分類（只列同一種收支） -->
-        <div class="lb">
+        <!--
+          類型放最上面：它決定下面兩個下拉各會列出哪些分類（只列同一種收支）。
+          0.1.75（數量模式）：沒有收支之分 → 整塊不出現。
+        -->
+        <div v-if="!noType" class="lb">
           <span>
             類型
             <em v-if="typeLocked" class="lb__hint">

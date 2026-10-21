@@ -121,7 +121,8 @@ export function useUpload() {
         type: 'expense',
         categoryId: firstExpense,
         amount: null,
-        currency: settings.preferredCurrency || settings.baseCurrency,
+        // 0.1.75：數量模式一開始就用主幣別（畫面沒有下拉可改）
+        currency: settings.quantityMode ? settings.baseCurrency : settings.preferredCurrency || settings.baseCurrency,
         note: '',
         status: 'pending',
       })
@@ -182,7 +183,10 @@ export function useUpload() {
       (d) => (only ? only.includes(d.key) : true) && d.status !== 'duplicate' && d.amount !== null && d.amount > 0,
     )
     if (!list.length) {
-      notify('沒有可新增的記錄（金額為空或已略過）', 'warn')
+      notify(
+        settings.quantityMode ? '沒有可新增的記錄（數量為空或已略過）' : '沒有可新增的記錄（金額為空或已略過）',
+        'warn',
+      )
       return 0
     }
     const added: string[] = []
@@ -191,7 +195,8 @@ export function useUpload() {
         type: d.type,
         categoryId: d.categoryId,
         amount: d.amount as number,
-        currency: d.currency,
+        // 0.1.75：數量模式沒有幣別 → 一律寫主幣別（rate 自然凍結成 1）
+        currency: settings.quantityMode ? settings.baseCurrency : d.currency,
         occurredAt: d.occurredAt,
         note: d.note,
         images: d.images,

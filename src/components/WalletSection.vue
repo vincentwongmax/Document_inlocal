@@ -5,6 +5,10 @@
  * 每個錢包有**自己的一整套記錄與設定**（分類、匯率、幣別、常用備註），
  * 切換錢包等於換一本帳。這裡負責：切換、新增、改名、換色換圖示、刪除、排序。
  *
+ * 0.1.75：**數量模式**（每本錢包各自開關）。金錢模式切數量模式時若這本還有舊記錄，
+ *   會先彈提示「幣別會被移除、只剩下數量，建議先匯出備份」——使用者按「先匯出備份」
+ *   就 `emit('backup')` 叫設定頁把匯出彈窗打開（預設就是全部錢包，正好是完整備份）。
+ *
  * ⚠ 「裡面還有記錄就不給刪」這條擋在這裡（不是擋在 store）：
  *   settings store 拿不到記錄筆數（records store 反過來 import settings，會循環），
  *   所以 store 只負責「至少保留一個錢包」，筆數由這裡查 records.countByWallet。
@@ -27,8 +31,83 @@ import type { Wallet } from '@/types'
 const records = useRecordsStore()
 const settings = useSettingsStore()
 
+const emit = defineEmits<{
+  /** 0.1.75：使用者選擇「先匯出備份」再切數量模式 → 請設定頁打開匯出彈窗 */
+  backup: []
+}>()
+
 const countOf = (id: string) => records.countByWallet[id] ?? 0
 const isOnly = computed(() => settings.wallets.length <= 1)
+
+/* ── 數量模式（0.1.75）─────────────────────────────────────
+ * 每個錢包各自開關。這裡用一份**本地快照**顯示每本錢包目前的模式：
+ *   - 當前錢包讀 store 的 reactive state（一定準）
+ *   - 其他錢包讀一次 storage（只在這裡切換，切完就更新快照，不會過期）
+ */
+const qtyFlags = ref<Record<string, boolean>>({})
+function refreshQtyFlags() {
+  const out: Record<string, boolean> = {}
+  for (const w of settings.wallets) out[w.id] = settings.quantityModeOf(w.id)
+  qtyFlags.value = out
+}
+refreshQtyFlags()
+const qtyOn = (id: string) => qtyFlags.value[id] === true
+
+/**
+ * 切換數量模式前的確認流程（使用者原話）：
+ *   「用戶如果有舊數據，在錢包的頁面，錢模式轉數量模式時，彈出提示會移除貨幣種類
+ *     (如MOP,HKD )，只剩下數量，叫用戶先備份，彈出匯出備份的頁面，
+ *     數量模式時轉錢模式時，全部默認設定做主幣別的幣種。」
+ */
+async function askQuantityMode(w: Wallet) {
+  const on = !qtyOn(w.id)
+  if (on) {
+    const n = countOf(w.id)
+    if (n > 0) {
+      const r = await confirmDialog({
+        title: '切換成數量模式？',
+        message: `「${w.name}」目前有 ${n} 筆記錄。切換後幣別（MOP／HKD 等）與匯率會被移除，每筆只保留當初輸入的數量。建議先匯出備份。`,
+        confirmText: '我還是要切換',
+        denyText: '先匯出備份',
+        cancelText: '取消',
+        danger: true,
+      })
+      if (r === 'deny') {
+        // 只打開備份彈窗，**不切換**——等使用者匯出完自己再按一次
+        emit('backup')
+        notify('匯出備份完成後，再按一次這個按鈕就能切換', 'info')
+        return
+      }
+      if (r !== 'confirm') return
+    }
+    applyQuantityMode(w, true)
+    return
+  }
+
+  const r = await confirmDialog({
+    title: '切回金錢模式？',
+    message: `「${w.name}」會恢復顯示幣別與收支。數量模式期間已移除幣別資訊，所有記錄將一律以主幣別（${settings.baseCurrency}）計算。`,
+    confirmText: '切回金錢模式',
+    cancelText: '先不要',
+  })
+  if (r !== 'confirm') return
+  applyQuantityMode(w, false)
+}
+
+function applyQuantityMode(w: Wallet, on: boolean) {
+  if (!settings.setQuantityModeFor(w.id, on)) {
+    notify('找不到這個錢包', 'warn')
+    return
+  }
+  if (on) {
+    // 幣別／匯率從記錄上摘掉（只留數量）。切回金錢模式時全部以主幣別計，
+    // 正是 stripCurrency 寫進去的值，所以切回不需要再改寫一次。
+    const n = records.stripCurrency(w.id)
+    if (n > 0) notify(`已將 ${n} 筆記錄改成只有數量`, 'info')
+  }
+  refreshQtyFlags()
+  notify(on ? `「${w.name}」已切換成數量模式` : `「${w.name}」已切回金錢模式`, 'ok')
+}
 
 /* ── 編輯面板（新增與改名共用） ─────────────────────────── */
 type Editor = {
@@ -204,7 +283,12 @@ function avatarStyle(color: string) {
       <div class="sec__meta">
         <h2 class="sec__title">錢包</h2>
         <p class="sec__desc">
-          每個錢包有自己的記錄與設定（分類、匯率、幣別、常用備註）。切換錢包就是換一本帳
+          <!-- 0.1.75：數量模式沒有匯率與幣別 → 描述不提那兩項 -->
+          {{
+            settings.quantityMode
+              ? '每個錢包有自己的記錄與設定（分類、常用備註）。切換錢包就是換一本帳'
+              : '每個錢包有自己的記錄與設定（分類、匯率、幣別、常用備註）。切換錢包就是換一本帳'
+          }}
         </p>
       </div>
     </header>
@@ -229,7 +313,18 @@ function avatarStyle(color: string) {
             </span>
             <span class="wcard__meta">
               <span class="wcard__name">{{ w.name }}</span>
-              <span class="wcard__sub">{{ countOf(w.id) }} 筆記錄</span>
+              <span class="wcard__row">
+                <span class="wcard__sub">{{ countOf(w.id) }} 筆記錄</span>
+                <!--
+                  0.1.75：這本錢包現在記的是「錢」還是「數量」。
+                  ⚠ 刻意放在 .wcard__sub **外面**：舊測試（v99）對 .wcard__sub
+                    是精確比對（"2 筆記錄"），徽章黏在裡面會讓它變成
+                    "2 筆記錄金錢模式" 而失敗。
+                -->
+                <span class="wcard__mode" :class="{ 'is-qty': qtyOn(w.id) }">{{
+                  qtyOn(w.id) ? '數量模式' : '金錢模式'
+                }}</span>
+              </span>
             </span>
             <span v-if="w.id === settings.activeWalletId" class="wcard__on">使用中</span>
           </button>
@@ -237,6 +332,28 @@ function avatarStyle(color: string) {
           <button class="wcard__btn" type="button" aria-label="編輯錢包" @click="startEdit(w)">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3z" />
+            </svg>
+          </button>
+
+          <!--
+            0.1.75：數量模式開關（每本錢包各自）。
+            ⚠ 一定要放在 .wcard__main **外面**：main 本身是顆按鈕，
+              按鈕裡再放按鈕是無效 HTML，iOS 上還會點不動。
+            ⚠ 也要放在「編輯錢包」**後面**：v99 等舊測試用
+              `card.querySelector('.wcard__btn')` 點「第一顆」小按鈕（＝編輯），
+              排在前面會讓那些測試點到這顆開關。
+          -->
+          <button
+            class="wcard__btn wcard__qty"
+            :class="{ 'is-on': qtyOn(w.id) }"
+            type="button"
+            :aria-label="qtyOn(w.id) ? '切回金錢模式' : '切換成數量模式'"
+            :title="qtyOn(w.id) ? '這本是數量模式，按一下切回金錢模式' : '這本是金錢模式，按一下切換成數量模式'"
+            @click="askQuantityMode(w)"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 7h14M5 12h9M5 17h5" />
+              <path d="M16.5 14.5v4M14.5 16.5h4" />
             </svg>
           </button>
 
@@ -467,6 +584,13 @@ function avatarStyle(color: string) {
   color: var(--text-3);
   font-family: var(--font-num);
 }
+/* 0.1.75：筆數與模式徽章同一行（徽章在 .wcard__sub 外面，見模板註解） */
+.wcard__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
 .wcard__on {
   flex: none;
   font-size: 11px;
@@ -499,6 +623,33 @@ function avatarStyle(color: string) {
 }
 .wcard__btn:hover {
   color: var(--text-2);
+}
+/*
+ * 0.1.75：模式徽章（金錢模式／數量模式）。
+ * 「數量」用琥珀色——那是旅行模式的顏色，但視覺上「不是錢」的語意一致；
+ * 金錢模式用中性灰，不搶「使用中」那顆墨綠徽章的焦點。
+ */
+.wcard__mode {
+  display: inline-block;
+  flex: none;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 700;
+  font-family: inherit;
+  line-height: 16px;
+}
+.wcard__mode.is-qty {
+  color: var(--amber);
+  border-color: var(--amber-line);
+  background: var(--amber-soft);
+}
+/* 數量模式開關：開啟時用琥珀色填滿，一眼看得出來哪幾本是「記數量」的 */
+.wcard__qty.is-on {
+  color: var(--amber);
 }
 .wcard__grip svg {
   fill: currentColor;

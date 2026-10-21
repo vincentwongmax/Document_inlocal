@@ -67,6 +67,11 @@ export interface ExcelWalletGroup {
   pathNamesOf: (categoryId: string) => string[]
   /** 這個錢包的主幣別（「主幣金額」欄標題的註記用） */
   baseCurrency: string
+  /**
+   * 0.1.75：這個錢包是不是數量模式。
+   * 數量模式沒有收支／幣別／匯率 → 那幾欄整組不出現，「金額」改叫「數量」。
+   */
+  quantityMode?: boolean
 }
 
 /* ── 檔名處理 ───────────────────────────────────────────── */
@@ -210,9 +215,9 @@ export async function buildExcelExport(input: {
 
   const xlsxEntries: ZipEntry[] = []
   for (const g of normalized) {
-    const columns = buildColumns(g.list, g.baseCurrency)
+    const columns = buildColumns(g.list, g.baseCurrency, g.quantityMode === true)
     const mine = pathsByWallet.get(g.walletId) ?? new Map<string, string>()
-    const rows = g.list.map((r) => rowOf(r, g.pathNamesOf, mine, columns.hasBaseColumn))
+    const rows = g.list.map((r) => rowOf(r, g.pathNamesOf, mine, columns.hasBaseColumn, g.quantityMode === true))
     const bytes = await buildXlsx([{ name: '記錄', columns: columns.list, rows }])
 
     // 檔名：單一錢包沿用舊行為（ledger-…），多錢包改成帶錢包名，免得互相蓋掉
@@ -274,7 +279,27 @@ function sortByTime(records: TxRecord[]): TxRecord[] {
 function buildColumns(
   list: TxRecord[],
   baseCurrency: string,
+  quantityMode = false,
 ): { list: XlsxColumn[]; hasBaseColumn: boolean } {
+  // 0.1.75：數量模式沒有幣別／匯率，金額叫「數量」（rate 一律是 1，
+  // 主幣金額恆等於金額，所以那一欄也不必留）
+  // 0.1.76：收支恢復 → 「收支」欄加回來（銷貨／庫存是一正一負，匯出也要分得出來）
+  if (quantityMode) {
+    return {
+      hasBaseColumn: false,
+      list: [
+        { label: '日期時間', width: 18, kind: 'date' },
+        { label: '收支', width: 6, kind: 'int' },
+        { label: '分類', width: 12, kind: 'text' },
+        { label: '子分類', width: 16, kind: 'text' },
+        { label: '數量', width: 12, kind: 'money' },
+        { label: '備註', width: 28, kind: 'wrap' },
+        { label: '算式', width: 16, kind: 'text' },
+        { label: '圖片檔名（ZIP 內）', width: 34, kind: 'wrap' },
+        { label: '圖片張數', width: 9, kind: 'int' },
+      ] as XlsxColumn[],
+    }
+  }
   const baseSet = new Set(list.map((r) => r.baseCurrency))
   const mixedBase = baseSet.size > 1
   const onlyBase = mixedBase ? '' : [...baseSet][0] || baseCurrency
@@ -303,10 +328,26 @@ function rowOf(
   pathNamesOf: (id: string) => string[],
   pathByImage: Map<string, string>,
   mixedBase: boolean,
+  quantityMode = false,
 ): (string | number | Date | null)[] {
   const path = pathNamesOf(r.categoryId)
   const paths = (r.images ?? []).map((im) => pathByImage.get(im.id)).filter((x): x is string => !!x)
   const d = new Date(r.occurredAt)
+  // 0.1.75：數量模式 —— 沒有幣別／匯率／主幣金額（見 buildColumns）
+  // 0.1.76：收支恢復 → 第二欄寫「支出／收入」
+  if (quantityMode) {
+    return [
+      isNaN(d.getTime()) ? formatFull(r.occurredAt) : d,
+      r.type === 'expense' ? '支出' : '收入',
+      path[0] ?? PICK_FALLBACK,
+      path.slice(1).join(' › '),
+      r.amount,
+      r.note ?? '',
+      r.expr ? displayExpr(r.expr) : '',
+      paths.join('\n'),
+      paths.length,
+    ]
+  }
   return [
     isNaN(d.getTime()) ? formatFull(r.occurredAt) : d,
     r.type === 'expense' ? '支出' : '收入',

@@ -89,15 +89,27 @@ const previewLabel = computed(() => {
   return raw !== '' && Number.isFinite(n) && n > 0 ? String(n) : '—'
 })
 const previewLine = computed(() => {
-  const bits: string[] = [draft.value.type === 'expense' ? '支出' : '收入']
-  if (draft.value.currency) bits.push(`以 ${draft.value.currency} 記錄`)
+  const bits: string[] = []
+  // 0.1.76：數量模式也有收支 → 預覽行恢復「支出／收入」
+  bits.push(draft.value.type === 'expense' ? '支出' : '收入')
+  if (draft.value.currency && !settings.quantityMode) bits.push(`以 ${draft.value.currency} 記錄`)
   const cat = draft.value.categoryId ? settings.category(draft.value.categoryId) : null
   if (cat) bits.push(settings.fullNameOf(cat.id))
   const note = String(draft.value.note ?? '').trim()
   if (note) bits.push(note)
   return bits.join(' · ')
 })
-const title = computed(() => (editing.value ? (isEdit.value ? '修改快速金額' : '新增快速金額') : '快速金額'))
+/** 0.1.75：數量模式整份叫「快速記錄」（原本是「快速金額」） */
+const title = computed(() => {
+  if (!editing.value) return settings.quantityMode ? '快速記錄' : '快速金額'
+  return settings.quantityMode
+    ? isEdit.value
+      ? '修改快速記錄'
+      : '新增快速記錄'
+    : isEdit.value
+      ? '修改快速金額'
+      : '新增快速金額'
+})
 
 /** 分類選單：只列**這個草稿的收支類型**底下的分類（＋空＝維持目前） */
 const catOptions = computed(() => settings.categoriesByType(draft.value.type))
@@ -122,7 +134,7 @@ const rows = computed(() =>
   settings.quickPresets.map((p, i) => {
     const cat = p.categoryId ? settings.category(p.categoryId) ?? null : null
     const bits: string[] = []
-    if (p.amount > 0) bits.push(`金額 ${p.amount}`)
+    if (p.amount > 0) bits.push(`${settings.quantityMode ? '數量' : '金額'} ${p.amount}`)
     if (cat) bits.push(settings.fullNameOf(cat.id))
     if (p.note.trim()) bits.push(p.note.trim())
     return { idx: i + 1, preset: p, label: p.amount > 0 ? String(p.amount) : '—', summary: bits.join(' · ') || '還沒設定內容' }
@@ -136,7 +148,7 @@ function submit() {
   const n = Number(raw)
   const amount = raw === '' ? 0 : Number.isFinite(n) && n >= 0 ? n : 0
   if (amount <= 0) {
-    notify('金額要是大於 0 的數字', 'warn')
+    notify(settings.quantityMode ? '數量要是大於 0 的數字' : '金額要是大於 0 的數字', 'warn')
     return
   }
   const patch = {
@@ -154,7 +166,16 @@ function submit() {
     const p = settings.quickPresets[settings.quickPresets.length - 1]
     if (p) settings.updateQuickPreset(p.id, patch)
   }
-  notify(isEdit.value ? '已更新快速金額' : '已新增快速金額', 'ok')
+  notify(
+    isEdit.value
+      ? settings.quantityMode
+        ? '已更新快速記錄'
+        : '已更新快速金額'
+      : settings.quantityMode
+        ? '已新增快速記錄'
+        : '已新增快速金額',
+    'ok',
+  )
   backToList()
 }
 
@@ -164,7 +185,9 @@ async function askRemove() {
   if (!target?.id) return
   const answer = await confirmDialog({
     title: `刪除「${target.amount > 0 ? target.amount : '—'}」這一顆？`,
-    message: '刪除後記帳頁金額框裡就少這一顆按鈕（不會動到任何記錄）。',
+    message: settings.quantityMode
+      ? '刪除後記帳頁數量框裡就少這一顆按鈕（不會動到任何記錄）。'
+      : '刪除後記帳頁金額框裡就少這一顆按鈕（不會動到任何記錄）。',
     confirmText: '刪除',
     danger: true,
   })
@@ -218,11 +241,13 @@ async function askRemove() {
           <!-- ══ 清單態：列出每一顆，點一下進去改 ══ -->
           <template v-if="!editing">
             <p class="tiny muted hint">
-              點任何一顆進去修改；排在前面的會排在記帳頁金額框的左邊。
-              按鈕上只顯示金額，分類與備註會在點下去的時候一起帶入。
+              點任何一顆進去修改；排在前面的會排在記帳頁{{ settings.quantityMode ? '數量' : '金額' }}框的左邊。
+              按鈕上只顯示{{ settings.quantityMode ? '數量' : '金額' }}，分類與備註會在點下去的時候一起帶入。
             </p>
 
-            <p v-if="!rows.length" class="tiny muted none">還沒有任何快速金額，按下面的「新增」加第一顆。</p>
+            <p v-if="!rows.length" class="tiny muted none">
+              還沒有任何{{ settings.quantityMode ? '快速記錄' : '快速金額' }}，按下面的「新增」加第一顆。
+            </p>
             <div v-else class="list">
               <button
                 v-for="r in rows"
@@ -259,10 +284,11 @@ async function askRemove() {
                 </span>
               </div>
 
-              <!-- 金額 ＋ 貨幣：同一排（記帳頁也是金額旁邊掛幣別） -->
-              <div class="grid2">
+              <!-- 金額 ＋ 貨幣：同一排（記帳頁也是金額旁邊掛幣別）。
+                   0.1.75：數量模式改名「數量」，且整列沒有「貨幣」 → 只剩一格 -->
+              <div class="grid2" :class="{ 'grid2--one': settings.quantityMode }">
                 <label class="lb">
-                  <span>金額 <em class="lb__hint">必填</em></span>
+                  <span>{{ settings.quantityMode ? '數量' : '金額' }} <em class="lb__hint">必填</em></span>
                   <input
                     v-model="draft.amount"
                     class="field num"
@@ -280,7 +306,7 @@ async function askRemove() {
                   把貨幣欄撐得比金額高，整行看起來走位。
                   「（預設）」這個選項本身就是說明，夠了。
                 -->
-                <label class="lb">
+                <label v-if="!settings.quantityMode" class="lb">
                   <span>貨幣</span>
                   <select v-model="draft.currency" class="field">
                     <option value="">（預設）</option>
@@ -291,7 +317,8 @@ async function askRemove() {
                 </label>
               </div>
 
-              <!-- 類型：兩顆切換鈕（支出帶支出色、收入帶收入色），比下拉好按 -->
+              <!-- 類型：兩顆切換鈕（支出帶支出色、收入帶收入色），比下拉好按。
+                   0.1.76：數量模式也有收支 → 兩種模式都渲染 -->
               <div class="lb">
                 <span>類型</span>
                 <div class="type2">
@@ -506,6 +533,10 @@ async function askRemove() {
   gap: 8px;
   /* 兩個欄位各自等高，標籤不會一高一低 */
   align-items: start;
+}
+/* 0.1.75：數量模式沒有「貨幣」那一欄 → 數量自己吃滿整行 */
+.grid2--one {
+  grid-template-columns: minmax(0, 1fr);
 }
 .grid2 .lb {
   min-width: 0;

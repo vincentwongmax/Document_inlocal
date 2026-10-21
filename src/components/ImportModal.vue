@@ -88,6 +88,8 @@ const ctx = computed<QuickParseCtx>(() => ({
     ...Object.keys(settings.state.rates),
   ]),
   defaultCurrency: settings.inputCurrency,
+  // 0.1.76：數量模式也有收支 → 解析器照樣認 A／B；只有「貨幣」仍跳過
+  quantityMode: settings.quantityMode,
 }))
 /** id → 分類（格子顯示分類名用） */
 const catMap = computed(() => new Map(ctx.value.categories.map((c) => [c.id, c])))
@@ -134,14 +136,27 @@ const badCount = computed(() => drafts.value.filter((d) => d.issues.length > 0).
 
 /* ── 表格 ─────────────────────────────────────────────────── */
 type ColKey = 'type' | 'currency' | 'amount' | 'categoryId' | 'note' | 'occurredAt'
-const COLS: { key: ColKey; label: string }[] = [
-  { key: 'type', label: '收支' },
-  { key: 'currency', label: '貨幣' },
-  { key: 'amount', label: '金額' },
-  { key: 'categoryId', label: '分類' },
-  { key: 'note', label: '備註' },
-  { key: 'occurredAt', label: '日期時間' },
-]
+/**
+ * 0.1.76：數量模式也有收支 → 只少「貨幣」一欄（0.1.75 是少兩欄）。
+ */
+const COLS = computed<{ key: ColKey; label: string }[]>(() =>
+  settings.quantityMode
+    ? [
+        { key: 'type', label: '收支' },
+        { key: 'amount', label: '數量' },
+        { key: 'categoryId', label: '分類' },
+        { key: 'note', label: '備註' },
+        { key: 'occurredAt', label: '日期時間' },
+      ]
+    : [
+        { key: 'type', label: '收支' },
+        { key: 'currency', label: '貨幣' },
+        { key: 'amount', label: '金額' },
+        { key: 'categoryId', label: '分類' },
+        { key: 'note', label: '備註' },
+        { key: 'occurredAt', label: '日期時間' },
+      ],
+)
 
 function cellText(row: QuickDraft, col: ColKey): string {
   if (col === 'type') return row.type === 'expense' ? '支出' : '收入'
@@ -155,7 +170,7 @@ function cellText(row: QuickDraft, col: ColKey): string {
 /** 這一格有沒有「不完整」的問題（標紅用） */
 function badCell(row: QuickDraft, col: ColKey): boolean {
   const has = (s: string) => row.issues.some((x) => x.includes(s))
-  if (col === 'amount') return has('金額')
+  if (col === 'amount') return has(settings.quantityMode ? '數量' : '金額')
   if (col === 'categoryId') return has('分類')
   return false
 }
@@ -210,7 +225,7 @@ watch(
   { immediate: true },
 )
 
-const editColLabel = computed(() => COLS.find((c) => c.key === editing.value?.col)?.label ?? '')
+const editColLabel = computed(() => COLS.value.find((c) => c.key === editing.value?.col)?.label ?? '')
 const editHint = computed(() => {
   switch (editing.value?.col) {
     case 'type':
@@ -286,7 +301,7 @@ function applyEdit() {
     row.currency = v
   } else if (ed.col === 'amount') {
     const v = parseAmountText(t)
-    if (!v) return fail('金額請填大於 0 的數字')
+    if (!v) return fail(settings.quantityMode ? '數量請填大於 0 的數字' : '金額請填大於 0 的數字')
     row.amount = v
   } else if (ed.col === 'categoryId') {
     const v = parseCategoryText(t, row.type, ctx.value)
@@ -303,10 +318,11 @@ function applyEdit() {
     }
   }
 
-  recheckDraft(row)
+  recheckDraft(row, settings.quantityMode)
   // 分類的收支別要跟這一列相同（換了收支之後舊分類會不合身）
+  // 0.1.76：數量模式的分類不分收支（qCategories 全部是同一型）→ 不做這項檢查
   const cat = catMap.value.get(row.categoryId)
-  if (cat && cat.type !== row.type) row.issues.push('分類與收支不符')
+  if (!settings.quantityMode && cat && cat.type !== row.type) row.issues.push('分類與收支不符')
   editing.value = null
 }
 
@@ -320,7 +336,8 @@ function submit() {
       type: d.type,
       categoryId: d.categoryId,
       amount: d.amount,
-      currency: d.currency,
+      // 0.1.75：數量模式沒有幣別 → 一律寫主幣別（rate 自然凍結成 1）
+      currency: settings.quantityMode ? settings.baseCurrency : d.currency,
       occurredAt: d.occurredAt,
       note: d.note,
       source: 'manual',
@@ -460,15 +477,19 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
               class="ta"
               rows="6"
               spellcheck="false"
-              placeholder="A MOP 10 1 test 2026/10/17 23:13&#10;100 1 test1 2026/10/17 23:13"
+              :placeholder="
+                settings.quantityMode
+                  ? 'A 100 1 test1 2026/10/17 23:13\nB 50 2 test2 2026/10/17 23:14'
+                  : 'A MOP 10 1 test 2026/10/17 23:13\n100 1 test1 2026/10/17 23:13'
+              "
             ></textarea>
             <div class="help">
               <p class="help__t tiny">格式說明</p>
               <ul class="help__list tiny">
                 <li><b>收支</b>：A／支出＝支出，B／收入＝收入（沒填＝支出）</li>
-                <li><b>貨幣</b>：MOP、HKD…（沒填＝記帳幣別）</li>
-                <li><b>金額</b>：第一個數字（必填）</li>
-                <li><b>分類</b>：編號或全名；編號請對照「設定 → 分類」區每顆分類前面的號碼（同收支別、由 1 起）</li>
+                <li v-if="!settings.quantityMode"><b>貨幣</b>：MOP、HKD…（沒填＝記帳幣別）</li>
+                <li><b>{{ settings.quantityMode ? '數量' : '金額' }}</b>：第一個數字（必填）</li>
+                <li><b>分類</b>：編號或全名；編號請對照「設定 → 分類」區每顆分類前面的號碼（{{ settings.quantityMode ? '由 1 起' : '同收支別、由 1 起' }}）</li>
                 <li><b>備註</b>：看不懂的文字都會留在這裡</li>
                 <li><b>日期時間</b>：2026/10/17、2026/10/17 23:13（沒填＝現在）</li>
                 <li>從 Excel 複製貼上也可以：<code>11 → 1 → test → 2026/10/17 23:13</code></li>
@@ -515,7 +536,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 
             <!-- 類表格：標頭列＋資料列，整個包在可橫滑的容器裡 -->
             <div class="tblwrap">
-              <div class="tbl">
+              <div class="tbl" :class="{ 'tbl--qty': settings.quantityMode }">
                 <div class="tbl__hd">
                   <span v-for="c in COLS" :key="c.key" class="th">{{ c.label }}</span>
                   <!-- 0.1.69：「刪除」標題放在最後一格（與每列的 ✕ 同欄），
@@ -912,6 +933,19 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
   /* 地板寬度讓窄屏整張表橫滑，而不是把格子壓成亂碼 */
   grid-template-columns:
     48px 54px 68px
+    minmax(84px, 1.1fr) minmax(84px, 1fr) minmax(116px, 1.3fr)
+    32px;
+}
+/**
+ * 0.1.76：數量模式只有「收支」恢復、「貨幣」還是沒有 → 6 欄版
+ * （收支／數量／分類／備註／日期時間／刪除）。地板寬度跟著縮
+ * （48+68+84+84+116+32=432），否則會留下一大塊空白橫滑區。
+ */
+.tbl--qty .tbl__hd,
+.tbl--qty .tr {
+  min-width: 432px;
+  grid-template-columns:
+    48px 68px
     minmax(84px, 1.1fr) minmax(84px, 1fr) minmax(116px, 1.3fr)
     32px;
 }

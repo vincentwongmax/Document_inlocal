@@ -243,7 +243,7 @@ watch(
              inline style 只在查得到顏色時掛，蓋過 .ttrip 的琥珀預設。
         -->
         <span
-          v-if="record.tripId"
+          v-if="record.tripId && !settings.quantityMode"
           class="ttrip"
           title="旅行記錄"
           :style="tripTagStyle"
@@ -336,10 +336,14 @@ watch(
         ③ v102 那種「找空白處」的探測本來就會跳過 button，行為一致
     -->
     <button class="row__amt" type="button" @click="emit('edit', record.id)">
+      <!--
+        0.1.76：數量模式也有收支 → ± 符號兩種模式都顯示
+        （幣別符號與「原幣 × 匯率」仍只在金錢模式顯示）。
+      -->
       <strong class="num" :class="isExpense ? 'is-exp' : 'is-inc'">
-        {{ isExpense ? '−' : '+' }}{{ fmtMoney(shownAmount, settings.displayCurrency) }}
+        {{ isExpense ? '−' : '+' }}{{ fmtMoney(shownAmount, settings.quantityMode ? '' : settings.displayCurrency) }}
       </strong>
-      <span v-if="converted" class="tiny muted num">
+      <span v-if="converted && !settings.quantityMode" class="tiny muted num">
         {{ fmtMoney(record.amount, record.currency) }} × {{ displayRate }}
       </span>
     </button>

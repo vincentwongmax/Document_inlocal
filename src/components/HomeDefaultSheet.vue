@@ -274,7 +274,10 @@ function removeImage(im: ImageRef) {
             </button>
           </header>
 
-          <!-- 1＝支出/收入 -->
+          <!--
+            1＝支出/收入
+            0.1.76：數量模式也有收支 → 整列恢復渲染（排版裡也有這個區塊了）
+          -->
           <div class="frow">
             <span class="frow__lb">
               <svg class="frow__ic" viewBox="0 0 24 24" aria-hidden="true">
@@ -314,13 +317,14 @@ function removeImage(im: ImageRef) {
             2＝金額（0.1.50：下方再加一列「幣別」下拉，整行、所有貨幣都能選）
             ⚠ 幣別選單屬於區塊 1，所以只有區塊 1 沒排進記帳頁時才會用這裡的值；
               區塊 1 有排進去就以記帳頁上的選擇為準。
+            0.1.75：數量模式改名「數量」，且沒有幣別那一列。
           -->
           <label class="frow frow--nosep">
             <span class="frow__lb">
               <svg class="frow__ic" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 4.4v15.2M15.4 8.2H10.6a2.5 2.5 0 0 0 0 5h2.8a2.5 2.5 0 0 1 0 5h-4.8" />
               </svg>
-              金額
+              {{ settings.quantityMode ? '數量' : '金額' }}
             </span>
             <input
               v-model="dAmount"
@@ -331,7 +335,7 @@ function removeImage(im: ImageRef) {
               @blur="saveAmount"
             />
           </label>
-          <label class="frow">
+          <label v-if="!settings.quantityMode" class="frow">
             <span class="frow__lb">
               <svg class="frow__ic" viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="12" cy="12" r="7.6" />

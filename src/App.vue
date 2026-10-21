@@ -63,7 +63,10 @@ watch(offlineReady, (v) => {
       <div class="side__foot">
         <div class="side__bal">
           <span class="tiny muted">本月結餘</span>
-          <strong class="num" :class="balance < 0 ? 'is-neg' : ''">{{ fmtMoney(balance, base) }}</strong>
+          <!-- 0.1.76（需求 1）：數量模式不顯示貨幣（MOP$ 之類的），只留純數字 -->
+          <strong class="num" :class="balance < 0 ? 'is-neg' : ''">{{
+            fmtMoney(balance, settings.quantityMode ? '' : base)
+          }}</strong>
         </div>
       </div>
     </aside>

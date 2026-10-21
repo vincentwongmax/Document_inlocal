@@ -199,10 +199,11 @@ function applyDate(d: DraftRecord, iso: string) {
 
             <div class="grid">
               <label class="lb">
-                <span>金額</span>
-                <div class="amt">
+                <span>{{ settings.quantityMode ? '數量' : '金額' }}</span>
+                <div class="amt" :class="{ 'amt--one': settings.quantityMode }">
                   <input v-model.number="d.amount" class="field num" inputmode="decimal" placeholder="0.00" />
-                  <select v-model="d.currency" class="field sel">
+                  <!-- 0.1.75：數量模式沒有幣別 → 下拉整塊不渲染 -->
+                  <select v-if="!settings.quantityMode" v-model="d.currency" class="field sel">
                     <option v-for="c in settings.allCurrencies" :key="c.code" :value="c.code">{{ c.code }}</option>
                   </select>
                 </div>
@@ -217,8 +218,35 @@ function applyDate(d: DraftRecord, iso: string) {
               </label>
             </div>
 
-            <!-- 多幣別：選擇預設採用哪一個 -->
-            <div v-if="currencyOptions(d).length > 1" class="curpick">
+            <!--
+              0.1.76：數量模式加回「支出／收入」（銷貨和庫存是一正一負，
+              很多收據可能是收入）。金錢模式的批次上傳本來就沒有類型選擇
+              （一律支出），維持原狀只動數量模式。
+            -->
+            <div v-if="settings.quantityMode" class="lb">
+              <span>類型</span>
+              <div class="rtype">
+                <button
+                  type="button"
+                  class="rtype__b"
+                  :class="{ 'is-on': d.type === 'expense', 'is-exp': d.type === 'expense' }"
+                  @click="d.type = 'expense'"
+                >
+                  支出
+                </button>
+                <button
+                  type="button"
+                  class="rtype__b"
+                  :class="{ 'is-on': d.type === 'income', 'is-inc': d.type === 'income' }"
+                  @click="d.type = 'income'"
+                >
+                  收入
+                </button>
+              </div>
+            </div>
+
+            <!-- 多幣別：選擇預設採用哪一個（0.1.75：數量模式沒有幣別 → 整塊不渲染） -->
+            <div v-if="!settings.quantityMode && currencyOptions(d).length > 1" class="curpick">
               <span class="tiny muted">圖上有多種幣別，預設採用：</span>
               <div class="chips">
                 <button
@@ -234,7 +262,7 @@ function applyDate(d: DraftRecord, iso: string) {
             </div>
 
             <div v-if="candsOf(d).length" class="cands">
-              <span class="tiny muted">辨識到的金額（點選套用）：</span>
+              <span class="tiny muted">辨識到的{{ settings.quantityMode ? '數量' : '金額' }}（點選套用）：</span>
               <div class="chips">
                 <button
                   v-for="(c, i) in candsOf(d)"
@@ -243,7 +271,10 @@ function applyDate(d: DraftRecord, iso: string) {
                   :class="{ 'is-on': d.amount === c.value && d.currency === (c.currency === 'UNKNOWN' ? d.currency : c.currency) }"
                   @click="applyCandidate(d, c.value, c.currency === 'UNKNOWN' ? d.currency : c.currency)"
                 >
-                  <span class="num">{{ fmtMoney(c.value, c.currency === 'UNKNOWN' ? d.currency : c.currency) }}</span>
+                  <!-- 0.1.75：數量模式只顯示純數字（沒有幣別符號） -->
+                  <span class="num">{{
+                    fmtMoney(c.value, settings.quantityMode ? '' : c.currency === 'UNKNOWN' ? d.currency : c.currency)
+                  }}</span>
                   <span v-if="c.isTotal" class="dot" title="命中總計關鍵字" />
                 </button>
               </div>
@@ -393,6 +424,42 @@ function applyDate(d: DraftRecord, iso: string) {
   display: grid;
   grid-template-columns: 1fr 92px;
   gap: 8px;
+}
+/* 0.1.75：數量模式沒有幣別下拉 → 單欄（不然會留一塊空白） */
+.amt--one {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* 0.1.76：數量模式的「支出／收入」切換（配色與記帳頁的 .seg__btn 同一套） */
+.rtype {
+  display: flex;
+  gap: 6px;
+}
+.rtype__b {
+  flex: 1;
+  height: 34px;
+  border: 0;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--surface-3);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.rtype__b.is-on {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-1);
+}
+.rtype__b.is-on.is-exp {
+  color: var(--expense);
+  background: var(--expense-soft);
+}
+.rtype__b.is-on.is-inc {
+  color: var(--income);
+  background: var(--accent-soft);
 }
 .sel {
   padding: 0 10px;

@@ -742,9 +742,10 @@ const net = computed(() => income.value - expense.value)
  *   （`JP¥4,000.00` 這種帶幣別的完整數字），直接換成純數字會把幣別資訊弄丟 ——
  *   旅行貨幣、換過主幣別時特別容易誤讀。統計頁那三張卡當初就是拍板成純數字，
  *   那邊維持原樣不動。
+ * 0.1.75：數量模式沒有任何幣別 → 只顯示純數字。
  */
 const sumSym = computed(() => currency(settings.displayCurrency).symbol)
-const sumText = (v: number) => `${sumSym.value}${fmtCompact(v)}`
+const sumText = (v: number) => `${settings.quantityMode ? '' : sumSym.value}${fmtCompact(v)}`
 
 function shiftUnit(delta: number) {
   if (unit.value === 'day') key.value = addDays(key.value, delta)
@@ -894,15 +895,25 @@ function removeEditing(id: string) {
     -->
     <div class="card sum">
       <div class="sum__grid">
+        <!--
+          0.1.76：數量模式也有收支 → 三格（支出／收入／結餘）恢復，
+          數字走 `sumText`（數量模式不帶貨幣符號）。
+        -->
         <div class="sum__col">
           <span class="sum__label"><i class="sum__dot sum__dot--exp"></i>支出</span>
-          <span class="sum__val num is-exp" :title="fmtMoney(expense, settings.displayCurrency)">
+          <span
+            class="sum__val num is-exp"
+            :title="fmtMoney(expense, settings.quantityMode ? '' : settings.displayCurrency)"
+          >
             {{ sumText(expense) }}
           </span>
         </div>
         <div class="sum__col">
           <span class="sum__label"><i class="sum__dot sum__dot--inc"></i>收入</span>
-          <span class="sum__val num is-inc" :title="fmtMoney(income, settings.displayCurrency)">
+          <span
+            class="sum__val num is-inc"
+            :title="fmtMoney(income, settings.quantityMode ? '' : settings.displayCurrency)"
+          >
             {{ sumText(income) }}
           </span>
         </div>
@@ -911,7 +922,7 @@ function removeEditing(id: string) {
           <span
             class="sum__val num"
             :class="net >= 0 ? 'is-inc' : 'is-exp'"
-            :title="fmtMoney(net, settings.displayCurrency)"
+            :title="fmtMoney(net, settings.quantityMode ? '' : settings.displayCurrency)"
           >
             {{ sumText(net) }}
           </span>
@@ -1017,6 +1028,7 @@ function removeEditing(id: string) {
         <div class="grp">
           <span class="grp__label">篩選</span>
           <div class="grp__row grp__row--split">
+            <!-- 0.1.76：數量模式也有收支 → 「全部／支出／收入」兩種模式都渲染 -->
             <div class="seg2">
               <button :class="{ 'is-on': typeFilter === 'all' }" @click="typeFilter = 'all'">全部</button>
               <button
@@ -1173,11 +1185,12 @@ function removeEditing(id: string) {
           <span class="catgrp__n tiny muted">{{ g.list.length }} 筆</span>
           <span class="catgrp__rule"></span>
           <span class="catgrp__amt">
+            <!-- 0.1.76：數量模式也有收支 → 恢復 ± 兩顆（沒有幣別符號） -->
             <span v-if="g.inc > 0" class="catgrp__chip is-inc num">
-              +{{ fmtMoney(g.inc, settings.displayCurrency) }}
+              +{{ fmtMoney(g.inc, settings.quantityMode ? '' : settings.displayCurrency) }}
             </span>
             <span v-if="g.exp > 0" class="catgrp__chip is-exp num">
-              −{{ fmtMoney(g.exp, settings.displayCurrency) }}
+              −{{ fmtMoney(g.exp, settings.quantityMode ? '' : settings.displayCurrency) }}
             </span>
           </span>
         </div>
@@ -1186,11 +1199,12 @@ function removeEditing(id: string) {
         <div v-if="g.subs.length" class="catgrp__subs">
           <span v-for="s in g.subs" :key="s.id" class="subchip">
             <span class="subchip__n"><HighlightText :text="s.name" :query="kw" /></span>
+            <!-- 0.1.76：數量模式也有收支 → 恢復 ±（沒有幣別符號） -->
             <span v-if="s.exp > 0" class="subchip__v num is-exp">
-              −{{ fmtMoney(s.exp, settings.displayCurrency) }}
+              −{{ fmtMoney(s.exp, settings.quantityMode ? '' : settings.displayCurrency) }}
             </span>
             <span v-if="s.inc > 0" class="subchip__v num is-inc">
-              +{{ fmtMoney(s.inc, settings.displayCurrency) }}
+              +{{ fmtMoney(s.inc, settings.quantityMode ? '' : settings.displayCurrency) }}
             </span>
           </span>
         </div>

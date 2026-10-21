@@ -88,8 +88,9 @@ const presetViews = computed(() =>
   settings.quickPresets.map((p) => {
     const cat = p.categoryId ? settings.category(p.categoryId) ?? null : null
     const bits: string[] = []
-    if (p.amount > 0) bits.push(`金額 ${p.amount}`)
-    if (p.currency) bits.push(`以 ${p.currency} 記錄`)
+    // 0.1.75：數量模式沒有「金額／幣別」的說法，一律叫「數量」
+    if (p.amount > 0) bits.push(`${settings.quantityMode ? '數量' : '金額'} ${p.amount}`)
+    if (p.currency && !settings.quantityMode) bits.push(`以 ${p.currency} 記錄`)
     if (cat) bits.push(settings.fullNameOf(cat.id))
     if (p.note.trim()) bits.push(p.note.trim())
     return { preset: p, label: p.amount > 0 ? String(p.amount) : '—', summary: bits.join(' · ') || '還沒設定內容' }
@@ -239,16 +240,26 @@ const cxDraftRate = ref<Record<string, string>>({})
  * 點擊順序＝顯示順序；沒點＝不顯示（隱藏區塊的預設值在「預設值」子頁面裡設）。
  * ⚠ 8 預設不顯示：它只是匯入彈窗的捷徑，要的人自己點進來開。
  */
-const layoutItems: { n: number; label: string; icon: string }[] = [
-  { n: 1, label: '支出/收入＋幣別', icon: 'M4 8h10M4 8l3-3M4 8l3 3M20 16H10M20 16l-3-3M20 16l-3 3' },
-  { n: 2, label: '金額＋快速金額', icon: 'M4.7 2.7h14.6v18.6H4.7zM8.2 7h7.6M8.6 11.4h.01M12 11.4h.01M15.4 11.4h.01M8.6 17.8h3.6' },
+/**
+ * 0.1.75：數量模式下「支出/收入＋幣別」這個區塊**整項從排版裡消失**
+ * （沒有收支之分、也沒有幣別），「金額＋快速金額」改名「數量＋快速記錄」。
+ * ⚠ 這裡只是**設定頁的清單**；記帳頁自己也有一份 skip 判斷（homeLayout 裡
+ *   可能還留著 1，舊資料或使用者剛切模式時就會靠那條擋掉）。
+ */
+const layoutItems = computed<{ n: number; label: string; icon: string }[]>(() => {
+  const qty = settings.quantityMode
+  const items: { n: number; label: string; icon: string }[] = [
+    { n: 1, label: '支出/收入＋幣別', icon: 'M4 8h10M4 8l3-3M4 8l3 3M20 16H10M20 16l-3-3M20 16l-3 3' },
+    { n: 2, label: qty ? '數量＋快速記錄' : '金額＋快速金額', icon: 'M4.7 2.7h14.6v18.6H4.7zM8.2 7h7.6M8.6 11.4h.01M12 11.4h.01M15.4 11.4h.01M8.6 17.8h3.6' },
   { n: 3, label: '分類', icon: 'M4.6 4.6h5.8l9 9-5.8 5.8-9-9V4.6ZM8.3 8.3h.01' },
   { n: 4, label: '備註', icon: 'M5 5h14v14l-3-1.6L13 19l-2-1.6L8 19l-3-1.6V5ZM9 10h6M9 13.4h4' },
   { n: 5, label: '日期時間', icon: 'M4.4 6.4h15.2v13.2H4.4zM4.4 10.6h15.2M8.4 3.8v4M15.6 3.8v4' },
   { n: 6, label: '收據圖片', icon: 'M6 3h12v18l-2-1.4L14 21l-2-1.4L10 21l-2-1.4L6 21V3ZM9.5 8h5M9.5 12h5' },
   { n: 7, label: '清空＋記錄', icon: 'M5 12.6 9.4 17 19 7.4' },
-  { n: 8, label: '快速記帳', icon: 'M13 2.8 5.6 12.4h5.2l-.6 8.8 8.2-9.6h-5.2z' },
-]
+    { n: 8, label: '快速記帳', icon: 'M13 2.8 5.6 12.4h5.2l-.6 8.8 8.2-9.6h-5.2z' },
+  ]
+  return qty ? items.filter((it) => it.n !== 1) : items
+})
 
 /** 「預設值」子頁面（0.1.46）：隱藏區塊提交時要用的預設內容 */
 const hdOpen = ref(false)
@@ -373,16 +384,28 @@ async function changeBase(code: string) {
 // 0.1.66：改共用 lib/tree 的 flatTreeByType——它跟「貼上資料」解析器的分類編號
 // **同一份順序**（per-type、DFS、1 起編號），所以 chips 上顯示的編號就是
 // 使用者在貼上框裡可以輸入的編號（見 ImportModal 的格式說明）。
-const grouped = computed(() => [
-  { type: 'expense' as TxType, label: '支出分類', list: flatTreeByType(settings.categories, 'expense') },
-  { type: 'income' as TxType, label: '收入分類', list: flatTreeByType(settings.categories, 'income') },
-])
+/**
+ * 0.1.75：數量模式沒有收支之分 → 只有一組「數量分類」。
+ * （store 的 `settings.categories` 在數量模式下已經會回傳 qCategories。）
+ */
+const grouped = computed(() => {
+  if (settings.quantityMode) {
+    return [{ type: 'expense' as TxType, label: '數量分類', list: flatTreeByType(settings.categories, 'expense') }]
+  }
+  return [
+    { type: 'expense' as TxType, label: '支出分類', list: flatTreeByType(settings.categories, 'expense') },
+    { type: 'income' as TxType, label: '收入分類', list: flatTreeByType(settings.categories, 'income') },
+  ]
+})
 
-/** 管理分類彈窗的下拉清單：支出＋收入全部列出 */
-const manageCats = computed(() => [
-  ...settings.categories.filter((c) => c.type === 'expense'),
-  ...settings.categories.filter((c) => c.type === 'income'),
-])
+/** 管理分類彈窗的下拉清單：支出＋收入全部列出（數量模式只有一份清單） */
+const manageCats = computed(() => {
+  if (settings.quantityMode) return [...settings.categories]
+  return [
+    ...settings.categories.filter((c) => c.type === 'expense'),
+    ...settings.categories.filter((c) => c.type === 'income'),
+  ]
+})
 
 /** 每個分類被幾筆記錄使用（刪除前提醒用） */
 const catUsage = computed(() => {
@@ -627,15 +650,55 @@ const activeWalletName = computed(() => settings.activeWallet.name)
     <div class="page-head">
       <div>
         <h1 class="page-title">設定</h1>
-        <p class="page-sub">幣別、分類、收據辨識與資料管理</p>
+        <!-- 0.1.75：數量模式沒有幣別與匯率，副標題不該再提 -->
+        <p class="page-sub">{{ settings.quantityMode ? '分類、收據辨識與資料管理' : '幣別、分類、收據辨識與資料管理' }}</p>
       </div>
     </div>
 
-    <!-- 錢包：切換＝換一本帳，各自有自己的記錄與設定 -->
-    <WalletSection />
+    <!--
+      錢包：切換＝換一本帳，各自有自己的記錄與設定。
+      0.1.75：數量模式開關也在這裡（每本錢包各自）；按「先匯出備份」時會回報上來，
+      我們把匯出彈窗打開（預設範圍就是「全部錢包」，正好是完整備份）。
+    -->
+    <WalletSection @backup="exportOpen = true" />
 
-    <!-- 幣別與匯率 -->
+    <!--
+      0.1.76（需求 3）：顯示格式 —— 小數位數（每個錢包各自設定）。
+      「在所有頁面和模式都生效（但原資料的記錄數據不要改，只改顯示方式）」——
+      所以這個區**兩種模式都顯示**，不隨數量模式隱藏。
+    -->
     <section class="card sec">
+      <header class="sec__hd">
+        <span class="sec__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M5 9h14M5 15h14M9.5 4.5 7.5 19.5M16.5 4.5l-2 15" /></svg>
+        </span>
+        <div class="sec__meta">
+          <h2 class="sec__title">顯示格式</h2>
+          <p class="sec__desc">只影響數字怎麼顯示，不會改已記錄的資料</p>
+        </div>
+      </header>
+      <div class="panel">
+        <div class="rows">
+          <label class="row">
+            <span>小數位數<small class="tiny muted">每本錢包各自設定；所有頁面與模式都生效</small></span>
+            <select
+              class="field row__ctl"
+              :value="settings.moneyDecimals"
+              @change="settings.setMoneyDecimals(Number(($event.target as HTMLSelectElement).value))"
+            >
+              <option v-for="n in [0, 1, 2, 3, 4]" :key="n" :value="n">{{ n }} 位</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!--
+      幣別與匯率
+      0.1.75（數量模式）：**整節隱藏**——使用者原話「幣別與匯率整個分類」要移除。
+      資料全部留著（切回金錢模式就回來），只是數量模式下不給看也不給改。
+    -->
+    <section v-if="!settings.quantityMode" class="card sec">
       <header class="sec__hd">
         <span class="sec__icon" aria-hidden="true">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3.5" /></svg>
@@ -867,7 +930,8 @@ const activeWalletName = computed(() => settings.activeWallet.name)
       進行中會亮成琥珀色並顯示旅行名。
       0.1.40：強調色跟著旅行顏色（tripAccent 掛 --trip-c 系變數；沒旅行 fallback 琥珀）。
     -->
-    <section class="card sec travel-sec" :style="tripAccent">
+    <!-- 0.1.75（數量模式）：旅行模式一併隱藏（旅行模式本質是換幣別用的） -->
+    <section v-if="!settings.quantityMode" class="card sec travel-sec" :style="tripAccent">
       <!--
         0.1.37：主 cell 右側加三顆小按鈕（使用者原話：「旅行模式增加3個小型按鈕，
         開始旅行和結束旅行的切換按鈕，詳細按鈕，過去的旅行按鈕(新增子頁面, 可修改，可刪除)」）。
@@ -954,7 +1018,8 @@ const activeWalletName = computed(() => settings.activeWallet.name)
         </div>
       </div>
 
-      <div class="panel">
+      <!-- 0.1.75（數量模式）：數量不分幣別，「多幣別時預設採用」整塊拿掉 -->
+      <div v-if="!settings.quantityMode" class="panel">
         <div class="rows">
           <label class="row">
             <span>多幣別時預設採用<small class="tiny muted">同一張收據出現多種幣別時的預設值</small></span>
@@ -1000,7 +1065,7 @@ const activeWalletName = computed(() => settings.activeWallet.name)
         </button>
         <p class="tiny muted beta__hint">
           也可以直接把圖片拖進上面的框。辨識完會彈出一張清單，讓你逐筆確認後才建立記錄。
-          ⚠ 這是實驗性功能：數字若辨識得怪怪的，請以收據上的金額為準，或改用記帳頁的「收據圖片」。
+          ⚠ 這是實驗性功能：數字若辨識得怪怪的，請以收據上的{{ settings.quantityMode ? '數量' : '金額' }}為準，或改用記帳頁的「收據圖片」。
         </p>
       </div>
     </section>
@@ -1030,7 +1095,8 @@ const activeWalletName = computed(() => settings.activeWallet.name)
         <p class="tiny muted favs__hint">
           勾選幾個，主頁就只顯示那幾個，其餘收進「更多」；沒有勾選任何一個時，主頁顯示全部分類。
           <br />
-          每顆分類前面的編號（支出／收入各自由 1 起）可在「匯入 → 貼上資料」的分類欄直接輸入。
+          每顆分類前面的編號（{{ settings.quantityMode ? '由 1 起' : '支出／收入各自由 1 起' }}）可在「匯入 →
+          貼上資料」的分類欄直接輸入。
         </p>
         <div v-for="g in grouped" :key="'fav-' + g.type" class="catgroup">
           <span class="tiny muted catgroup__label">{{ g.label }}</span>
@@ -1240,7 +1306,12 @@ const activeWalletName = computed(() => settings.activeWallet.name)
             <span class="kd__dot" aria-hidden="true"></span>
             <span class="kd__txt">
               <strong>保留</strong>
-              <span class="tiny muted">金額、分類、幣別、備註、日期與已上傳還沒記錄的圖片都留著</span>
+              <!-- 0.1.75：數量模式沒有幣別 → 提示不提「幣別」 -->
+              <span class="tiny muted">{{
+                settings.quantityMode
+                  ? '數量、分類、備註、日期與已上傳還沒記錄的圖片都留著'
+                  : '金額、分類、幣別、備註、日期與已上傳還沒記錄的圖片都留著'
+              }}</span>
             </span>
           </button>
           <button
@@ -1278,9 +1349,14 @@ const activeWalletName = computed(() => settings.activeWallet.name)
           </svg>
         </span>
         <div class="sec__meta">
-          <h2 class="sec__title">快速金額</h2>
+          <!-- 0.1.75：數量模式改名「快速記錄」（內容也從金額變成數量） -->
+          <h2 class="sec__title">{{ settings.quantityMode ? '快速記錄' : '快速金額' }}</h2>
           <p class="sec__desc">
-            記帳頁金額框裡的那排方鈕，點一下帶入金額／分類／備註（還是要自己按「記錄」）
+            {{
+              settings.quantityMode
+                ? '記帳頁數量框裡的那排方鈕，點一下帶入數量／分類／備註（還是要自己按「記錄」）'
+                : '記帳頁金額框裡的那排方鈕，點一下帶入金額／分類／備註（還是要自己按「記錄」）'
+            }}
           </p>
         </div>
         <!-- 0.1.31：從 panel 底下移上來，貼在標題列最右 -->
@@ -1298,7 +1374,9 @@ const activeWalletName = computed(() => settings.activeWallet.name)
           </span>
         </div>
       </div>
-      <p v-else class="tiny muted qn__none">還沒有任何快速金額，按右上角的「詳細」加第一顆。</p>
+      <p v-else class="tiny muted qn__none">
+        還沒有任何{{ settings.quantityMode ? '快速記錄' : '快速金額' }}，按右上角的「詳細」加第一顆。
+      </p>
     </section>
 
     <!-- 資料 -->
@@ -1447,14 +1525,17 @@ const activeWalletName = computed(() => settings.activeWallet.name)
     </section>
 
     <p class="foot tiny muted">
-      資料全部存放在這台裝置上，不會上傳任何伺服器。主幣別 {{ currency(settings.baseCurrency).name }}
-      · 1 {{ settings.inputCurrency }} ≈
-      {{ fmtMoney(settings.rate(settings.inputCurrency), settings.baseCurrency) }}
+      資料全部存放在這台裝置上，不會上傳任何伺服器。<template
+        v-if="!settings.quantityMode"
+        >主幣別 {{ currency(settings.baseCurrency).name }} · 1 {{ settings.inputCurrency }} ≈
+        {{ fmtMoney(settings.rate(settings.inputCurrency), settings.baseCurrency) }}</template
+      >
     </p>
 
     <CategoryManageModal
       :open="showCatMgr"
       :categories="manageCats"
+      :no-type="settings.quantityMode"
       :usage="catUsage"
       :default-id="settings.defaultCategoryId"
       @close="showCatMgr = false"

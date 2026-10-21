@@ -7,38 +7,58 @@ import { fmtMoney } from '@/lib/currency'
 const props = defineProps<{
   points: { month: string; expense: number; income: number }[]
   currency: string
+  /**
+   * 0.1.75：數量模式 —— 只有一條「數量」線（支出＋收入合成），
+   * 圖例與 tooltip 也不再出現「支出／收入」。
+   */
+  single?: boolean
 }>()
 
 const { setCanvas, render } = useChart(() => {
   if (!props.points.length) return null
+  const single = props.single === true
   const cfg: ChartConfiguration<'line'> = {
     type: 'line',
     data: {
       labels: props.points.map((p) => `${Number(p.month.split('-')[1])}月`),
-      datasets: [
-        {
-          label: '支出',
-          data: props.points.map((p) => p.expense),
-          borderColor: '#bf563c',
-          backgroundColor: 'rgba(191,86,60,0.10)',
-          fill: true,
-          tension: 0.32,
-          pointRadius: 3,
-          pointBackgroundColor: '#bf563c',
-          borderWidth: 2,
-        },
-        {
-          label: '收入',
-          data: props.points.map((p) => p.income),
-          borderColor: '#2c6e5b',
-          backgroundColor: 'rgba(44,110,91,0.08)',
-          fill: true,
-          tension: 0.32,
-          pointRadius: 3,
-          pointBackgroundColor: '#2c6e5b',
-          borderWidth: 2,
-        },
-      ],
+      datasets: single
+        ? [
+            {
+              label: '數量',
+              data: props.points.map((p) => p.expense + p.income),
+              borderColor: '#2c6e5b',
+              backgroundColor: 'rgba(44,110,91,0.10)',
+              fill: true,
+              tension: 0.32,
+              pointRadius: 3,
+              pointBackgroundColor: '#2c6e5b',
+              borderWidth: 2,
+            },
+          ]
+        : [
+            {
+              label: '支出',
+              data: props.points.map((p) => p.expense),
+              borderColor: '#bf563c',
+              backgroundColor: 'rgba(191,86,60,0.10)',
+              fill: true,
+              tension: 0.32,
+              pointRadius: 3,
+              pointBackgroundColor: '#bf563c',
+              borderWidth: 2,
+            },
+            {
+              label: '收入',
+              data: props.points.map((p) => p.income),
+              borderColor: '#2c6e5b',
+              backgroundColor: 'rgba(44,110,91,0.08)',
+              fill: true,
+              tension: 0.32,
+              pointRadius: 3,
+              pointBackgroundColor: '#2c6e5b',
+              borderWidth: 2,
+            },
+          ],
     },
     options: {
       interaction: { mode: 'index', intersect: false },

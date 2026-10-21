@@ -372,14 +372,18 @@ watch(() => visibleGroups.value.length, () => void measure())
             </span>
             <span class="day__rule"></span>
             <span class="day__amt">
+              <!--
+                0.1.76：數量模式也有收支 → 恢復「+收入／−支出」兩顆，
+                只是沒有幣別符號（`fmtMoney(…, '')`）。
+              -->
               <span v-if="g.inc > 0" class="day__chip is-inc num">
-                +{{ fmtMoney(g.inc, settings.displayCurrency) }}
+                +{{ fmtMoney(g.inc, settings.quantityMode ? '' : settings.displayCurrency) }}
               </span>
               <span v-if="g.exp > 0" class="day__chip is-exp num">
-                −{{ fmtMoney(g.exp, settings.displayCurrency) }}
+                −{{ fmtMoney(g.exp, settings.quantityMode ? '' : settings.displayCurrency) }}
               </span>
               <span v-if="g.inc === 0 && g.exp === 0" class="day__chip num">
-                {{ fmtMoney(0, settings.displayCurrency) }}
+                {{ fmtMoney(0, settings.quantityMode ? '' : settings.displayCurrency) }}
               </span>
             </span>
           </div>

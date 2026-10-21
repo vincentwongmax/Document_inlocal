@@ -73,5 +73,28 @@ export function defaultSettings(base = 'MOP'): Settings {
     activeTrip: null,
     // 旅行模式（0.1.36）：已結束的旅行（結束時從 activeTrip 移進來）
     tripHistory: [],
+    /*
+     * 0.1.75：數量模式（每個錢包各自開關，預設關）。
+     * qCategories 刻意留空 —— 第一次開啟數量模式時才帶入起手式分類
+     * （見 settings store 的 seedQCategories），不讓每個記錢的錢包都白長一份。
+     */
+    quantityMode: false,
+    qCategories: [],
+    /*
+     * 0.1.76（需求 3）：小數位數（每個錢包各自，預設 2＝跟以往完全一樣）。
+     * 只影響顯示，不改記錄資料（見 types.ts 的 moneyDecimals 註解）。
+     */
+    moneyDecimals: 2,
   }
 }
+
+/**
+ * 0.1.75：數量模式第一次開啟時的起手式分類。
+ * 都是最通用的四個（使用者可以在「管理分類」裡改名、刪除、加自己的）。
+ */
+export const DEFAULT_Q_CATEGORIES: Category[] = [
+  { id: 'q_in', name: '進貨', type: 'expense', color: '#4a6fa5', icon: 'bag', builtin: true, archived: false, parentId: null },
+  { id: 'q_out', name: '銷貨', type: 'expense', color: '#2c6e5b', icon: 'trending', builtin: true, archived: false, parentId: null },
+  { id: 'q_stock', name: '庫存', type: 'expense', color: '#b0803c', icon: 'briefcase', builtin: true, archived: false, parentId: null },
+  { id: 'q_other', name: '其他', type: 'expense', color: '#8a857c', icon: 'dots', builtin: true, archived: false, parentId: null },
+]

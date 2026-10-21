@@ -25,8 +25,29 @@ export function currency(code: string): CurrencyDef {
   return MAP.get(code) ?? { code, name: code, symbol: code }
 }
 
+/*
+ * 0.1.76（需求 3）：**小數位數**（每個錢包各自設定，只影響顯示、不改資料）。
+ *
+ * 使用者原話：「加入設定給用戶查看多少位數的數字 例:用戶輸入2 即小數點後兩位，
+ * 則100.00 , 如果用戶輸入0 , 則 --> 100 , 在所有頁面和模式都生效
+ * (但原資料的記錄數據不要改，只改顯示方式) , 在每個錢包都是獨立設定的」。
+ *
+ * ⚠ 為什麼放 module 級而不是每個 call site 傳：fmtMoney／fmtNum／fmtCompact 的
+ *   呼叫點遍布全站（記帳、記錄、統計、匯入、匯出、圖表…），逐一傳參會有一堆
+ *   漏網的畫面。這裡給一份「目前生效的位數」，由 settings store 在
+ *   ①App 啟動 ②切換錢包 ③使用者改設定 三個時機呼叫 `setMoneyDecimals` 同步。
+ *   RouterView 用 `:key="route.path"` 重掛元件 → 換頁時模板會重跑，
+ *   所以切到別的值後畫面一定會讀到新的位數。
+ */
+let moneyDecimals = 2
+
+/** 設定「目前生效的小數位數」（0..4；其他值自動夾回 2） */
+export function setMoneyDecimals(n: number): void {
+  moneyDecimals = Number.isFinite(n) ? Math.max(0, Math.min(4, Math.round(n))) : 2
+}
+
 export function fmtMoney(v: number, code = 'MOP', opts?: { decimals?: number }): string {
-  const d = opts?.decimals ?? 2
+  const d = opts?.decimals ?? moneyDecimals
   const n = Number.isFinite(v) ? v : 0
   return `${currency(code).symbol}${n.toLocaleString('zh-Hant', {
     minimumFractionDigits: d,
@@ -34,9 +55,10 @@ export function fmtMoney(v: number, code = 'MOP', opts?: { decimals?: number }):
   })}`
 }
 
-export function fmtNum(v: number, decimals = 2): string {
+export function fmtNum(v: number, decimals?: number): string {
+  const d = decimals ?? moneyDecimals
   const n = Number.isFinite(v) ? v : 0
-  return n.toLocaleString('zh-Hant', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+  return n.toLocaleString('zh-Hant', { minimumFractionDigits: d, maximumFractionDigits: d })
 }
 
 /** "1.50" → "1.5"、"1.00" → "1"、"12.30" → "12.3"（只去掉小數尾端的 0） */
@@ -57,6 +79,7 @@ function trimZeros(s: string): string {
  * - 進位後撞到下一個單位時往上跳一階（999,999 → 「1000K」很醜 → 變成 `1M`）。
  * - 負號走 `fmtNum` 同一套（ASCII 的 `-`），結餘為負才會出現。
  * - ⚠ **只影響顯示**：子頁面（SumDetailSheet）與 `title` 一律用 `fmtMoney` 的完整數字。
+ * - 0.1.76：縮寫後的小數位數**不會超過**使用者設的小數位數（設 0 → 「1K」而不是「1.23K」）。
  */
 export function fmtCompact(v: number): string {
   const n = Number.isFinite(v) ? v : 0
@@ -71,7 +94,7 @@ export function fmtCompact(v: number): string {
   let i = a >= 1e9 ? 2 : a >= 1e6 ? 1 : 0
   for (; i < steps.length; i += 1) {
     const q = a / steps[i].scale
-    const d = q < 10 ? 2 : q < 100 ? 1 : 0
+    const d = Math.min(q < 10 ? 2 : q < 100 ? 1 : 0, moneyDecimals)
     const s = q.toFixed(d)
     if (Number(s) < 1000 || i === steps.length - 1) return `${sign}${trimZeros(s)}${steps[i].unit}`
   }

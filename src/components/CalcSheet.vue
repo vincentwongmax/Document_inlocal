@@ -30,8 +30,13 @@ const expr = computed(() => displaySub(props.calc))
 const display = computed(() => displayMain(props.calc))
 /** 只有長公式／很大的結果才縮小字級（單一數字最多 11 位，永遠不會觸發） */
 const displayLong = computed(() => isLongDisplay(display.value))
-/** 還沒按 = 之前不顯示換算預覽，答案要按了等於才出現 */
-const converted = computed(() => props.calc.done && props.curCode !== settings.baseCurrency)
+/**
+ * 0.1.75：數量模式 —— 沒有幣別，所以「輸入金額」改「輸入數量」、
+ * 幣別符號與換算預覽整組消失。
+ */
+const qty = computed(() => settings.quantityMode)
+/** 還沒按 = 之前不顯示換算預覽，答案要按了等於才出現（數量模式沒有匯率） */
+const converted = computed(() => props.calc.done && !qty.value && props.curCode !== settings.baseCurrency)
 const convertedAmount = computed(() => Number((amount.value * settings.rate(props.curCode)).toFixed(2)))
 
 /**
@@ -205,7 +210,7 @@ const {
         :style="pullStyle"
         role="dialog"
         aria-modal="true"
-        aria-label="輸入金額"
+        :aria-label="qty ? '輸入數量' : '輸入金額'"
         @touchstart="onSheetTouchStart"
         @touchmove="onSheetTouchMove"
         @touchend="onSheetTouchEnd"
@@ -216,7 +221,7 @@ const {
         <div class="bsheet__grab" aria-hidden="true"></div>
 
         <header class="calccard__hd">
-          <span class="calccard__title">輸入金額</span>
+          <span class="calccard__title">{{ qty ? '輸入數量' : '輸入金額' }}</span>
           <button type="button" class="btn btn--primary calccard__done" @click="emit('close')">
             完成
           </button>
@@ -228,7 +233,8 @@ const {
               ><span v-if="i > 0" class="dotp">.</span>{{ seg }}</template
             ></div>
           <div class="calcdisp__main">
-            <span class="calcdisp__sym">{{ symbol }}</span>
+            <!-- 0.1.75：數量模式不顯示貨幣符號（MOP／$ 之類） -->
+            <span v-if="!qty" class="calcdisp__sym">{{ symbol }}</span>
             <!--
               0.1.74（需求 3）：長算式在 iPhone PWA 會「爆出畫面」。
               ⚠ 根因＝`.calcdisp__num` 是 `.calcdisp__main` 的 **flex item**，

@@ -146,6 +146,35 @@ export const useRecordsStore = defineStore('records', () => {
     }
   }
 
+  /**
+   * 0.1.75（數量模式）：把某個錢包的記錄**改寫成「只有數量」**。
+   *
+   * 幣別／匯率／主幣金額全部移除：`currency` 與 `baseCurrency` 都設成主幣別、
+   * `rate` 固定 1、`baseAmount = amount`（數量＝當初輸入的那個數字）。
+   * 之後統計頁只要把數量當純數字相加就對（不會再把 MOP 跟 HKD 混在一起算）。
+   *
+   * ⚠ 這是**唯一會大量改寫既有資料**的動作，呼叫端（WalletSection）必須先讓
+   *   使用者匯出備份（見 `askQuantityMode`）。`type` 刻意不動 —— 數量模式
+   *   不顯示收支，但保留 type 可以讓切回金錢模式時資料更完整。
+   */
+  function stripCurrency(walletId: string): number {
+    const base = settings.baseCurrency
+    let n = 0
+    for (const r of all.value) {
+      if (r.walletId !== walletId) continue
+      r.currency = base
+      r.baseCurrency = base
+      r.rate = 1
+      r.baseAmount = r.amount
+      r.updatedAt = new Date().toISOString()
+      n++
+    }
+    // 儲存交給上面的 deep watch（200ms 防抖），這裡只保證「當下就寫一次」，
+    // 避免使用者在防抖視窗內重新整理頁面而遺失改寫
+    if (n) writeJSON(Keys.RECORDS_KEY, all.value)
+    return n
+  }
+
   function remove(id: string) {
     const idx = all.value.findIndex((x) => x.id === id)
     if (idx < 0) return
@@ -279,6 +308,7 @@ export const useRecordsStore = defineStore('records', () => {
     countByWallet,
     add,
     update,
+    stripCurrency,
     remove,
     restore,
     reset,

@@ -346,7 +346,16 @@ const rateNum = computed(() => {
 const exprValid = computed(
   () => !!expr.value && Number(numeric.value.toFixed(2)) === Number(loadedAmount.value.toFixed(2)),
 )
-const preview = computed(() => fmtMoney(numeric.value * rateNum.value, settings.baseCurrency))
+/**
+ * 標題列右邊與匯率預覽用的「主幣金額」。
+ * 0.1.75：數量模式 —— 明細裡所有「換算成主幣」的數字都只是同一個數字的另一種寫法，
+ * 所以一律顯示**純數字**（沒有幣別符號、也沒有匯率）。
+ */
+const preview = computed(() =>
+  settings.quantityMode
+    ? fmtMoney(numeric.value, '')
+    : fmtMoney(numeric.value * rateNum.value, settings.baseCurrency),
+)
 const cat = computed(() => settings.category(categoryId.value))
 const catName = computed(() => cat.value?.name ?? '未分類')
 
@@ -941,7 +950,8 @@ const saving = ref(false)
 async function save() {
   if (saving.value) return
   if (!(numeric.value > 0)) {
-    notify('金額必須大於 0', 'warn')
+    // 0.1.75：數量模式一律叫「數量」
+    notify(settings.quantityMode ? '數量必須大於 0' : '金額必須大於 0', 'warn')
     return
   }
   saving.value = true
@@ -966,9 +976,11 @@ async function save() {
   emit('save', {
     type: type.value,
     amount: numeric.value,
-    currency: currencyCode.value,
+    // 0.1.75：數量模式沒有幣別 → 一律寫主幣別、rate 固定 1
+    //   （畫面沒有下拉可改，存回主幣別才不會留下「看得見數字、看不見幣別」的記錄）
+    currency: settings.quantityMode ? settings.baseCurrency : currencyCode.value,
     // 0.1.53：送正規化後的數字（過去直接送 v-model 的字串）
-    rate: showRate.value ? rateNum.value : 1,
+    rate: showRate.value && !settings.quantityMode ? rateNum.value : 1,
     categoryId: categoryId.value,
     occurredAt: fromLocalInput(occurredAt.value),
     note: note.value.trim(),
@@ -1072,12 +1084,19 @@ async function save() {
           <button class="hero" :class="isExpense ? 'is-exp' : 'is-inc'" type="button" @click="emit('search-cat', catName)">
             <div class="hero__l">
               <span class="hero__cat">{{ catName }}</span>
-              <span class="hero__sub">{{ typeLabel }} · {{ fmtMoney(numeric || 0, currencyCode) }}</span>
+              <!-- 0.1.76：數量模式也有「支出/收入」副標（但沒有幣別） -->
+              <span class="hero__sub">
+                {{ typeLabel }} ·
+                {{ fmtMoney(numeric || 0, settings.quantityMode ? '' : currencyCode) }}
+              </span>
             </div>
-            <span class="hero__amt num">{{ isExpense ? '−' : '+' }}{{ preview }}</span>
+            <span class="hero__amt num">
+              <!-- 0.1.76：數量模式也顯示 ±（銷貨／庫存是一正一負） -->
+              {{ isExpense ? '−' : '+' }}{{ preview }}
+            </span>
           </button>
 
-          <!-- 類型 -->
+          <!-- 類型（0.1.76：數量模式也有收支 → 兩種模式都渲染） -->
           <div class="flat">
             <span class="flat__label">類型</span>
             <div class="seg">
@@ -1086,24 +1105,24 @@ async function save() {
             </div>
           </div>
 
-          <!-- 金額 -->
+          <!-- 金額（0.1.75：數量模式改名「數量」，且沒有幣別下拉） -->
           <label class="flat">
-            <span class="flat__label">金額</span>
-            <div class="amt">
+            <span class="flat__label">{{ settings.quantityMode ? '數量' : '金額' }}</span>
+            <div class="amt" :class="{ 'amt--one': settings.quantityMode }">
               <input
                 v-model="amount"
                 class="field amt__input num"
                 inputmode="decimal"
-                :placeholder="`${currency(currencyCode).symbol} 0`"
+                :placeholder="settings.quantityMode ? '0' : `${currency(currencyCode).symbol} 0`"
               />
-              <select v-model="currencyCode" class="field sel2">
+              <select v-if="!settings.quantityMode" v-model="currencyCode" class="field sel2">
                 <option v-for="c in settings.allCurrencies" :key="c.code" :value="c.code">{{ c.code }}</option>
               </select>
             </div>
           </label>
 
-          <!-- 匯率 -->
-          <label v-if="showRate" class="flat">
+          <!-- 匯率（0.1.75：數量模式沒有匯率 → 整塊不渲染） -->
+          <label v-if="showRate && !settings.quantityMode" class="flat">
             <span class="flat__label">匯率（1 {{ currencyCode }} = ? {{ settings.baseCurrency }}）</span>
             <div class="amt">
               <input v-model="rate" class="field num" inputmode="decimal" />
@@ -1201,19 +1220,25 @@ async function save() {
               <span class="tiny muted">計算公式</span>
               <span class="tiny num expr__v">{{ displayExpr(expr) }}=</span>
             </div>
-            <div class="meta__row">
-              <span class="tiny muted">主幣金額</span>
-              <span class="tiny num">{{ fmtMoney(record.baseAmount, record.baseCurrency) }}</span>
-            </div>
-            <template v-if="converted">
+            <!--
+              主幣金額／原幣金額／記錄匯率（0.1.75：數量模式沒有幣別與匯率 →
+              這三列整組不渲染；`converted` 在數量模式也一律是 false）
+            -->
+            <template v-if="!settings.quantityMode">
               <div class="meta__row">
-                <span class="tiny muted">原幣金額</span>
-                <span class="tiny num">{{ fmtMoney(record.amount, record.currency) }}</span>
+                <span class="tiny muted">主幣金額</span>
+                <span class="tiny num">{{ fmtMoney(record.baseAmount, record.baseCurrency) }}</span>
               </div>
-              <div class="meta__row">
-                <span class="tiny muted">記錄匯率</span>
-                <span class="tiny num">1 {{ record.currency }} = {{ record.rate }} {{ record.baseCurrency }}</span>
-              </div>
+              <template v-if="converted">
+                <div class="meta__row">
+                  <span class="tiny muted">原幣金額</span>
+                  <span class="tiny num">{{ fmtMoney(record.amount, record.currency) }}</span>
+                </div>
+                <div class="meta__row">
+                  <span class="tiny muted">記錄匯率</span>
+                  <span class="tiny num">1 {{ record.currency }} = {{ record.rate }} {{ record.baseCurrency }}</span>
+                </div>
+              </template>
             </template>
             <!-- 0.1.44：壓縮後實際儲存的大小（不是原圖大小）；沒圖就不顯示 -->
             <div v-if="imgBytes > 0" class="meta__row">
@@ -1256,7 +1281,7 @@ async function save() {
               （參考修改分類頁的選擇分類下拉：Teleport 到 body、fixed 定位、同一套 .statspop）。
             -->
             <button
-              v-if="hasAnyTrip"
+              v-if="hasAnyTrip && !settings.quantityMode"
               type="button"
               class="meta__row triprow"
               ref="tripTrigger"
@@ -1892,6 +1917,10 @@ async function save() {
   grid-template-columns: 1fr 96px;
   gap: 8px;
   align-items: center;
+}
+/* 0.1.75：數量模式沒有幣別下拉 → 數量輸入框自己吃滿整行 */
+.amt--one {
+  grid-template-columns: minmax(0, 1fr);
 }
 /* 幣別符號只在「尚未輸入」時透過 placeholder 提示，輸入後不留痕跡 */
 .amt__input {

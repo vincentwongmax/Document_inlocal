@@ -2,8 +2,8 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import type { Category, CustomCurrency, HomeDefaults, ImageRef, QuickPreset, Settings, TravelTrip, TxType, Wallet, WalletState } from '@/types'
 import { Keys, readJSON, writeJSON, remove, walletSettingsKey } from '@/lib/storage'
-import { defaultSettings } from '@/lib/defaults'
-import { CURRENCIES, fetchRates, defaultRates } from '@/lib/currency'
+import { DEFAULT_Q_CATEGORIES, defaultSettings } from '@/lib/defaults'
+import { CURRENCIES, fetchRates, defaultRates, setMoneyDecimals as syncMoneyDecimals } from '@/lib/currency'
 import { iconForCategory } from '@/lib/icons'
 import { uid } from '@/lib/id'
 import { isHexColor } from '@/lib/color'
@@ -157,6 +157,15 @@ function normHomeDefaults(v: unknown): HomeDefaults {
   }
 }
 
+/**
+ * 0.1.76（需求 3）：小數位數的正規化（0..4 的整數；其他值回退 2）。
+ * 舊資料沒有這個欄位 → 2（跟升版前完全一樣）。
+ */
+function normMoneyDecimals(v: unknown): number {
+  const n = Number(v)
+  return Number.isFinite(n) ? Math.max(0, Math.min(4, Math.round(n))) : 2
+}
+
 function merge(base: Settings, saved: Partial<Settings>): Settings {
   return {
     ...base,
@@ -211,6 +220,8 @@ function merge(base: Settings, saved: Partial<Settings>): Settings {
     tripHistory: Array.isArray(saved.tripHistory)
       ? saved.tripHistory.map(normTrip).filter((t): t is TravelTrip => t !== null)
       : base.tripHistory,
+    // 0.1.76（需求 3）：小數位數（每個錢包各自；舊資料沒有 → 2）
+    moneyDecimals: normMoneyDecimals(saved.moneyDecimals),
   }
 }
 
@@ -272,6 +283,16 @@ export const useSettingsStore = defineStore('settings', () => {
       writeJSON(walletSettingsKey(root.value.activeWalletId), v)
     },
     { deep: true },
+  )
+
+  /**
+   * 0.1.76（需求 3）：把「這個錢包的小數位數」同步給 currency.ts 的 module 級預設值。
+   * `immediate` 讓 App 一啟動就生效；切換錢包（state 整份換掉）也會重新同步。
+   */
+  watch(
+    () => state.value.moneyDecimals,
+    (v) => syncMoneyDecimals(v),
+    { immediate: true },
   )
 
   watch(
@@ -399,28 +420,56 @@ export const useSettingsStore = defineStore('settings', () => {
 
   const baseCurrency = computed(() => state.value.baseCurrency)
   const inputCurrency = computed(() => state.value.inputCurrency)
-  const categories = computed(() => state.value.categories.filter((c) => !c.archived))
+  /**
+   * 0.1.76（需求 3）：小數位數（每個錢包各自；只影響顯示）。
+   * 設定頁的「顯示格式」區綁這一個；改動會經上面的 watch 同步給 currency.ts。
+   */
+  const moneyDecimals = computed(() => state.value.moneyDecimals)
+  /** 改小數位數（0..4 的整數；其他值夾回範圍內） */
+  function setMoneyDecimals(n: number) {
+    state.value.moneyDecimals = normMoneyDecimals(n)
+  }
+  /**
+   * 0.1.75：數量模式（每個錢包各自）。開啟後分類改用獨立的 `qCategories`，
+   * 也沒有幣別的分別（見 types.ts 的 `quantityMode` 註解）。
+   * 0.1.76：收支已恢復（銷貨／庫存是一正一負）——只有幣別／匯率仍然沒有。
+   */
+  const quantityMode = computed(() => state.value.quantityMode === true)
+  /**
+   * 目前這個錢包「正在使用」的分類陣列（含已封存的）。
+   * 數量模式 → `qCategories`；金錢模式 → `categories`。
+   * ⚠ 所有分類相關的函式都改走這一個來源，畫面才會整份跟著模式切換。
+   */
+  function catStore(): Category[] {
+    return state.value.quantityMode ? state.value.qCategories : state.value.categories
+  }
+  const categories = computed(() => catStore().filter((c) => !c.archived))
   const preferredCurrency = computed(() => state.value.preferredCurrency)
   const categoriesByType = computed(() => (type: TxType) =>
-    state.value.categories.filter((c) => !c.archived && c.type === type),
+    // 數量模式的分類不分收支（qCategories 全是同一型）：不管傳入哪個 type 都回傳整份清單
+    state.value.quantityMode
+      ? catStore().filter((c) => !c.archived)
+      : catStore().filter((c) => !c.archived && c.type === type),
   )
   /** 某個收支類型的頂層大類（子分類不算） */
   const topCategoriesByType = computed(() => (type: TxType) =>
-    state.value.categories.filter((c) => !c.archived && c.type === type && !c.parentId),
+    state.value.quantityMode
+      ? catStore().filter((c) => !c.archived && !c.parentId)
+      : catStore().filter((c) => !c.archived && c.type === type && !c.parentId),
   )
 
   function category(id: string): Category | undefined {
-    return state.value.categories.find((c) => c.id === id)
+    return catStore().find((c) => c.id === id)
   }
 
   /* ── 分類樹（子分類） ─────────────────────────────────── */
   /** 直接子分類（未封存，照原始順序） */
   function childrenOf(id: string | null): Category[] {
-    return state.value.categories.filter((c) => !c.archived && (c.parentId ?? null) === id)
+    return catStore().filter((c) => !c.archived && (c.parentId ?? null) === id)
   }
 
   function hasChildren(id: string): boolean {
-    return state.value.categories.some((c) => !c.archived && c.parentId === id)
+    return catStore().some((c) => !c.archived && c.parentId === id)
   }
 
   /**
@@ -453,7 +502,7 @@ export const useSettingsStore = defineStore('settings', () => {
   function descendantIds(id: string): string[] {
     const out: string[] = []
     const walk = (pid: string) => {
-      for (const c of state.value.categories) {
+      for (const c of catStore()) {
         if (c.archived || c.parentId !== pid) continue
         out.push(c.id)
         walk(c.id)
@@ -756,7 +805,7 @@ export const useSettingsStore = defineStore('settings', () => {
       // 0.1.63：只在勾了時寫 true（不勾就不留這個鍵，跟其他可選欄位的慣例一致）
       ...(excludeFromStats ? { excludeFromStats: true } : {}),
     }
-    state.value.categories.push(c)
+    catStore().push(c)
     return c
   }
 
@@ -764,7 +813,7 @@ export const useSettingsStore = defineStore('settings', () => {
     id: string,
     patch: Partial<Pick<Category, 'name' | 'color' | 'type' | 'icon' | 'parentId' | 'excludeFromStats'>>,
   ) {
-    const c = state.value.categories.find((x) => x.id === id)
+    const c = catStore().find((x) => x.id === id)
     if (!c) return
     if (patch.name !== undefined) c.name = patch.name.trim() || c.name
     if (patch.color !== undefined) c.color = patch.color
@@ -1072,7 +1121,75 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   function restoreDefaults() {
-    state.value.categories = JSON.parse(JSON.stringify(defaultSettings().categories))
+    // 0.1.75：金錢模式重置 categories；數量模式重置 qCategories（兩套互不影響）
+    if (state.value.quantityMode) {
+      state.value.qCategories = JSON.parse(JSON.stringify(defaultSettings().qCategories))
+    } else {
+      state.value.categories = JSON.parse(JSON.stringify(defaultSettings().categories))
+    }
+  }
+
+  /* ── 數量模式（0.1.75） ─────────────────────────────────
+   * 每個錢包各自開關。切換時**記錄的改寫不在這裡做**（records store 反過來
+   * import settings，放在這裡會循環）——由呼叫端（WalletSection）負責，
+   * 見 `applyQuantityMode()`。
+   */
+  /**
+   * 0.1.75：切換**指定錢包**（不限當前錢包）的數量模式。
+   * 回傳 false＝找不到那個錢包。
+   *
+   * ⚠ 當前錢包走記憶體裡那份（`setQuantityMode`）；其他錢包要讀出來、改完寫回去
+   *   （`settingsOf` 對非當前錢包回傳的是副本，改了不會生效）。
+   */
+  function setQuantityModeFor(id: string, on: boolean): boolean {
+    if (!root.value.wallets.some((w) => w.id === id)) return false
+    if (id === root.value.activeWalletId) {
+      setQuantityMode(on)
+      return true
+    }
+    const s = loadWalletSettings(id)
+    if (on && !s.quantityMode && !s.qCategories.length) {
+      s.qCategories = JSON.parse(JSON.stringify(DEFAULT_Q_CATEGORIES)) as Category[]
+    }
+    s.quantityMode = on
+    if (!on) {
+      s.inputCurrency = s.baseCurrency
+      s.preferredCurrency = s.baseCurrency
+    }
+    writeJSON(walletSettingsKey(id), s)
+    return true
+  }
+
+  /** 某個錢包目前是不是數量模式（設定頁的錢包清單要顯示狀態用） */
+  function quantityModeOf(id: string): boolean {
+    if (id === root.value.activeWalletId) return state.value.quantityMode === true
+    return loadWalletSettings(id).quantityMode === true
+  }
+
+  /**
+   * 第一次開啟數量模式時帶入起手式分類（之後使用者可自訂）。
+   * 已經有自訂內容就不動，避免切換兩次把使用者建的分類洗掉。
+   */
+  function seedQCategories() {
+    if (!state.value.qCategories.length) {
+      state.value.qCategories = JSON.parse(JSON.stringify(DEFAULT_Q_CATEGORIES)) as Category[]
+    }
+  }
+
+  /**
+   * 切換數量模式。
+   * @param on true＝切成數量模式
+   *
+   * ⚠ 切回金錢模式時一併把「記帳幣別」重設回主幣別
+   *   （使用者原話：「數量模式時轉錢模式時，全部默認設定做主幣別的幣種」）。
+   */
+  function setQuantityMode(on: boolean) {
+    if (on && !state.value.quantityMode) seedQCategories()
+    state.value.quantityMode = on
+    if (!on) {
+      state.value.inputCurrency = state.value.baseCurrency
+      state.value.preferredCurrency = state.value.baseCurrency
+    }
   }
 
   return {
@@ -1092,6 +1209,13 @@ export const useSettingsStore = defineStore('settings', () => {
     allWalletSettings,
     baseCurrency,
     inputCurrency,
+    moneyDecimals,
+    setMoneyDecimals,
+    quantityMode,
+    seedQCategories,
+    setQuantityMode,
+    setQuantityModeFor,
+    quantityModeOf,
     categories,
     categoriesByType,
     topCategoriesByType,

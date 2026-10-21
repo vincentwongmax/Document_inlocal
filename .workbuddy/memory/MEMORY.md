@@ -4,16 +4,18 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 細節（逐版設計決策、CSS 慣例、測試寫法）在 `CONVENTIONS.md`；這裡只放**每次動手都會用到**的東西。
 
 ## 版本
-- 只加 Z（目前 **0.1.74**）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
+- 只加 Z（目前 **0.1.76**）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
 - ⚠ `.smoke/` 在 .gitignore（測試**不會**進 commit）→ 版本 commit 只含 src/、CHANGELOG、package.json、.workbuddy/memory
 
 ## 開發／驗證
 - preview :4173（**改完必先 build**）；dev :5173（兩個 ls 分開）
-- 回歸 `bash .smoke/run-regress.sh`，**判準＝每支 exit code**；ALL＝v70~v148（72 支，v108 不存在）
+- 回歸 `bash .smoke/run-regress.sh`，**判準＝每支 exit code**；ALL＝v70~v150（74 支，v108 不存在）
 - ⚠⚠ 回歸跑著時**不要編輯 run-regress.sh**；升版後必先 build（APP_VERSION 是編譯期注入）
 - ⚠⚠ **本地回歸 dist 不能帶 VITE_BASE**（preview 伺服在根目錄，帶了全 404 → App 空白假紅）；部署前才帶 base 重建
 - 冷啟 `Navigation timeout 30s`＝**環境假紅**（單獨重跑就好）；v113/v135 等偶發 timing flake 同理
-- ⚠ 升版後**每支測試的「版本是 X」斷言都要跟著改**（v132~v144 這種老測試也有；`-live` 系列除外＝跟線上版本）
+- ⚠ 升版後**每支測試的「版本是 X」斷言都要跟著改**（v132~v147、v149、v150 這種；v148 不斷言版本；`-live` 系列除外＝跟線上版本）
+- ⚠⚠ **往既有元件加按鈕／徽章前，先 grep 舊測試有沒有用「第一顆 `.wcard__btn`」「精確比對 `.wcard__sub`」這類脆弱選擇器**（0.1.75 實慘：新按鈕排前面 → v99 點到開關而不是編輯 → timeout；徽章黏進 `.wcard__sub` → 精確比對失敗。修法＝開關鈕放編輯鈕**後面**、徽章放 `.wcard__row` 裡但在 `.wcard__sub` **外面**）
+- ⚠⚠ **設定頁加新區塊／新下拉前，先 grep `querySelector('.page-head select, select')` 這類「頁面第一個 select」**——v107 用這招改主幣別，0.1.76 加「顯示格式（小數位數）」區後第一個 select 變成它 → 改到錯的下列 → ③ 整段假紅（已把 v107 改成「含『主幣別』那一列裡面的 select」，同 v124 招式）。設定頁區塊順序＝測試隱性依賴，加區塊＝先 grep 舊測試
 - ⚠ 測試 seed 別寫「當天絕對時間」（例 14:30）→ 在該時刻之前跑，記錄時間在未來 → 相對時間退回絕對值 → 假紅（v143 ⑥ 實慘，已改成相對現在回推）
 - ⚠⚠ 測「無限滾動/餵食」不能用 `scrollTo(0, scrollHeight)` 一次跳到底 → 一律 `scrollBy` 小段滑模擬手指
 - ⚠⚠ **puppeteer 在 headless 下 `input[type=file].click()` 不會發 `filechooser` 事件** → `await` 它會**永遠卡死**（0.1.66 實慘）。改監測「input.click 被呼叫幾次」（覆寫 `HTMLInputElement.prototype.click` 計數）
@@ -37,6 +39,8 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - 匯出 JSON=format2（可還原）／Excel=.zip（不含設定）
 - **匯率凍結**：記錄顯示＝該筆快照的 `rate`；`recRate()` 最前面短路 `r.currency===dc → 1`；「更新匯率」只寫 `rates`（舊記錄不動）
 - **不計入統計三態**：`undefined`＝跟隨分類／`true`／`false`；唯一判別式 `r.excludeFromStats ?? settings.categoryExcluded(r.categoryId)`
+- **數量模式（0.1.75 開場、0.1.76 修訂，每錢包各自）**：`settings.quantityMode` computed（模板自動 unwrap，script 內**不可**加 `.value`）；`catStore()` 是分類唯一來源（數量模式→`qCategories`，**不分收支**、條目 type 一律 'expense'）；`stripCurrency(walletId)` 切模式時把記錄 currency/baseCurrency→主幣別、rate=1、baseAmount=amount；純數字顯示統一用 `fmtMoney(v, '')`；新記錄一律 `currency=baseCurrency`+`rate=1`。⚠ **0.1.76 起數量模式有收支**（銷貨／庫存是一正一負）：記帳頁區塊1／RecordRow ±／RecordSheet 類型 seg／記錄頁篩選與總覽三格／統計三卡＋甜甜圈切換＋typedRows/topRows／ImportModal 6 欄（多「收支」）／quickParse 認 A/B 全都恢復；只有**幣別／匯率**仍然全站隱藏。⚠ 數量模式解析分類一律傳 'expense'（qCategories 同型），ImportModal 的「分類與收支不符」檢查在數量模式跳過
+- **小數位數（0.1.76，每錢包各自 `moneyDecimals`，預設 2）**：`currency.ts` module 級 `moneyDecimals`＋`setMoneyDecimals()`，`fmtMoney/fmtNum/fmtCompact` 預設讀它（K/M 小數 `Math.min(d, moneyDecimals)`）；settings store `watch(() => state.value.moneyDecimals, sync, { immediate: true })` 同步（import 要 `as syncMoneyDecimals`，store 自己的 setter 同名會遮蔽）；只改顯示不改資料；設定頁「顯示格式」區兩種模式都顯示
 
 ## 元件幾何（全站共用）
 - 底部彈層＝`.mask > .card.bsheet`（`.bsheet__grab`＋`.box.bsheet__body` 唯一可捲＋下拉關閉＋背景鎖）
@@ -48,6 +52,8 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 米白紙感；收入墨綠 `#2c6e5b`（`--accent`）、支出 `#bf563c`（`--expense`）、琥珀 `#d9a326`＝旅行、橘 `#c95f16`＝「排」。
 
 ## 近期版本重點
+- **0.1.76**（本地 commit，**未部署**）四項需求：① 電腦版側欄「本月結餘」數量模式純數字（`fmtMoney(balance, quantityMode ? '' : base)`）；② 數量模式**加回支出／收入**（0.1.75 移除的全部撤回，只保留幣別隱藏——記帳頁區塊1 的 `.seg__cur` 包 v-if、RecordRow/RecordSheet ±、記錄頁篩選＋總覽三格＋catgrp ±、統計三卡＋甜甜圈＋圖表兩條線＋typedRows/topRows、ImportModal 6 欄 `.tbl--qty` min-width 432px、QuickAmountSheet/HomeDefaultSheet 類型、quickParse 的 `!quantityMode &&` 守衛、ReviewSheet 數量模式多一顆 `.rtype`）；③ 小數位數設定（見資料模型）；④ 設定頁頁尾「主幣別…」整段 `v-if="!settings.quantityMode"`。守門員新 **v150（26 斷言）**；v149 翻修（②~⑥ 從「收支消失」改「收支恢復無貨幣」）；v132~v147 版本斷言升 0.1.76
+- **0.1.75**（本地 commit，**未部署**）**數量模式**（每錢包各自開關）：`Settings` 加 `quantityMode`/`qCategories`（`DEFAULT_Q_CATEGORIES` q_ 前綴：進貨/銷貨/庫存/其他）；`WalletSection` 每卡一顆 `.wcard__qty` 開關（在 `.wcard__main` **外**、編輯鈕**後**）＋`.wcard__mode` 徽章（在 `.wcard__row` 裡、`.wcard__sub` **外**）＋三鈕 confirmDialog（deny＝先匯出備份→emit backup）；全站「金額」改「數量」、貨幣符號/下拉/匯率列整組不渲染（不是灰掉）；統計頁三卡縮一張「合計」；ImportModal 數量模式 5 欄＋`.tbl--qty` grid（min-width 434px）；exportExcel 數量模式欄位減去收支/幣別/匯率/主幣金額。⚠ 兩個實戰坑見「開發／驗證」末條（v99 脆弱選擇器）。守門員 **v149（46 斷言）**
 - **0.1.74** 記錄後明細頁**不再重複選壓縮率**（0.1.73 的 `hasEditable`/`isLocked` 機制已滿足，v148① 實測釘死：記錄來的圖明細頁無等級鈕、明細頁新加圖可選原ABCD）；移除記帳頁「點擊修改」（`HomeView` 改 `<em v-if="!calc.tokens.length">點擊輸入金額</em>`）；**計算機長算式 iPhone 爆畫面修好**——⚠ 三個坑：①`.calcdisp__num` 是 flex item、`min-width:auto` 不肯被壓縮 → 新增 `.calcdisp__fit`（`min-width:0`＋`overflow:hidden`）；②量「自然寬度」**不能用 `scrollWidth`**（有 `max-width:100%` 會被夾在容器寬內 → 永遠量不到）**也不能用 `getBoundingClientRect()`**（量到已壓縮後的寬度）→ 只能用 `Range.selectNodeContents()`；③⚠⚠ **量之前必須先把字級還原成 base**，否則第二次量到縮後寬度 → 判定「放得下」→ 還原回去，在 24px 與縮排之間跳動、看起來就是沒生效。⚠⚠ **字級直接寫 DOM（`num.style.fontSize`），不要用 template `:style`**——實測 production build 下 `:style` 綁定**沒有被 Vue 寫進 DOM**（style 屬性從未出現），等距縮排等於沒作用。實測 22 字元 → 23.43px、超長 → 22.4px、v82 的 12 字元仍 38px。守門員新 **v148（29 斷言）**
 - **0.1.73** 記帳頁燈箱**即時預覽**修好（根因＝`ReceiptImages.refreshUrl()` **漏了 `await`**；`RecordSheet` 同一函式有 → 沒 await 時下一行讀 `urls.value[id]` 拿到 undefined，`?? lightbox.value` 就保留舊 src。`applyAll`/`onLightboxLevel` 兩處補上）；需求 2「記錄後鎖定＋只存當前等級」經 v147 實測已由 0.1.71 延遲寫入模型滿足；**已儲存/已記錄 → 等級鈕整排不渲染**（`RecordSheet` 改 `v-if="images.length && hasEditable"`、`ImageLightbox` 改 `showLevels = !!level && !levelLocked`，不是灰掉是消失，下次重開也不長）；**所有燈箱右上角關閉鈕左方有「圖片大小」**（像素＋體積如 `1200×1600 · 65 KB`；`.lightbox__size{right:62px}`＋`bytes` prop＋`onImgLoad()` 量 naturalWidth/Height，`ReviewSheet` 也補）；`.dotp` **0.2em→0.3em**（v82 的 12 字元不溢出仍成立）；記帳頁金額**拿掉 `text-overflow: ellipsis`**（「...」的來源）改三級字級 `≤10→32px / 11→24px(is-mid) / ≥12→22px(is-xlong) / >12→19px(is-long)`——⚠ 實測 `.amount__main` 淨寬 207px、扣幣別符號 41px → 數字只有 **166px**，11 位 32px 要 211px、必然裁 36px，別憑感覺猜字級。守門員新 **v147（38 斷言）**；v145 ④ 兩條「全鎖 disabled」斷言改寫為「完全不渲染」
 - **0.1.72**（已部署線上 0.1.72）快速記帳在**原地**開匯入彈窗（`ImportModal` 新增 `tabs` prop 只顯示指定分頁；記帳頁給 `['paste','quick']`，`SettingsView` 的 query watch/`router` 全移除）；壓縮等級改「**燈箱內**一排原/A/B/C/D（`ImageLightbox` 加 `level`/`levelLocked`/`set-level`）＋收據圖片**標題列最右邊全域鈕**（`setLevelAll` 只作用未鎖定的）」，單張圖下方的鈕已移除，C 級改 **540px/110KB**；**即時預覽**靠 `refreshUrl()`（revoke 舊 object URL → 用新 blob 重出，否則只換 blob 畫面不動）；移除「共 N 張…」提示；設定頁新增「**記帳頁暫存資料**」區（`keepDraft`，預設保留）——根因＝`App.vue :key="route.path"` 重掛元件，保留＝`sessionStorage` 草稿＋`ReceiptImages` 的 `keepOnUnmount`（圖片 blob 仍在 `useImgLevels` 暫存區，還原時只收 `hasPending(id)` 的→重開不留破圖）；修 `byCat` 沒傳 `abs-time` 的 bug；計算機 `.` 拆成 `.dotp`（**只能 0.2em＋letter-spacing:0**，見 2026-10-20.md 的實測序列）；統計頁區間最大與區間記錄都吃 `donutType`（收入/支出不混）+ 標題加「每日／每月最大 2 筆」說明。v52 翻新（`.lightbox__bar .lbbtn`、點圖＝關閉、寬度倍率而非 transform）。守門員 v145（44 斷言）＋新 v146（17 斷言）

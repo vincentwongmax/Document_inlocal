@@ -47,6 +47,13 @@ export interface QuickParseCtx {
   currencyCodes: Set<string>
   /** 沒填貨幣時的預設（記帳幣別） */
   defaultCurrency: string
+  /**
+   * 0.1.75：數量模式 —— 沒有**幣別**之分（貨幣代碼當一般文字），
+   * 完整性提示改說「數量」。
+   * 0.1.76：數量模式也有收支了（銷貨／庫存是一正一負）→ A／B／支出／收入
+   * 恢復解析，只有幣別這一项仍然跳過。
+   */
+  quantityMode?: boolean
 }
 
 /* ── token 切分 ──────────────────────────────────────────────── */
@@ -147,12 +154,16 @@ export function parseCurrencyText(s: string, ctx: QuickParseCtx): string | null 
   return ctx.currencyCodes.has(t) ? t : null
 }
 
-/** 編號或名字 → 分類 id；看不懂回 null。空字串＝還沒決定（回 null，由呼叫端記 issue） */
+/**
+ * 編號或名字 → 分類 id；看不懂回 null。空字串＝還沒決定（回 null，由呼叫端記 issue）
+ * 0.1.76：數量模式的分類不分收支 → 一律用 'expense' 解（見 parseLine 的 5)）。
+ */
 export function parseCategoryText(s: string, type: TxType, ctx: QuickParseCtx): string | null {
   const t = halfWidth(s).trim()
   if (!t) return null
-  if (INT_RE.test(t)) return findCatByNo(Number(t), type, ctx.categories)?.id ?? null
-  return findCatByName(t, type, ctx.categories)?.id ?? null
+  const ty = ctx.quantityMode ? 'expense' : type
+  if (INT_RE.test(t)) return findCatByNo(Number(t), ty, ctx.categories)?.id ?? null
+  return findCatByName(t, ty, ctx.categories)?.id ?? null
 }
 
 /* ── 主解析 ──────────────────────────────────────────────────── */
@@ -186,7 +197,7 @@ function parseLine(rawLine: string, ctx: QuickParseCtx): QuickDraft {
   let dateText = ''
 
   for (const t of tokenize(halfWidth(rawLine))) {
-    // 1) 收支（A／B／支出／收入…）
+    // 1) 收支（A／B／支出／收入…）—— 0.1.76 起數量模式也認（只有幣別不認）
     if (!typeSet) {
       const tw = TYPE_WORDS[t.toLowerCase()] ?? TYPE_WORDS[t]
       if (tw) {
@@ -207,18 +218,21 @@ function parseLine(rawLine: string, ctx: QuickParseCtx): QuickDraft {
       continue
     }
     // 4) 幣別代碼（認得才算；已經有一個就不再收，避免吃掉備註裡的字）
-    if (!curSet && ctx.currencyCodes.has(t.toUpperCase())) {
+    //    數量模式沒有幣別 → 這一步整個跳過（代碼當一般文字）
+    if (!ctx.quantityMode && !curSet && ctx.currencyCodes.has(t.toUpperCase())) {
       d.currency = t.toUpperCase()
       curSet = true
       continue
     }
     // 5) 分類：第二個數字＝編號，否則試名字
+    //    0.1.76：數量模式的分類不分收支（qCategories 全是同一型）→ 一律用
+    //    'expense' 解，不然收入列會找不到任何分類。
     if (!d.categoryId) {
       if (INT_RE.test(t)) {
         catNo = Number(t)
         continue
       }
-      const c = findCatByName(t, d.type, ctx.categories)
+      const c = findCatByName(t, ctx.quantityMode ? 'expense' : d.type, ctx.categories)
       if (c) {
         d.categoryId = c.id
         continue
@@ -230,9 +244,9 @@ function parseLine(rawLine: string, ctx: QuickParseCtx): QuickDraft {
 
   d.note = notes.join(' ')
 
-  // 編號類的分類（等 type 定了才解）
+  // 編號類的分類（等 type 定了才解；數量模式同樣用 'expense' 解，見上面 5)）
   if (!d.categoryId && catNo > 0) {
-    const c = findCatByNo(catNo, d.type, ctx.categories)
+    const c = findCatByNo(catNo, ctx.quantityMode ? 'expense' : d.type, ctx.categories)
     if (c) d.categoryId = c.id
     else d.issues.push(`分類編號 ${catNo} 不存在`)
   }
@@ -244,8 +258,9 @@ function parseLine(rawLine: string, ctx: QuickParseCtx): QuickDraft {
     else d.issues.push('日期格式錯誤')
   }
 
-  // 完整性
-  if (!(d.amount > 0)) d.issues.push('金額未填')
+  // 完整性（數量模式沒有「金額」，改說「數量」）
+  const amtWord = ctx.quantityMode ? '數量' : '金額'
+  if (!(d.amount > 0)) d.issues.push(`${amtWord}未填`)
   if (!d.categoryId) d.issues.push('分類未填')
 
   return d
@@ -261,13 +276,13 @@ export function blankDraft(ctx: QuickParseCtx): QuickDraft {
     note: '',
     occurredAt: new Date().toISOString(),
     raw: '',
-    issues: ['金額未填', '分類未填'],
+    issues: [`${ctx.quantityMode ? '數量' : '金額'}未填`, '分類未填'],
   }
 }
 
 /** 提交前的最後檢查（格子編輯器改完後呼叫，issues 會即時更新） */
-export function recheckDraft(d: QuickDraft): void {
+export function recheckDraft(d: QuickDraft, quantityMode = false): void {
   d.issues = []
-  if (!(d.amount > 0)) d.issues.push('金額未填')
+  if (!(d.amount > 0)) d.issues.push(`${quantityMode ? '數量' : '金額'}未填`)
   if (!d.categoryId) d.issues.push('分類未填')
 }

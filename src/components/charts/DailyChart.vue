@@ -7,30 +7,46 @@ import { fmtMoney } from '@/lib/currency'
 const props = defineProps<{
   points: { key: string; label: string; expense: number; income: number }[]
   currency: string
+  /**
+   * 0.1.75：數量模式 —— 只有一串「數量」（支出＋收入合成一根柱），
+   * 圖例與 tooltip 也不再出現「支出／收入」。
+   */
+  single?: boolean
 }>()
 
 const { setCanvas, render } = useChart(() => {
   if (!props.points.length) return null
+  const single = props.single === true
   const cfg: ChartConfiguration<'bar'> = {
     type: 'bar',
     data: {
       labels: props.points.map((p) => p.label),
-      datasets: [
-        {
-          label: '支出',
-          data: props.points.map((p) => p.expense),
-          backgroundColor: '#bf563c',
-          borderRadius: 4,
-          maxBarThickness: 18,
-        },
-        {
-          label: '收入',
-          data: props.points.map((p) => p.income),
-          backgroundColor: '#2c6e5b',
-          borderRadius: 4,
-          maxBarThickness: 18,
-        },
-      ],
+      datasets: single
+        ? [
+            {
+              label: '數量',
+              data: props.points.map((p) => p.expense + p.income),
+              backgroundColor: '#2c6e5b',
+              borderRadius: 4,
+              maxBarThickness: 18,
+            },
+          ]
+        : [
+            {
+              label: '支出',
+              data: props.points.map((p) => p.expense),
+              backgroundColor: '#bf563c',
+              borderRadius: 4,
+              maxBarThickness: 18,
+            },
+            {
+              label: '收入',
+              data: props.points.map((p) => p.income),
+              backgroundColor: '#2c6e5b',
+              borderRadius: 4,
+              maxBarThickness: 18,
+            },
+          ],
     },
     options: {
       scales: {

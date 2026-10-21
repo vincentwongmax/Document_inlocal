@@ -77,9 +77,12 @@ function setImgEl(el: unknown) {
  * 空陣列＝全部照預設（1→7）；有值＝只顯示有排進去的。
  * ⚠ 8（快速記帳）**預設不顯示**——它只是匯入彈窗的捷徑，要的人自己去排版裡開。
  */
-const layout = computed<number[]>(() =>
-  settings.state.homeLayout.length ? settings.state.homeLayout : [1, 2, 3, 4, 5, 6, 7],
-)
+const layout = computed<number[]>(() => {
+  const list = settings.state.homeLayout.length ? settings.state.homeLayout : [1, 2, 3, 4, 5, 6, 7]
+  // 0.1.76：數量模式**也有收支**了（銷貨／庫存是一正一負）→ 區塊 1 恢復顯示，
+  //   只是裡面沒有幣別選單（見模板的 v-if）。0.1.75 的整個濾掉已撤回。
+  return list
+})
 /** 目前被隱藏的區塊（提交時要用「預設值」補） */
 const hiddenBlocks = computed<Set<number>>(() => {
   const all = new Set([1, 2, 3, 4, 5, 6, 7, 8])
@@ -157,8 +160,14 @@ async function resolveHiddenDefaults(): Promise<{
    * 0.1.50：預設幣別。幣別選單位於區塊 1（支出/收入＋幣別選單），
    * 所以**只有區塊 1 被隱藏**時才套用——區塊 1 有排進去就以記帳頁上的選擇為準，
    * 不然會出現「頁面上顯示 USD、存進去是 JPY」的落差。
+   * 0.1.75：數量模式畫面**沒有任何幣別可選** → 一律用主幣別記帳
+   *   （rate 會是 1、baseAmount ＝ amount，顯示時就是純數字）。
    */
-  const curOut = hid.has(1) && d.currency ? d.currency : curCode.value
+  const curOut = settings.quantityMode
+    ? settings.baseCurrency
+    : hid.has(1) && d.currency
+      ? d.currency
+      : curCode.value
 
   const noteOut = hid.has(4) && d.note ? d.note : note.value
 
@@ -206,7 +215,10 @@ const displayMid = computed(() => !displayLong.value && display.value.length >= 
 /** 12 字元（11 位 ＋ 小數點／負號）：再降一級 */
 const displayXLong = computed(() => display.value.length >= 12)
 /** 還沒按 = 之前不顯示換算預覽，答案要按了等於才出現 */
-const converted = computed(() => calc.value.done && curCode.value !== settings.baseCurrency)
+// 0.1.75：數量模式沒有幣別 → 永遠不顯示換算預覽
+const converted = computed(
+  () => calc.value.done && !settings.quantityMode && curCode.value !== settings.baseCurrency,
+)
 
 /** 0.1.39：標題「旅行模式中」標籤的顏色＝進行中旅行的 color（舊資料沒有＝琥珀回退） */
 const tripColor = computed(() => settings.activeTrip?.color ?? DEFAULT_TRIP_COLOR)
@@ -234,8 +246,9 @@ const presetRows = computed(() =>
   settings.quickPresets.map((p) => {
     const cat = p.categoryId ? settings.category(p.categoryId) ?? null : null
     const bits: string[] = []
-    if (p.amount > 0) bits.push(`金額 ${p.amount}`)
-    if (p.currency) bits.push(`以 ${p.currency} 記錄`)
+    // 0.1.75：數量模式沒有「金額／幣別」的說法，一律叫「數量」
+    if (p.amount > 0) bits.push(`${settings.quantityMode ? '數量' : '金額'} ${p.amount}`)
+    if (p.currency && !settings.quantityMode) bits.push(`以 ${p.currency} 記錄`)
     if (cat) bits.push(settings.fullNameOf(cat.id))
     if (p.note.trim()) bits.push(p.note.trim())
     return {
@@ -254,7 +267,8 @@ const presetRows = computed(() =>
 function applyPreset(p: QuickPreset) {
   type.value = p.type
   // 幣別（0.1.32）：有指定才切，沒指定維持記帳頁目前的幣別
-  if (p.currency) curCode.value = p.currency
+  // 0.1.75：數量模式沒有幣別 → 這一步整段跳過
+  if (p.currency && !settings.quantityMode) curCode.value = p.currency
   if (p.categoryId && settings.category(p.categoryId)) categoryId.value = p.categoryId
   if (p.note.trim()) note.value = p.note
   if (p.amount > 0) {
@@ -411,8 +425,15 @@ async function submit() {
   const v = await resolveHiddenDefaults()
   if (!(v.amount > 0)) {
     // 金額區塊被隱藏又沒設預設金額的話，會在這裡擋下來（記錄一定要有金額）
+    // 0.1.75：數量模式一律叫「數量」
     notify(
-      hiddenBlocks.value.has(2) ? '金額區塊已隱藏——請到設定→記帳頁排版→預設值設預設金額' : '請先輸入金額',
+      hiddenBlocks.value.has(2)
+        ? settings.quantityMode
+          ? '數量區塊已隱藏——請到設定→記帳頁排版→預設值設預設數量'
+          : '金額區塊已隱藏——請到設定→記帳頁排版→預設值設預設金額'
+        : settings.quantityMode
+          ? '請先輸入數量'
+          : '請先輸入金額',
       'warn',
     )
     return
@@ -486,7 +507,8 @@ async function submit() {
   // 0.1.35：模式一開著時補上旅行名，讓使用者知道這筆進了旅行
   // 0.1.36：顯示幣別——旅行中金額直接用旅行貨幣呈現
   // 0.1.53：改用這筆自己凍結的匯率（`displayOf`）——剛記的帳自己就是快照，數值相同
-  const label = `${fmtMoney(settings.displayOf(rec), settings.displayCurrency)} · ${settings.category(rec.categoryId)?.name ?? ''}${trip?.mode1 ? ` · ${trip.name}` : ''}`
+  // 0.1.75：數量模式只顯示數字（沒有幣別符號）
+  const label = `${fmtMoney(settings.displayOf(rec), settings.quantityMode ? '' : settings.displayCurrency)} · ${settings.category(rec.categoryId)?.name ?? ''}${trip?.mode1 ? ` · ${trip.name}` : ''}`
   notify(`已記錄 ${label}`, 'ok', { label: '復原', run: () => records.remove(rec.id) })
 
   resetForm()
@@ -617,9 +639,10 @@ onBeforeUnmount(() => {
         0.1.39：旅行進行中時，標題最右側掛「旅行模式中」小標籤（行李箱 icon＋文字）。
         - 顏色跟 activeTrip 的旅行顏色（0.1.39 色板），沒設＝琥珀回退。
         - .page-head 是 baseline 對齊，膠囊自己 align-self: center 才不會沉底。
+        0.1.75：數量模式一併隱藏旅行模式（整節功能都收起來）。
       -->
       <span
-        v-if="settings.activeTrip"
+        v-if="settings.activeTrip && !settings.quantityMode"
         class="tripmode"
         :style="{
           color: tripColor,
@@ -644,7 +667,11 @@ onBeforeUnmount(() => {
       -->
       <section class="card pad card--ledger">
         <template v-for="b in layout" :key="b">
-          <!-- 1＝支出/收入＋幣別選單 -->
+          <!--
+            1＝支出/收入＋幣別選單
+            0.1.76：數量模式也有收支 → 整塊恢復渲染，但**幣別選單不顯示**
+            （數量模式沒有幣別，見 .seg__cur 的 v-if）。
+          -->
           <div v-if="b === 1" class="seg">
             <button
               class="seg__btn"
@@ -660,7 +687,8 @@ onBeforeUnmount(() => {
             >
               收入
             </button>
-            <div class="seg__cur">
+            <!-- 0.1.75：數量模式沒有任何幣別可選（0.1.76 收支回來、幣別還是沒有） -->
+            <div v-if="!settings.quantityMode" class="seg__cur">
               <select v-model="curCode" class="sel" :title="'目前以 ' + curCode + ' 記錄'">
                 <option v-for="c in currencyOptions" :key="c.code" :value="c.code">
                   {{ c.code }}
@@ -703,13 +731,17 @@ onBeforeUnmount(() => {
                   已經有數字之後整段不出現 —— 使用者看數字就知道可以點，
                   那四個字只是雜訊（而且會跟算式／數字搶視覺）。
                   ⚠ 條件寫在模板上（`v-if`），不要退回成 `calc.tokens.length ? ... : ...` 的三元。
+                  0.1.75：數量模式改成「點擊輸入數量」（沒有金額這個詞）。
                 -->
-                <em v-if="!calc.tokens.length" class="tiny">點擊輸入金額</em>
+                <em v-if="!calc.tokens.length" class="tiny">{{
+                  settings.quantityMode ? '點擊輸入數量' : '點擊輸入金額'
+                }}</em>
               </span>
               <span class="amount__val">
                 <span class="amount__expr num">{{ expr || '\u00a0' }}</span>
                 <span class="amount__main">
-                  <span class="amount__sym">{{ currency(curCode).symbol }}</span>
+                  <!-- 0.1.75：數量模式不顯示貨幣符號（MOP／$ 之類） -->
+                  <span v-if="!settings.quantityMode" class="amount__sym">{{ currency(curCode).symbol }}</span>
                   <span
                     class="amount__num num"
                     :class="{
@@ -778,7 +810,7 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- 7＝清空＋記錄 -->
-          <div v-else class="pad__row">
+          <div v-else-if="b === 7" class="pad__row">
             <button class="btn btn--clear" @click="clearForm">清空</button>
             <button class="btn btn--primary btn--save" @click="submit">記錄</button>
           </div>
@@ -797,7 +829,7 @@ onBeforeUnmount(() => {
     <CalcSheet
       :open="keypadOpen"
       :calc="calc"
-      :symbol="currency(curCode).symbol"
+      :symbol="settings.quantityMode ? '' : currency(curCode).symbol"
       :cur-code="curCode"
       @press="press"
       @close="keypadOpen = false"

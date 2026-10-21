@@ -81,6 +81,11 @@ export function useStats(range: Ref<DateRange>) {
     rows.value.filter((r) => r.type === 'expense').reduce((s, r) => s + amt(r), 0),
   )
   const balance = computed(() => income.value - expense.value)
+  /**
+   * 0.1.75：數量模式 —— 沒有收支之分，全部記錄加總成一個「合計」。
+   * （記錄的 `type` 欄位還在，只是數量模式下沒有任何區分它的畫面。）
+   */
+  const total = computed(() => rows.value.reduce((s, r) => s + amt(r), 0))
 
   /**
    * 分類統計（含子分類）。
@@ -94,9 +99,10 @@ export function useStats(range: Ref<DateRange>) {
    * 旅行分組（不只 `activeTrip`），旅行名用 `settings.tripById()` 查——
    * 結束過的旅行照樣有自己的節點。
    */
-  function byCategory(type: 'expense' | 'income'): CatStat[] {
+  function byCategory(type: TxType | null): CatStat[] {
     // 先把旅行記錄撈出來做成獨立節點（要在算 grand 之前，比例才會對）
-    const tripRowsAll = rows.value.filter((r) => r.tripId && r.type === type)
+    // 0.1.75：type 傳 null ＝不分收支（數量模式）
+    const tripRowsAll = rows.value.filter((r) => r.tripId && (type === null || r.type === type))
     const tripNodes: CatStat[] = []
     if (tripRowsAll.length) {
       // 按旅行分組（同一個 tripId 一顆節點；照 rows 的順序，新的旅行節點在後面）
@@ -151,7 +157,8 @@ export function useStats(range: Ref<DateRange>) {
     // 先算出「直接掛在某個分類身上」的金額（旅行記錄不算進來）
     const own = new Map<string, { total: number; count: number }>()
     for (const r of rows.value) {
-      if (r.type !== type || r.tripId) continue
+      if (type !== null && r.type !== type) continue
+      if (r.tripId) continue
       const cur = own.get(r.categoryId) ?? { total: 0, count: 0 }
       cur.total += amt(r)
       cur.count += 1
@@ -223,6 +230,8 @@ export function useStats(range: Ref<DateRange>) {
 
   const expenseByCat = computed(() => byCategory('expense'))
   const incomeByCat = computed(() => byCategory('income'))
+  /** 0.1.75：數量模式 —— 不分收支的全部分類統計 */
+  const totalByCat = computed(() => byCategory(null))
 
   /** 區間天數；超過 92 天改用月為單位，避免長條圖擠成一團 */
   const spanDays = computed(() => daysInclusive(range.value.start, range.value.end))
@@ -291,9 +300,24 @@ export function useStats(range: Ref<DateRange>) {
       })
       .reduce((s, r) => s + amt(r), 0)
   })
+  /** 0.1.75：數量模式 —— 前期「合計」（不分收支） */
+  const prevTotal = computed(() => {
+    const { start, end } = prevRange.value
+    return records.records
+      .filter((r) => {
+        const k = dayKey(r.occurredAt)
+        return k >= start && k <= end && !records.isExcluded(r)
+      })
+      .reduce((s, r) => s + amt(r), 0)
+  })
   const momChange = computed(() => {
     if (!prevExpense.value) return null
     return (expense.value - prevExpense.value) / prevExpense.value
+  })
+  /** 0.1.75：數量模式的「較前期」變化（合計版） */
+  const totalChange = computed(() => {
+    if (!prevTotal.value) return null
+    return (total.value - prevTotal.value) / prevTotal.value
   })
 
   /**
@@ -302,10 +326,11 @@ export function useStats(range: Ref<DateRange>) {
    * 區間最大的支出，改成區間最大的收入；若用戶選擇了支出，則保持不變」（需求 8）。
    * ⚠ 用一般函式（不是 computed）：類型是 StatsView 的狀態，這裡不方便吃它；
    *   呼叫端用 computed 包就有快取。
+   * 0.1.75：`type` 傳 null ＝不分類型（數量模式）＝全部記錄一起比大小。
    */
-  function topRecordsOf(type: TxType): TxRecord[] {
+  function topRecordsOf(type: TxType | null): TxRecord[] {
     return [...rows.value]
-      .filter((r) => r.type === type)
+      .filter((r) => (type === null || r.type === type))
       .sort((a, b) => amt(b) - amt(a))
       .slice(0, 5)
   }
@@ -331,13 +356,17 @@ export function useStats(range: Ref<DateRange>) {
     income,
     expense,
     balance,
+    total,
     expenseByCat,
     incomeByCat,
+    totalByCat,
     daily,
     trend,
     prevRange,
     prevExpense,
+    prevTotal,
     momChange,
+    totalChange,
     topRecords,
     topRecordsOf,
     allTime,
