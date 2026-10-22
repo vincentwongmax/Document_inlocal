@@ -4,7 +4,7 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 逐版細節在 `CONVENTIONS.md` 與 `.workbuddy/memory/YYYY-MM-DD.md`；這裡只放**每次動手都會用到**的。
 
 ## 版本
-- 只加 Z（目前 **0.1.78**，本地 commit 未部署）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
+- 只加 Z（目前 **0.1.78**，已部署線上：main `6bdadfa`／gh-pages `03d45c1`）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
 - ⚠ `.smoke/` 在 .gitignore → 版本 commit 只含 src/、CHANGELOG、package.json、.workbuddy/memory
 - **0.1.78 已完成**：① 模式切換整套移除，只在「新增錢包」面板選（金錢/數量 seg）；② 管理分類頁匯出/匯入 icon 鈕（`pickCategoriesDialog` 勾選清單；匯入跳過重複＋parentId 重對映）；③ 3 款 app icon（classic/ink/blaze，`lib/appIcon.ts`，設定頁「App 圖示」區，預設 classic）
 
@@ -28,12 +28,13 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 ## Git／部署
 - Pages＝gh-pages；線上 `vincentwongmax.github.io/Document_inlocal/`；線上驗證＝**內容特徵**
 - ⚠ push/deploy 要使用者明說「上傳」才做；`git add -A -- . ':!ddd.txt'`；PAT：`grep -rhoE "ghp_[A-Za-z0-9]{36}"`（長度 40，**不寫進任何檔案**）
+- ⚠⚠ **外網連線特性**：環境的 `https_proxy`（127.0.0.1:51837）對 github.io **回 502**，只有**直連**通 → 別給 Chrome 加 `--proxy-server`；直連 DNS 會瞬斷（Chrome `ERR_NAME_NOT_RESOLVED`／curl exit 6，nslookup 也超時）→ 是環境假紅，重試即可
 - ⚠⚠ git push 常被代理截斷 → 走 REST API：`.smoke/api-sync.mjs`（main）＋`.smoke/deploy-api.mjs`（gh-pages）
   - 本機清單：`git -c core.quotePath=false ls-files | while IFS= read -r p; do [ -f "$p" ] && printf '%s\t%s\n' "$(git hash-object "$p")" "$p"; done > .smoke/local-hash.txt`（bash 端生好再給 node 讀）
   - ⚠ 不要用 `api-push.mjs`；deploy 前後各跑一次 api-sync（第二次應印「遠端已與本機一致」）當驗證
 - ⚠⚠ 工作區文字檔（ts/vue/md/json/css/html）保持 **LF**（api-sync 上傳原始位元組，CRLF 會永不收斂）；二進位檔（png 等）**絕不能** LF 化
 - 推完本地 remote-tracking ref 一定是舊的（正常）；確認遠端用 `curl .../commits/<branch>` 或線上 version.json
-- live 測試（v132-live…v137-live）版本斷言跟**線上**版本
+- live 測試（v109-live~v137-live，29 支）版本斷言跟**線上**版本；⚠ 除了 `pkgVersion ===` 還有**寫死的線上版本值**（v136-live 比對 version.json）→ 升版後 `grep "=== '0\.1\." .smoke/v*-live.mjs` 全掃
 - ⚠ Pages 部署後 version.json 晚 20–120 秒才換（輪詢確認，別誤判失敗）
 
 ## 資料模型
