@@ -332,15 +332,27 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   /**
-   * 新增錢包。新錢包會有自己一份預設設定，主幣別沿用當前錢包的
-   * （比一開就跳回 MOP 合理），分類則是內建那一套。
+   * 新增錢包。新錢包會有自己一份設定，主幣別沿用當前錢包的
+   * （比一開就跳回 MOP 合理）。
+   *
+   * 0.1.78（需求 1）：**模式只能在這裡選**（金錢／數量），選完就不能再改——
+   *   使用者原話：「改成只有在新建立錢包時才能選擇模式…不支持中途切換」。
+   *   - 數量模式：`qCategories` 帶起手式四顆（進貨／銷貨／庫存／其他），
+   *     `categories`（金錢模式那套）留空——兩套本來就互不搬移（0.1.77 的語意保留）。
+   *   - 金錢模式：內建分類那一套，`qCategories` 留空。
    */
-  function addWallet(name: string, color?: string, icon?: string): Wallet | null {
+  function addWallet(name: string, color?: string, icon?: string, quantity = false): Wallet | null {
     const n = cleanWalletName(name)
     if (!walletNameOk(n, root.value.wallets)) return null
     const w = newWallet(uniqueWalletName(n, root.value.wallets.map((x) => x.name)), color, icon)
     root.value.wallets.push(w)
-    writeJSON(walletSettingsKey(w.id), defaultSettings(state.value.baseCurrency))
+    const s = defaultSettings(state.value.baseCurrency)
+    if (quantity) {
+      s.quantityMode = true
+      s.categories = []
+      s.qCategories = JSON.parse(JSON.stringify(DEFAULT_Q_CATEGORIES)) as Category[]
+    }
+    writeJSON(walletSettingsKey(w.id), s)
     return w
   }
 
@@ -437,10 +449,10 @@ export const useSettingsStore = defineStore('settings', () => {
     state.value.moneyDecimals = normMoneyDecimals(n)
   }
   /**
-   * 0.1.75：數量模式（每個錢包各自開關）。開啟後沒有幣別與匯率（見 types.ts）。
-   * 0.1.76：收支恢復（銷貨／庫存是一正一負）——只有幣別／匯率仍然沒有。
-   * 0.1.77：**兩套分類各自一份、切換時不搬移**（使用者原話：「分類不是轉過去，
-   *   也不是共用」），而且切換時舊模式那一份會被**整份清空**（見 `applyModeSwitch`）。
+   * 0.1.75：數量模式。0.1.76：收支恢復（銷貨／庫存是一正一負）——只有幣別／匯率仍然沒有。
+   * 0.1.78（需求 1）：**只能在新增錢包時選，選完不能中途切換**（切換相關的程式碼全部移除）。
+   * 兩套分類（`categories`／`qCategories`）各自一份、互不搬移——0.1.77 的語意保留，
+   * 只是不再有「切換時清空舊模式那一套」的問題（根本沒有切換了）。
    */
   const quantityMode = computed(() => state.value.quantityMode === true)
   /**
@@ -697,46 +709,6 @@ export const useSettingsStore = defineStore('settings', () => {
     state.value.rates = rates
     state.value.ratesUpdatedAt = null
     if (state.value.inputCurrency === state.value.baseCurrency) state.value.inputCurrency = code
-  }
-
-  /**
-   * 0.1.77：某個錢包目前的主幣別（WalletSection 切換數量模式時要顯示／當預設值用）。
-   * 非當前錢包要從 storage 讀（回傳副本，只讀不改）。
-   */
-  function baseCurrencyOf(id: string): string {
-    return settingsOf(id).baseCurrency
-  }
-
-  /**
-   * 0.1.77：把**指定錢包**的主幣別設成 `code`（數量模式切回金錢模式時用）。
-   *
-   * ⚠ 當前錢包走記憶體那份（`setBaseCurrency`，會整組換算匯率表）；
-   *   其他錢包要讀出來改完寫回去（`settingsOf` 對非當前錢包回傳的是副本）。
-   *
-   * ⚠ 匯率表的換算邏輯跟 `setBaseCurrency` 相同（舊 base 下各幣別的匯率除以
-   *   新 base 的匯率 → 新 base 下的全套匯率），只是不碰線上更新。
-   */
-  function setBaseCurrencyFor(id: string, code: string): boolean {
-    if (!root.value.wallets.some((w) => w.id === id)) return false
-    if (id === root.value.activeWalletId) {
-      void setBaseCurrency(code)
-      return true
-    }
-    const s = loadWalletSettings(id)
-    const oldRates = { ...s.rates }
-    s.baseCurrency = code
-    const rates = defaultRates(code)
-    const conv = typeof oldRates[code] === 'number' && oldRates[code] > 0 ? oldRates[code] : 1
-    for (const [c, r] of Object.entries(oldRates)) {
-      const v = Number((r / conv).toFixed(6))
-      if (v > 0 && isFinite(v)) rates[c] = v
-    }
-    s.rates = rates
-    s.ratesUpdatedAt = null
-    s.inputCurrency = code
-    s.preferredCurrency = code
-    writeJSON(walletSettingsKey(id), s)
-    return true
   }
 
   function setInputCurrency(code: string) {
@@ -1184,75 +1156,13 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  /* ── 數量模式（0.1.75） ─────────────────────────────────
-   * 每個錢包各自開關。切換時**記錄的改寫不在這裡做**（records store 反過來
-   * import settings，放在這裡會循環）——由呼叫端（WalletSection）負責，
-   * 見 `applyQuantityMode()`。
+  /* ── 數量模式（0.1.75；0.1.78 起只能在新增錢包時選）──────────
+   * 0.1.75~0.1.77 有「切換模式」的整套流程（applyModeSwitch／setQuantityModeFor／
+   * switchModeDialog／pickBaseCurrency…）。0.1.78（需求 1）依使用者要求全部移除：
+   * 「改成只有在新建立錢包时才能選擇模式…不支持中途切换」。
+   * 現在剩下的只有「唯讀」的查詢（設定頁錢包徽章用）與「新增時選定」
+   * （見 `addWallet` 的 `quantity` 參數）。
    */
-  /**
-   * 0.1.77（需求 1）：**切換模式時，把「舊模式那一整套」清空**。
-   *
-   * 使用者原話：「分類不是轉過去，也不是共用…用戶轉移過去後，就無必要保留所有舊的東西，
-   * 例如：金錢模式轉數量模式 → 那用戶轉換數據後，**金錢模式的所有舊數據要完全移除**；
-   * 數量模式轉金錢模式 → **數量模式的所有舊數據要完全移除**」。
-   *
-   * 所以兩個模式是**各自一份、互不沿用**的資料集，切換＝換一個新錢包：
-   * - 切**進**數量模式：清掉金錢模式的分類（＋常用／預設分類），匯率表也一併清空
-   *   （幣別與匯率都已經從記錄上刪了，留下匯率表只是髒資料）；
-   *   數量模式改用 `qCategories`（沒有就帶入起手式四顆）。
-   * - 切**回**金錢模式：清掉 `qCategories`；金錢模式的分類是空的話帶回**預設分類**
-   *   （＝「當一個新錢包」，主幣別由使用者另外選，見 WalletSection）。
-   *
-   * @param s 要改的那份設定（當前錢包的 state 或讀出來的其他錢包）
-   * @param on true＝切成數量模式
-   */
-  function applyModeSwitch(s: Settings, on: boolean) {
-    if (on) {
-      // ── 金錢模式的舊資料全部移除 ──
-      s.categories = []
-      s.favoriteCategories = []
-      s.defaultCategoryId = ''
-      s.rates = {}
-      // ── 數量模式用自己的分類（起手式四顆）──
-      if (!s.qCategories.length) {
-        s.qCategories = JSON.parse(JSON.stringify(DEFAULT_Q_CATEGORIES)) as Category[]
-      }
-    } else {
-      // ── 數量模式的舊資料全部移除 ──
-      s.qCategories = []
-      // ── 金錢模式＝新錢包：分類是空的就帶回預設分類 ──
-      if (!s.categories.length) {
-        s.categories = JSON.parse(JSON.stringify(defaultSettings().categories))
-      }
-    }
-    s.quantityMode = on
-    if (!on) {
-      s.inputCurrency = s.baseCurrency
-      s.preferredCurrency = s.baseCurrency
-    }
-  }
-
-  /**
-   * 0.1.75：切換**指定錢包**（不限當前錢包）的數量模式。
-   * 回傳 false＝找不到那個錢包。
-   *
-   * ⚠⚠ 0.1.77：切換會**清空舊模式那一整套資料**（見 `applyModeSwitch`）——
-   *   這是使用者明確要的：「轉換數據後，舊模式的所有舊數據要完全移除」。
-   *
-   * ⚠ 當前錢包走記憶體裡那份（`setQuantityMode`）；其他錢包要讀出來、改完寫回去
-   *   （`settingsOf` 對非當前錢包回傳的是副本，改了不會生效）。
-   */
-  function setQuantityModeFor(id: string, on: boolean): boolean {
-    if (!root.value.wallets.some((w) => w.id === id)) return false
-    if (id === root.value.activeWalletId) {
-      setQuantityMode(on)
-      return true
-    }
-    const s = loadWalletSettings(id)
-    applyModeSwitch(s, on)
-    writeJSON(walletSettingsKey(id), s)
-    return true
-  }
 
   /** 某個錢包目前是不是數量模式（設定頁的錢包清單要顯示狀態用） */
   function quantityModeOf(id: string): boolean {
@@ -1261,13 +1171,53 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   /**
-   * 切換數量模式（**當前錢包**）。
+   * 0.1.78（需求 2）：匯入分類（管理分類頁的「匯入分類」）。
    *
-   * ⚠ 0.1.77：會清空舊模式那一整套資料（見 `applyModeSwitch`）。記錄本身的
-   *   改寫由呼叫端（WalletSection）負責，因為 records store 反過來 import settings。
+   * 規則（使用者 0.1.78 拍板「跳過重複」）：只新增目前**不存在**的分類——
+   * - 本地已經有同一個 id → 略過
+   * - 本地已經有「同名＋同收支類型」的分類 → 略過（已刪除封存的也算存在，
+   *   不然匯入會讓選單裡出現兩個同名）
+   * 其餘整份匯入，`parentId` 會重新對映到**本地**的 id（父分類被略過時，
+   * 子分類改掛到本地那個同名父分類底下），所以階層不會斷。
+   *
+   * ⚠ 保留檔案裡的 id（不是重新配發）：這樣同一份檔案重複匯入第二次
+   *   會全部命中「id 已存在」而略過，符合「跳過重複」的预期。
+   * ⚠ 呼叫端要先把清單排成「父先於子」（`flattenCategories` 的順序）。
+   *
+   * @returns 新增／略過各幾個
    */
-  function setQuantityMode(on: boolean) {
-    applyModeSwitch(state.value, on)
+  function importCategories(list: Category[]): { added: number; skipped: number } {
+    const store = catStore()
+    let added = 0
+    let skipped = 0
+    /** 檔案 id → 本地 id（略過的重複項指到本地那個，新的才用檔案自己的） */
+    const idMap = new Map<string, string>()
+    for (const c of list) {
+      const sameId = store.find((x) => x.id === c.id)
+      if (sameId) {
+        idMap.set(c.id, sameId.id)
+        skipped++
+        continue
+      }
+      const sameName = store.find((x) => x.name === c.name && x.type === c.type)
+      if (sameName) {
+        idMap.set(c.id, sameName.id)
+        skipped++
+        continue
+      }
+      const parentId = c.parentId ? (idMap.get(c.parentId) ?? null) : null
+      store.push({
+        ...c,
+        parentId,
+        name: c.name.trim() || c.name,
+        archived: c.archived === true,
+        builtin: c.builtin === true,
+        ...(c.excludeFromStats === true ? { excludeFromStats: true } : {}),
+      })
+      idMap.set(c.id, c.id)
+      added++
+    }
+    return { added, skipped }
   }
 
   return {
@@ -1290,9 +1240,8 @@ export const useSettingsStore = defineStore('settings', () => {
     moneyDecimals,
     setMoneyDecimals,
     quantityMode,
-    setQuantityMode,
-    setQuantityModeFor,
     quantityModeOf,
+    importCategories,
     categories,
     categoriesByType,
     topCategoriesByType,
@@ -1314,8 +1263,6 @@ export const useSettingsStore = defineStore('settings', () => {
     preferredCurrency,
     setPreferredCurrency,
     setBaseCurrency,
-    baseCurrencyOf,
-    setBaseCurrencyFor,
     setInputCurrency,
     setRate,
     refreshRates,

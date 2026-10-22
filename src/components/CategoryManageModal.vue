@@ -8,7 +8,7 @@ import { useScrollLock } from '@/composables/useScrollLock'
 import { usePullToClose } from '@/composables/usePullToClose'
 import CategoryIcon from './CategoryIcon.vue'
 import CategorySelect from './CategorySelect.vue'
-import { confirmDialog } from '@/lib/alerts'
+import { confirmDialog, notify, pickCategoriesDialog } from '@/lib/alerts'
 
 const props = withDefaults(
   defineProps<{
@@ -57,6 +57,8 @@ const emit = defineEmits<{
   remove: [id: string]
   /** 要求把某個分類設為記帳頁的預設分類（空字串＝取消預設） */
   'set-default': [id: string]
+  /** 0.1.78：匯入分類（已勾選、已排成父先於子；合併與去重由設定頁負責） */
+  'import-categories': [list: Category[]]
 }>()
 
 /**
@@ -376,6 +378,149 @@ async function askRemove() {
   // 刪完回到「還沒選」，讓使用者重新挑一個
   choose(PICK)
 }
+
+/* ── 0.1.78（需求 2）：匯出分類／匯入分類 ─────────────────
+ * 使用者原話：「在管理分類的頁面中新增匯出分類和匯入分類的小型按鈕(icon)，
+ * 支持用戶匯出或匯入全部分類或指定分類（用戶可選）」。
+ *
+ * 兩種流程共用 `pickCategoriesDialog`（勾選清單）：
+ * - 匯出：勾完產生 JSON 檔下載（子分類會自動帶入它的上層，階層才不會斷）
+ * - 匯入：選 JSON 檔 → 勾 → `emit('import-categories')` 交給設定頁合併；
+ *   重複的（同 id、或同名＋同收支型）由 settings store 的 `importCategories` 略過。
+ */
+/** 匯出檔的格式記號（匯入時驗證用） */
+const CAT_IO_FORMAT = 'mop-ledger.categories.v1'
+
+/** 勾選清單用的項目：攤平成樹狀順序（父先於子）＋縮排深度 */
+const ioItems = computed(() => ioItemsOf(props.categories))
+
+/** 這份清單攤平後的勾選項目（匯出用目前的分類、匯入用檔案裡的，同一套算法） */
+function ioItemsOf(list: Category[]): { id: string; name: string; depth: number }[] {
+  const byId = new Map(list.map((c) => [c.id, c]))
+  return flattenCategories(list).map((c) => ({ id: c.id, name: c.name, depth: depthOf(c, byId) }))
+}
+
+/** 這個分類縮排幾層（上層不在清單裡就當頂層，跟 flattenCategories 的語義一致） */
+function depthOf(c: Category, byId: Map<string, Category>): number {
+  let d = 0
+  let cur: Category | undefined = c
+  const seen = new Set<string>([c.id])
+  while (cur?.parentId) {
+    const p = byId.get(cur.parentId)
+    if (!p || seen.has(p.id)) break
+    seen.add(p.id)
+    d++
+    cur = p
+  }
+  return d
+}
+
+/** 勾選的分類自動帶入它們的整條上層（子匯出了、父沒匯出 → 匯入會掛不上） */
+function withAncestors(ids: Set<string>, list: Category[]): Category[] {
+  const byId = new Map(list.map((c) => [c.id, c]))
+  const keep = new Set(ids)
+  for (const id of ids) {
+    let cur = byId.get(id)
+    while (cur?.parentId && byId.has(cur.parentId)) {
+      keep.add(cur.parentId)
+      cur = byId.get(cur.parentId)
+    }
+  }
+  return list.filter((c) => keep.has(c.id))
+}
+
+/** 今天日期（匯出檔的檔名用；本地時間，跟記錄頁一致） */
+function ymdToday(): string {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+async function askExport() {
+  const items = ioItems.value
+  if (!items.length) {
+    notify('還沒有任何分類可以匯出', 'warn')
+    return
+  }
+  const picked = await pickCategoriesDialog({
+    title: '匯出分類',
+    message: '勾選要匯出的分類（子分類會自動帶入它的上層）；匯出檔可以再到別台裝置匯入。',
+    confirmText: '匯出勾選的',
+    items,
+  })
+  if (!picked) return
+  // 只匯出勾選的＋它們的上層，並排回樹狀順序（父先於子）
+  const chosen = withAncestors(new Set(picked), props.categories)
+  const ordered = flattenCategories(chosen)
+  const payload = {
+    format: CAT_IO_FORMAT,
+    exportedAt: new Date().toISOString(),
+    count: ordered.length,
+    categories: ordered,
+  }
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `分類-${ymdToday()}.json`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  // ⚠ 不能馬上 revoke：Safari 要等 click 真的開始下載才釋放，遲一下比較保險
+  window.setTimeout(() => URL.revokeObjectURL(url), 2000)
+  notify(`已匯出 ${ordered.length} 個分類`, 'ok')
+}
+
+const importFile = ref<HTMLInputElement | null>(null)
+function pickImportFile() {
+  importFile.value?.click()
+}
+
+/** 檔案裡撿出像分類的項目（型別不對就當沒有，不讓壞檔把畫面弄壞） */
+function parseCategoryFile(text: string): Category[] {
+  let data: unknown
+  try {
+    data = JSON.parse(text)
+  } catch {
+    notify('無法讀取這個檔案（不是有效的 JSON）', 'warn')
+    return []
+  }
+  const o = data as { format?: unknown; categories?: unknown }
+  if (o?.format !== CAT_IO_FORMAT || !Array.isArray(o.categories)) {
+    notify('這不是分類匯出檔', 'warn')
+    return []
+  }
+  return o.categories.filter(
+    (c): c is Category =>
+      !!c &&
+      typeof c === 'object' &&
+      typeof (c as Category).id === 'string' &&
+      !!(c as Category).id &&
+      typeof (c as Category).name === 'string' &&
+      !!(c as Category).name.trim(),
+  )
+}
+
+async function onImportFile(e: Event) {
+  const el = e.target as HTMLInputElement
+  const file = el.files?.[0]
+  el.value = ''
+  if (!file) return
+  const list = parseCategoryFile(await file.text())
+  if (!list.length) return
+  const items = ioItemsOf(list)
+  const picked = await pickCategoriesDialog({
+    title: '匯入分類',
+    message: '勾選要匯入的分類（子分類會自動帶入它的上層）；重複的會自動略過。',
+    confirmText: '匯入勾選的',
+    items,
+  })
+  if (!picked) return
+  const chosen = withAncestors(new Set(picked), list)
+  const ordered = flattenCategories(chosen)
+  // 合併與去重交給設定頁（store 的 importCategories：跳過重複、parentId 重新對映）
+  emit('import-categories', ordered)
+}
 </script>
 
 <template>
@@ -398,7 +543,46 @@ async function askRemove() {
         <div class="bsheet__grab" aria-hidden="true"></div>
 
         <div ref="boxEl" class="box bsheet__body">
-          <h3>{{ title }}</h3>
+          <!--
+            0.1.78（需求 2）：標題列右邊加「匯出／匯入分類」兩顆小型 icon 鈕。
+            使用者原話：「在管理分類的頁面中新增匯出分類和匯入分類的小型按鈕(icon)」。
+          -->
+          <div class="cm__hd">
+            <h3>{{ title }}</h3>
+            <span class="cm__io">
+              <button
+                class="cm__io-btn"
+                type="button"
+                title="匯出分類"
+                aria-label="匯出分類"
+                @click="askExport"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 4v10m0 0 4-4m-4 4-4-4" />
+                  <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                </svg>
+              </button>
+              <button
+                class="cm__io-btn"
+                type="button"
+                title="匯入分類"
+                aria-label="匯入分類"
+                @click="pickImportFile"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 14V4m0 0 4 4m-4-4L8 8" />
+                  <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                </svg>
+              </button>
+            </span>
+          </div>
+          <input
+            ref="importFile"
+            class="hidden"
+            type="file"
+            accept="application/json,.json"
+            @change="onImportFile"
+          />
 
         <!--
           類型放最上面：它決定下面兩個下拉各會列出哪些分類（只列同一種收支）。
@@ -717,6 +901,45 @@ async function askRemove() {
 }
 .box h3 {
   font-size: 16px;
+}
+/* 0.1.78：標題列（標題＋匯出／匯入兩顆 icon 鈕） */
+.cm__hd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cm__hd h3 {
+  flex: 1;
+  min-width: 0;
+}
+.cm__io {
+  flex: none;
+  display: flex;
+  gap: 2px;
+}
+.cm__io-btn {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.cm__io-btn:hover {
+  background: var(--surface-3);
+  color: var(--accent);
+}
+.cm__io-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 /**
  * 「選完分類之後長出來的其餘欄位」的容器（0.1.27）。

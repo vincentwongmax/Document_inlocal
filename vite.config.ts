@@ -64,7 +64,8 @@ export default defineConfig({
     versionFilePlugin(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'icons/*.png'],
+      // 0.1.78：圖示改成三款（子目錄 ink／blaze）→ 用 ** 一併含進來
+      includeAssets: ['favicon.svg', 'icons/**/*.png'],
       manifest: {
         name: '記帳本',
         short_name: '記帳本',

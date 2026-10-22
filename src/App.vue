@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
 import { fmtMoney } from '@/lib/currency'
 import { askUpdate, notify } from '@/lib/alerts'
 import { needRefresh, offlineReady, updateSW } from '@/lib/pwa'
+import { applyAppIcon } from '@/lib/appIcon'
 
 const route = useRoute()
 const records = useRecordsStore()
@@ -29,6 +30,24 @@ watch(needRefresh, async (v) => {
 /* 首次離線就緒時提示一次 */
 watch(offlineReady, (v) => {
   if (v) notify('已可離線使用', 'ok')
+})
+
+/* 0.1.78：啟動時套用使用者選的 app icon（apple-touch-icon／manifest／分頁 icon） */
+onMounted(applyAppIcon)
+
+/*
+ * 0.1.78（需求 1）：一次性遷移——清空「數量模式錢包」的舊記錄。
+ *
+ * 背景：0.1.78 起模式只能在新增錢包時選、不支援中途切換（使用者原話）。
+ * 使用者拍板（0.1.78 釐清問題）：現有數量模式錢包「清空這些錢包的記錄」——
+ * 錢包與數量分類保留，舊記錄（連圖片）刪掉，當一本新帳重來。
+ * ⚠ 只用一次（records store 裡有 localStorage 旗標），重開 App 不會再清。
+ */
+onMounted(() => {
+  const wiped = records.runQtyModeMigration()
+  if (wiped > 0) {
+    notify(`已清空數量模式錢包的 ${wiped} 筆舊記錄（0.1.78 起模式不能中途切換）`, 'info')
+  }
 })
 </script>
 

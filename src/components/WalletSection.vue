@@ -5,9 +5,14 @@
  * 每個錢包有**自己的一整套記錄與設定**（分類、匯率、幣別、常用備註），
  * 切換錢包等於換一本帳。這裡負責：切換、新增、改名、換色換圖示、刪除、排序。
  *
- * 0.1.75：**數量模式**（每本錢包各自開關）。金錢模式切數量模式時若這本還有舊記錄，
- *   會先彈提示「幣別會被移除、只剩下數量，建議先匯出備份」——使用者按「先匯出備份」
- *   就 `emit('backup')` 叫設定頁把匯出彈窗打開（預設就是全部錢包，正好是完整備份）。
+ * 0.1.75：**數量模式**（每本錢包各自）。0.1.77 加了「中途切換模式」的整套流程
+ *   （切換對話框、主幣別下拉、舊資料清空…）。
+ * 0.1.78（需求 1）：**切換整個移除**——使用者原話：
+ *   「移除所有轉換模式相關的程式碼，改成只有在新建立錢包時才能選擇模式
+ *     （金錢模式，數量模式），不支持中途切换…用戶新建立錢包時，
+ *     用戶在新增的頁面中選擇要哪一個模式」。
+ *   所以現在模式只在「新增錢包」面板裡選（見 editor.quantity），選完就不能改；
+ *   現有數量模式錢包的舊記錄由 records store 的一次性遷移清空（0.1.78 拍板）。
  *
  * ⚠ 「裡面還有記錄就不給刪」這條擋在這裡（不是擋在 store）：
  *   settings store 拿不到記錄筆數（records store 反過來 import settings，會循環），
@@ -16,7 +21,7 @@
 import { computed, ref } from 'vue'
 import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
-import { confirmDialog, notify, pickBaseCurrency, switchModeDialog } from '@/lib/alerts'
+import { confirmDialog, notify } from '@/lib/alerts'
 import CategoryIcon from '@/components/CategoryIcon.vue'
 import {
   WALLET_COLORS,
@@ -31,131 +36,14 @@ import type { Wallet } from '@/types'
 const records = useRecordsStore()
 const settings = useSettingsStore()
 
-const emit = defineEmits<{
-  /** 0.1.75：使用者選擇「先匯出備份」再切數量模式 → 請設定頁打開匯出彈窗 */
-  backup: []
-}>()
-
 const countOf = (id: string) => records.countByWallet[id] ?? 0
 const isOnly = computed(() => settings.wallets.length <= 1)
 
-/* ── 數量模式（0.1.75）─────────────────────────────────────
- * 每個錢包各自開關。這裡用一份**本地快照**顯示每本錢包目前的模式：
- *   - 當前錢包讀 store 的 reactive state（一定準）
- *   - 其他錢包讀一次 storage（只在這裡切換，切完就更新快照，不會過期）
- */
-const qtyFlags = ref<Record<string, boolean>>({})
-function refreshQtyFlags() {
-  const out: Record<string, boolean> = {}
-  for (const w of settings.wallets) out[w.id] = settings.quantityModeOf(w.id)
-  qtyFlags.value = out
-}
-refreshQtyFlags()
-const qtyOn = (id: string) => qtyFlags.value[id] === true
-
 /**
- * 切換數量模式（0.1.75 建立；0.1.77 依需求重寫）。
- *
- * 0.1.77 使用者原話（切**進**數量模式）：
- *   「切換後幣別（MOP／HKD 等）與匯率會被移除，保留當初輸入的數量等等其他東西…
- *     這個錢包金錢模式裡的數據完全移除（不是隱藏）」
- * 0.1.77 使用者原話（切**回**金錢模式）：
- *   「需要重新計算和轉換（不是用原有的數據還原，因為原數據已刪除）（即當一個新錢包處理），
- *     彈出主幣別的下拉選單，給用戶選擇，所有的數量轉成金額都以主幣別做單位」
- * 0.1.77 補充：「只要遷移完成，所有舊東西包含記錄也要全部清空」
- *
- * ⚠⚠ 上面兩種描述的結果不同（保留記錄並換算 vs 全部清空），
- *   而「全部清空」是不可逆的 → 交給使用者自己在彈窗裡選（`switchModeDialog`）。
- *
- * ⚠ 分類是**兩套獨立並存、切換時互不搬移**；而且切換時舊模式那一整套
- *   （分類／匯率／常用分類）會被清掉（見 settings 的 `applyModeSwitch`）。
+ * 這本錢包現在是金錢模式還是數量模式（卡片徽章用）。
+ * 0.1.78 起只是**唯讀顯示**——模式在新增時就定下來了，沒有開關可以切。
  */
-async function askQuantityMode(w: Wallet) {
-  const on = !qtyOn(w.id)
-  const n = countOf(w.id)
-
-  if (on) {
-    // ── 金錢模式 → 數量模式 ──
-    if (n > 0) {
-      const choice = await switchModeDialog({
-        title: '切換成數量模式？',
-        message:
-          `「${w.name}」目前有 ${n} 筆記錄。切換後幣別（MOP／HKD 等）與匯率會被移除，` +
-          '每筆只保留當初輸入的數量；金錢模式原本的分類與匯率設定也會一併清除。',
-        keepText: '保留記錄，只移除幣別',
-        clearText: '全部清空（當新錢包）',
-      })
-      if (choice === 'cancel') return
-      if (choice === 'backup') {
-        emit('backup')
-        notify('匯出備份完成後，再按一次這個按鈕就能切換', 'info')
-        return
-      }
-      applyQuantityMode(w, true, undefined, choice === 'clear')
-    } else {
-      applyQuantityMode(w, true, undefined, false)
-    }
-    return
-  }
-
-  // ── 數量模式 → 金錢模式：先讓使用者選主幣別 ──
-  const code = await pickBaseCurrency(settings.allCurrencies, settings.baseCurrencyOf(w.id))
-  if (!code) return
-  if (n > 0) {
-    const choice = await switchModeDialog({
-      title: '切回金錢模式？',
-      message:
-        `「${w.name}」目前有 ${n} 筆記錄。切回後數量模式原本的分類會被清除；` +
-        `記錄可以選擇保留（以 ${code} 重新換算成金額）或全部清空（當一個新錢包）。`,
-      keepText: `保留記錄，以 ${code} 換算`,
-      clearText: '全部清空（當新錢包）',
-    })
-    if (choice === 'cancel') return
-    if (choice === 'backup') {
-      emit('backup')
-      notify('匯出備份完成後，再按一次這個按鈕就能切換', 'info')
-      return
-    }
-    applyQuantityMode(w, false, code, choice === 'clear')
-  } else {
-    applyQuantityMode(w, false, code, false)
-  }
-}
-
-/**
- * 套用模式切換。
- *
- * @param on        true＝切成數量模式
- * @param baseCode  切回金錢模式時使用者選的主幣別
- * @param wipeAll   true＝記錄**全部清空**（當新錢包）；false＝保留記錄並轉換
- */
-function applyQuantityMode(w: Wallet, on: boolean, baseCode?: string, wipeAll = false) {
-  if (!settings.setQuantityModeFor(w.id, on)) {
-    notify('找不到這個錢包', 'warn')
-    return
-  }
-  let cleared = 0
-  let changed = 0
-  if (wipeAll) {
-    // 0.1.77 補充：「所有舊東西包含記錄也要全部清空」
-    cleared = records.clearWalletRecords(w.id)
-  } else if (on) {
-    // 幣別／匯率／主幣金額**真的從記錄上刪掉**（只留數量）
-    changed = records.stripMoneyData(w.id)
-  } else if (baseCode) {
-    // 當成一個新錢包重新換算：數字原封不動，以使用者選的主幣別為單位
-    changed = records.restoreMoneyData(w.id, baseCode)
-  }
-  if (!on && baseCode) settings.setBaseCurrencyFor(w.id, baseCode)
-  refreshQtyFlags()
-  const notes: string[] = []
-  if (cleared > 0) notes.push(`已清空 ${cleared} 筆記錄`)
-  else if (changed > 0) notes.push(`已轉換 ${changed} 筆記錄`)
-  notify(
-    `「${w.name}」已切換成${on ? '數量' : '金錢'}模式${notes.length ? '（' + notes.join('，') + '）' : ''}`,
-    'ok',
-  )
-}
+const qtyOn = (id: string) => settings.quantityModeOf(id)
 
 /* ── 編輯面板（新增與改名共用） ─────────────────────────── */
 type Editor = {
@@ -164,6 +52,8 @@ type Editor = {
   name: string
   color: string
   icon: string
+  /** 0.1.78：新增時選的模式（true＝數量模式）；選完就不能再改 */
+  quantity: boolean
 }
 const editor = ref<Editor | null>(null)
 
@@ -175,11 +65,13 @@ function startAdd() {
     // 顏色照順序輪，連續新增時才不會一直拿到同一個
     color: WALLET_COLORS[settings.wallets.length % WALLET_COLORS.length],
     icon: WALLET_ICONS[0],
+    quantity: false,
   }
 }
 
 function startEdit(w: Wallet) {
-  editor.value = { mode: 'edit', id: w.id, name: w.name, color: w.color, icon: w.icon }
+  // quantity 只是為了型別完整：編輯舊錢包時模式已經是定案，面板不會顯示那組
+  editor.value = { mode: 'edit', id: w.id, name: w.name, color: w.color, icon: w.icon, quantity: qtyOn(w.id) }
 }
 
 function cancel() {
@@ -205,13 +97,14 @@ function save() {
   const e = editor.value
   if (!e || !canSave.value) return
   if (e.mode === 'new') {
-    const w = settings.addWallet(e.name, e.color, e.icon)
+    // 0.1.78：模式在這一刻定下來（之後不能改，見檔案頂端說明）
+    const w = settings.addWallet(e.name, e.color, e.icon, e.quantity)
     if (!w) {
       notify('新增失敗，請檢查名稱', 'warn')
       return
     }
     settings.setActiveWallet(w.id)
-    notify(`已新增錢包「${w.name}」，並切換過去`, 'ok')
+    notify(`已新增錢包「${w.name}」（${e.quantity ? '數量' : '金錢'}模式），並切換過去`, 'ok')
   } else {
     settings.renameWallet(e.id, e.name)
     settings.updateWallet(e.id, { color: e.color, icon: e.icon })
@@ -384,26 +277,9 @@ function avatarStyle(color: string) {
           </button>
 
           <!--
-            0.1.75：數量模式開關（每本錢包各自）。
-            ⚠ 一定要放在 .wcard__main **外面**：main 本身是顆按鈕，
-              按鈕裡再放按鈕是無效 HTML，iOS 上還會點不動。
-            ⚠ 也要放在「編輯錢包」**後面**：v99 等舊測試用
-              `card.querySelector('.wcard__btn')` 點「第一顆」小按鈕（＝編輯），
-              排在前面會讓那些測試點到這顆開關。
+            0.1.78：原本在編輯鈕後面的「數量模式開關」已移除——
+            模式只能在新增錢包時選（見下面編輯面板的「模式」），不支援中途切換。
           -->
-          <button
-            class="wcard__btn wcard__qty"
-            :class="{ 'is-on': qtyOn(w.id) }"
-            type="button"
-            :aria-label="qtyOn(w.id) ? '切回金錢模式' : '切換成數量模式'"
-            :title="qtyOn(w.id) ? '這本是數量模式，按一下切回金錢模式' : '這本是金錢模式，按一下切換成數量模式'"
-            @click="askQuantityMode(w)"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M5 7h14M5 12h9M5 17h5" />
-              <path d="M16.5 14.5v4M14.5 16.5h4" />
-            </svg>
-          </button>
 
           <button
             class="wcard__btn wcard__grip"
@@ -442,6 +318,46 @@ function avatarStyle(color: string) {
           />
         </label>
         <p v-if="nameError" class="tiny warn">{{ nameError }}</p>
+
+        <!--
+          0.1.78（需求 1）：新增時選「模式」（金錢／數量）。
+          使用者原話：「用戶新建立錢包時，用戶在新增的頁面中選擇要哪一個模式」。
+          ⚠ 只有「新增」面板有這組——0.1.78 起不支援中途切換，編輯舊錢包時
+            模式已經是定案，蓋掉會讓裡面的記錄（數量記錄沒有幣別）瞬間變調。
+          ⚠ 用按鈕（seg）不是 radio／checkbox：v99 等舊測試用
+            `document.querySelector('.ed input')` 點「面板裡第一個輸入框」＝名稱，
+            前面插入 input 會讓那些測試改到錯的東西。
+        -->
+        <div v-if="editor.mode === 'new'" class="ed__g">
+          <span class="tiny muted">模式</span>
+          <div class="seg">
+            <button
+              type="button"
+              class="seg__btn"
+              :class="{ 'is-on': !editor.quantity }"
+              :aria-pressed="!editor.quantity"
+              @click="editor.quantity = false"
+            >
+              金錢模式
+            </button>
+            <button
+              type="button"
+              class="seg__btn"
+              :class="{ 'is-on': editor.quantity }"
+              :aria-pressed="editor.quantity"
+              @click="editor.quantity = true"
+            >
+              數量模式
+            </button>
+          </div>
+          <p class="tiny muted ed__mode-hint">
+            {{
+              editor.quantity
+                ? '記件數、重量等純數量：沒有幣別與匯率，分類是進貨／銷貨／庫存等（選定後不能改）'
+                : '記「錢」：有幣別、匯率與主幣別換算，分類是餐飲／交通等（選定後不能改）'
+            }}
+          </p>
+        </div>
 
         <div class="ed__g">
           <span class="tiny muted">顏色</span>
@@ -695,9 +611,37 @@ function avatarStyle(color: string) {
   border-color: var(--amber-line);
   background: var(--amber-soft);
 }
-/* 數量模式開關：開啟時用琥珀色填滿，一眼看得出來哪幾本是「記數量」的 */
-.wcard__qty.is-on {
-  color: var(--amber);
+/*
+ * 0.1.78：新增面板的「模式」選擇（金錢／數量）。
+ * 跟其他彈層的 `.seg` 同一套外觀（灰底膠囊 + 選中那顆浮起），
+ * 這裡不依賴共用樣式（scoped 看不到別的元件），自己寫一份。
+ */
+.seg {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  background: var(--surface-3);
+  border-radius: 12px;
+}
+.seg__btn {
+  flex: 1;
+  height: 32px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.seg__btn.is-on {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-1);
+}
+.ed__mode-hint {
+  margin: 0;
+  line-height: 1.55;
 }
 .wcard__grip svg {
   fill: currentColor;

@@ -129,111 +129,88 @@ export async function askUpdate(): Promise<boolean> {
 }
 
 /**
- * 0.1.77：切換錢包模式（數量 ⇄ 金錢）時的確認彈窗。
+ * 0.1.78（需求 2）：管理分類頁「匯出分類／匯入分類」共用的**勾選清單**。
  *
- * 使用者原話（需求 1）：
- *   「切換後幣別（MOP／HKD 等）與匯率會被移除，保留當初輸入的數量等等其他東西…
- *     這個錢包金錢模式裡的數據完全移除（不是隱藏），
- *     當用戶想要從數量模式轉換到金錢模式的話，需要重新計算和轉換
- *     （不是用原有的數據還原，因為原數據已刪除）（即當一個新錢包處理）」
- *   補充：「只要遷移完成，所有舊東西包含記錄也要全部清空」
+ * 使用者原話：「支持用戶匯出或匯入全部分類或指定分類（用戶可選）」。
+ * 兩種流程都用這一個彈窗：
+ * - 匯出：列出目前全部分類 → 勾完產 JSON 下載
+ * - 匯入：列出檔案裡的全部分類 → 勾完才合併（重複的略過）
  *
- * ⚠⚠ 這兩句其實描述了**兩種不同的結果**（保留記錄並換算 / 全部清空當新錢包），
- *   而「記錄全部清空」是**不可逆**的破壞性操作 —— 所以不替使用者決定，
- *   直接在彈窗裡讓他二選一（再多給一個「先匯出備份」）。
+ * ⚠ 為什麼用 SweetAlert2 的 `html` 自己畫清單：清單可能很長（幾十個分類），
+ *   要能自己捲；SweetAlert2 的 `input: 'select'` 不支援多選，`checkbox` 群組
+ *   又沒有樹狀縮排。這裡用 label + checkbox 手寫，縮排靠 padding-left。
+ * ⚠ 名稱是使用者輸入的 → 一律過 `escapeHtml` 才塞進 html。
  *
- * @returns 'keep'＝保留記錄並轉換｜'clear'＝全部清空（當新錢包）｜
- *          'backup'＝先匯出備份（**不切換**）｜'cancel'＝取消
+ * @returns 勾選的分類 id（**父先於子**的順序）；`null`＝取消
  */
-export type ModeSwitchChoice = 'keep' | 'clear' | 'backup' | 'cancel'
-
-export async function switchModeDialog(o: {
+export async function pickCategoriesDialog(o: {
   title: string
   message: string
-  /** 保留記錄那顆鈕的文字 */
-  keepText: string
-  /** 清空全部那顆鈕的文字 */
-  clearText: string
-  /** 記錄有幾筆（0＝不用問了，直接切） */
-  count?: number
-}): Promise<ModeSwitchChoice> {
-  /**
-   * ⚠ SweetAlert2 原生只有 confirm／deny／cancel 三顆 → confirm＝保留並轉換、
-   *   deny＝全部清空、cancel＝取消。
-   * ⚠ 「先匯出備份」是**第四個動作** → 用 `html` 裡的一顆文字按鈕 +
-   *   `Swal.close('backup')` 達成（關閉時帶一個自訂值，回來時 `res.value` 就是它）。
-   *   這顆**不會切換**（只是打開匯出彈窗），等使用者匯出完自己再按一次。
-   */
-  const res = await Swal.fire({
-    title: o.title,
-    html:
-      `<p style="margin:0 0 14px;font-size:13.5px;line-height:1.7;text-align:left">${o.message}</p>` +
-      '<button type="button" id="swal-backup-btn" ' +
-      'style="background:none;border:0;color:#8a857c;font-size:12.5px;font-weight:600;' +
-      'text-decoration:underline;cursor:pointer;padding:0;margin-bottom:12px">' +
-      '先匯出備份再說</button>',
-    showCancelButton: true,
-    showDenyButton: true,
-    confirmButtonText: o.keepText,
-    denyButtonText: o.clearText,
-    cancelButtonText: '取消',
-    reverseButtons: true,
-    focusConfirm: false,
-    focusDeny: false,
-    focusCancel: false,
-    didOpen: () => {
-      document
-        .getElementById('swal-backup-btn')
-        ?.addEventListener('click', () => void Swal.close({ value: 'backup' } as never))
-    },
-  })
-  if (res.value === 'backup') return 'backup'
-  if (res.isConfirmed) return 'keep'
-  if (res.isDenied) return 'clear'
-  return 'cancel'
-}
-
-/**
- * 0.1.77：讓使用者在彈窗裡選一個**主幣別**（數量模式切回金錢模式時用）。
- *
- * 使用者原話：「當用戶想要從數量模式轉換到金錢模式的話…（即當一個新錢包處理），
- *   彈出主幣別的下拉選單，給用戶選擇，所有的數量轉成金額都以主幣別做單位」。
- *
- * ⚠ 為什麼用 `html` 自己畫下拉而不是 `confirmDialog`：confirmDialog 的三顆按鈕
- *   沒有「輸入」的位置，而這裡必須先讓他選幣別才能確定。
- * ⚠ 回傳 `null` ＝取消（按 ESC／點背景／按取消鈕都算）。
- */
-export async function pickBaseCurrency(
-  options: readonly { code: string; name: string }[],
-  current = '',
-): Promise<string | null> {
-  const opts = options
+  confirmText: string
+  /** 勾選清單的項目（縮排深度 0＝最上層大類） */
+  items: { id: string; name: string; depth: number }[]
+  /** 清單上方那顆「全選／全不選」的初始狀態 */
+  allChecked?: boolean
+}): Promise<string[] | null> {
+  const rows = o.items
     .map(
-      (c) =>
-        `<option value="${escapeHtml(c.code)}"${c.code === current ? ' selected' : ''}>` +
-        `${escapeHtml(c.name)}（${escapeHtml(c.code)}）</option>`,
+      (it) =>
+        `<label class="pcrow" data-id="${escapeHtml(it.id)}" ` +
+        `style="display:flex;align-items:center;gap:9px;padding:7px 4px;` +
+        `padding-left:${4 + it.depth * 18}px;font-size:13.5px;cursor:pointer;text-align:left">` +
+        `<input type="checkbox" value="${escapeHtml(it.id)}" ` +
+        `style="width:17px;height:17px;flex:none;accent-color:#2c6e5b" ` +
+        `${o.allChecked === false ? '' : 'checked'} />` +
+        `<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">` +
+        `${escapeHtml(it.name)}</span></label>`,
     )
     .join('')
   const res = await Swal.fire({
-    title: '選主幣別',
+    title: o.title,
     html:
-      '<p style="margin:0 0 12px;font-size:13px;line-height:1.6;color:#666">' +
-      '數量模式的資料會以你選的這個幣別重新換算（當成一個新錢包處理）。' +
-      '</p>' +
-      `<select id="swal-base-cur" class="swal2-input" ` +
-    `style="width:100%;height:2.75em;font-size:15px;padding:0 10px;border-radius:8px">${opts}</select>`,
+      `<p style="margin:0 0 10px;font-size:12.5px;line-height:1.6;color:#7a766c;text-align:left">${o.message}</p>` +
+      `<div style="max-height:44vh;overflow-y:auto;-webkit-overflow-scrolling:touch;` +
+      `border:1px solid #e5e1d8;border-radius:10px;padding:4px 10px;background:#fbfaf7">${rows}</div>` +
+      `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">` +
+      `<button type="button" id="swal-pc-all" style="background:none;border:0;color:#2c6e5b;` +
+      `font-size:12.5px;font-weight:650;cursor:pointer;padding:0">全選／全不選</button>` +
+      `<span id="swal-pc-count" style="font-size:11.5px;color:#7a766c"></span></div>`,
     showCancelButton: true,
-    confirmButtonText: '用這個幣別',
+    confirmButtonText: o.confirmText,
     cancelButtonText: '取消',
     reverseButtons: true,
+    didOpen: () => {
+      const box = Swal.getHtmlContainer()
+      const count = () => {
+        const n = box?.querySelectorAll<HTMLInputElement>('input[type=checkbox]:checked').length ?? 0
+        const el = document.getElementById('swal-pc-count')
+        if (el) el.textContent = `已選 ${n} ／ ${o.items.length}`
+      }
+      count()
+      box?.addEventListener('change', count)
+      document.getElementById('swal-pc-all')?.addEventListener('click', () => {
+        const boxes = box?.querySelectorAll<HTMLInputElement>('input[type=checkbox]')
+        if (!boxes?.length) return
+        const allOn = [...boxes].every((b) => b.checked)
+        for (const b of boxes) b.checked = !allOn
+        count()
+      })
+    },
     preConfirm: () => {
-      const el = document.getElementById('swal-base-cur') as HTMLSelectElement | null
-      return el?.value || null
+      const boxes = Swal.getHtmlContainer()?.querySelectorAll<HTMLInputElement>(
+        'input[type=checkbox]:checked',
+      )
+      const ids = [...(boxes ?? [])].map((b) => b.value)
+      if (!ids.length) {
+        Swal.showValidationMessage('至少選一個分類')
+        return false
+      }
+      return ids
     },
   })
   if (!res.isConfirmed) return null
   const v = res.value
-  return typeof v === 'string' && v ? v : null
+  return Array.isArray(v) ? (v as string[]) : null
 }
 
 /** 小工具：把字串裡的 HTML 敏感字元換掉（幣別代碼是使用者自訂的，不能直接塞進屬性） */

@@ -25,8 +25,9 @@ import { usageBytes, walletUsageBytes } from '@/lib/storage'
 import { listImageIds } from '@/lib/imageDb'
 import { formatBytes } from '@/lib/imaging'
 import { offlineReady, updateSW } from '@/lib/pwa'
+import { APP_ICON_OPTIONS, appIcon, appIconUrl, setAppIcon, type AppIconKey } from '@/lib/appIcon'
 import { APP_VERSION } from '@/lib/version'
-import type { Settings, TxType } from '@/types'
+import type { Category, Settings, TxType } from '@/types'
 
 const settings = useSettingsStore()
 const records = useRecordsStore()
@@ -467,6 +468,15 @@ function onRemoveCat(id: string) {
   notify(ok ? '已刪除分類' : '刪除失敗', ok ? 'ok' : 'warn')
 }
 
+/**
+ * 0.1.78（需求 2）：管理分類頁的「匯入分類」。
+ * 去重與 parentId 重新對映都在 store（importCategories：跳過重複）。
+ */
+function onImportCategories(list: Category[]) {
+  const { added, skipped } = settings.importCategories(list)
+  notify(`匯入完成：新增 ${added} 個${skipped ? `、略過 ${skipped} 個重複` : ''}`, 'ok')
+}
+
 /* ── 資料管理 ───────────────────────────────────────────── */
 const imageCount = ref(0)
 const usage = ref(0)
@@ -643,6 +653,19 @@ function toggleLang(code: string) {
 
 /** 錢包名稱（顯示在「本錢包」那組的標題上） */
 const activeWalletName = computed(() => settings.activeWallet.name)
+
+/* ── 0.1.78（需求 3）：App 圖示 ────────────────────────────
+ * 使用者原話：「在設定頁中增加一個欄塊，可以給用戶選擇不同的 app icon
+ * （預設是舊 icon），這樣用戶可以在建立 pwa（iphone）時可以有不同的 app icon」。
+ * 選擇是 App 層級的（不隨錢包），存在 localStorage；選好由 lib/appIcon
+ * 把 <link rel="apple-touch-icon"> 與 manifest 一起換掉。
+ */
+const appIconOn = computed(() => appIcon.value)
+function pickAppIcon(k: AppIconKey) {
+  if (!setAppIcon(k)) return
+  const label = APP_ICON_OPTIONS.find((o) => o.key === k)?.label ?? k
+  notify(`App 圖示已改為「${label}」——重新「加入主畫面」就會用新的`, 'ok')
+}
 </script>
 
 <template>
@@ -657,10 +680,10 @@ const activeWalletName = computed(() => settings.activeWallet.name)
 
     <!--
       錢包：切換＝換一本帳，各自有自己的記錄與設定。
-      0.1.75：數量模式開關也在這裡（每本錢包各自）；按「先匯出備份」時會回報上來，
-      我們把匯出彈窗打開（預設範圍就是「全部錢包」，正好是完整備份）。
+      0.1.78：數量模式只能在「新增錢包」面板裡選（見 WalletSection），
+      這裡不再有切換開關，所以也沒有「先匯出備份」的上報。
     -->
-    <WalletSection @backup="exportOpen = true" />
+    <WalletSection />
 
     <!--
       0.1.76（需求 3）：顯示格式 —— 小數位數（每個錢包各自設定）。
@@ -1473,6 +1496,50 @@ const activeWalletName = computed(() => settings.activeWallet.name)
       <input ref="importInput" class="hidden" type="file" accept="application/json,.json" @change="onImportFile" />
     </section>
 
+    <!--
+      0.1.78（需求 3）：App 圖示——PWA（iPhone 加入主畫面）用哪一個。
+      放在「離線與版本」隔壁：兩者都是「安裝／主畫面」相關的設定。
+    -->
+    <section id="sec-appicon" class="card sec">
+      <header class="sec__hd">
+        <span class="sec__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <rect x="4.2" y="4.2" width="15.6" height="15.6" rx="3.4" />
+            <path d="M8.6 15.2v-3.1M12 15.2V8.8M15.4 15.2v-5.1" />
+          </svg>
+        </span>
+        <div class="sec__meta">
+          <h2 class="sec__title">App 圖示</h2>
+          <p class="sec__desc">加入主畫面（PWA）時顯示哪一個圖示；預設是經典</p>
+        </div>
+      </header>
+
+      <div class="panel">
+        <div class="ai__grid">
+          <button
+            v-for="o in APP_ICON_OPTIONS"
+            :key="o.key"
+            type="button"
+            class="ai__opt"
+            :class="{ 'is-on': appIconOn === o.key }"
+            :aria-pressed="appIconOn === o.key"
+            @click="pickAppIcon(o.key)"
+          >
+            <img class="ai__img" :src="appIconUrl(o.key)" :alt="o.label" width="56" height="56" />
+            <span class="ai__txt">
+              <b>{{ o.label }}</b>
+              <em class="tiny muted">{{ o.desc }}</em>
+            </span>
+            <span v-if="o.key === 'classic'" class="ai__tag">預設</span>
+          </button>
+        </div>
+        <p class="tiny muted ai__note">
+          iPhone：Safari 分享 →「加入主畫面」時，會用你選的這個圖示（Android 安裝同樣跟著換）。
+          已經加入過主畫面的不會自動變——移除後重新加入就會是新的。
+        </p>
+      </div>
+    </section>
+
     <!-- 離線與版本 -->
     <section class="card sec">
       <header class="sec__hd">
@@ -1543,6 +1610,7 @@ const activeWalletName = computed(() => settings.activeWallet.name)
       @save="onSaveCat"
       @remove="onRemoveCat"
       @set-default="onSetDefaultCat"
+      @import-categories="onImportCategories"
     />
 
     <!-- 匯出：先選格式（JSON／Excel）與範圍，再下載 -->
@@ -1704,6 +1772,66 @@ const activeWalletName = computed(() => settings.activeWallet.name)
 }
 .sec__hint {
   margin: 0 0 12px;
+}
+
+/* ── 0.1.78：App 圖示選擇 ─────────────────────────────── */
+.ai__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+.ai__opt {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+}
+.ai__opt:hover {
+  border-color: var(--accent);
+}
+.ai__opt.is-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.ai__img {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 10px;
+  /* 圖示本身有圓角，加一道細邊讓它在淡色面板上也有界線 */
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+.ai__txt {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ai__txt b {
+  font-size: 13.5px;
+  font-weight: 650;
+}
+.ai__txt em {
+  font-style: normal;
+  line-height: 1.4;
+}
+.ai__tag {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.ai__note {
+  margin: 10px 0 0;
+  line-height: 1.6;
 }
 
 /* ── 面板 ─────────────────────────────────────────────── */
