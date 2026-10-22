@@ -4,11 +4,11 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 逐版細節在 `CONVENTIONS.md` 與 `.workbuddy/memory/YYYY-MM-DD.md`；這裡只放**每次動手都會用到**的。
 
 ## 版本
-- 只加 Z（目前 **0.1.80**，測試全綠待部署）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
+- 只加 Z（目前 **0.1.80**，已部署線上：main `787c3cf`／gh-pages `4a415c6`）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
 - ⚠ `.smoke/` 在 .gitignore → 版本 commit 只含 src/、CHANGELOG、package.json、.workbuddy/memory
-- **0.1.80**：① 數量模式「記帳頁排版」清單恢復「支出/收入」（0.1.75 濾掉、0.1.76 只修了 HomeView 忘了設定頁）；② 「顯示與上一筆記錄的時間差」改名「上一筆記錄時間差」；③ 第四款 app icon「翠綠」mint（鮮綠＋奶油核對勾，`public/icons/mint/`）
-- **0.1.79（本地 commit）**：移除 0.1.78 的一次性遷移（`runQtyModeMigration`/`clearWalletRecords`/旗標全刪）——不會有用戶踩到舊數量錢包
-- **0.1.78（已部署線上 main `6bdadfa`／gh-pages `03d45c1`）**：① 模式切換整套移除，只在「新增錢包」面板選；② 管理分類頁匯出/匯入 icon 鈕；③ 3 款 app icon（classic/ink/blaze）
+- **0.1.80（已部署）**：① 數量模式「記帳頁排版」清單恢復「支出/收入」（0.1.75 濾掉、0.1.76 只修了 HomeView 忘了 SettingsView 的 `layoutItems`）；② 「顯示與上一筆記錄的時間差」改名「上一筆記錄時間差」；③ 第四款 app icon「翠綠」mint（鮮綠＋奶油核對勾，`public/icons/mint/`）
+- **0.1.79（本地 commit，未部署）**：移除 0.1.78 的一次性遷移（`runQtyModeMigration`/`clearWalletRecords`/旗標全刪）——不會有用戶踩到舊數量錢包
+- **0.1.78（已部署）**：① 模式切換整套移除，只在「新增錢包」面板選；② 管理分類頁匯出/匯入 icon 鈕；③ 3 款 app icon（classic/ink/blaze）
 
 ## 開發／驗證
 - preview :4173（**改完必先 build**）；dev :5173（兩個 ls 分開）
