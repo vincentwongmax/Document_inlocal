@@ -339,6 +339,46 @@ export function relativeTime(iso: string, now = Date.now()): string {
   return `${d.getFullYear() !== nowY ? `${d.getFullYear()}/` : ''}${d.getMonth() + 1}/${d.getDate()}`
 }
 
+/**
+ * 0.1.77：**兩筆記錄之間的間隔**（記錄頁「更多 › 顯示方式 › 顯示與上一筆的時間差」）。
+ *
+ * 使用者原話與範例：
+ *   「增加一個選項，用戶選擇後，按當前用戶顯示的數據，在每筆記都會顯示多一個標籤，
+ *     這個標籤會與上一個記錄做一個時間差，顯示給用戶看，詳細至日時分」
+ *     2028/01/01 22:51 → 435D16H26M
+ *     2026/10/23 09:25 → 16H40M
+ *     2026/10/22 16:45 → 4H25M
+ *     2026/10/22 12:20 → 1H00M
+ *     2026/10/22 11:20 → -- --
+ *
+ * ⚠⚠ 格式規則是從使用者的範例反推出來的，**不是自己發明的**：
+ *   - 天數 > 0 → `{D}D{H}H{M}M`（`435D16H26M`）
+ *   - 天數 = 0 → 省略 D 段（`16H40M`／`4H25M`／`1H00M`）
+ *   - **小時不補零**（範例裡是 `4H`／`1H`，不是 `04H`／`01H`）
+ *   - **分鐘永遠兩位補零**（範例裡是 `1H00M` 的 `00`）
+ *   - 只有分鐘（不到一小時）→ `{M}M`
+ *   - 沒有下一筆可比、或差不到一分鐘 → `-- --`（跟清單最後一筆同一個字）
+ *
+ * @param newer 較新那一筆的時間（列表中在**上面**那列）
+ * @param older 較舊那一筆的時間（列表中在**下面**那列）；沒有就傳 null
+ */
+export function formatGap(newer: string, older: string | null): string {
+  if (!older) return '-- --'
+  const a = new Date(newer).getTime()
+  const b = new Date(older).getTime()
+  if (isNaN(a) || isNaN(b)) return '-- --'
+  const mins = Math.floor(Math.abs(a - b) / 60000)
+  // 同一分鐘內記兩筆 → 顯示不出有意義的間隔，跟「沒有下一筆」一樣用 `-- --`
+  if (mins < 1) return '-- --'
+  const d = Math.floor(mins / 1440)
+  const h = Math.floor((mins % 1440) / 60)
+  const m = mins % 60
+  // 天數 > 0 → 帶 D 段；天數 = 0 → 省略 D 段（範例：`435D16H26M` vs `16H40M`）
+  if (d > 0) return `${d}D${h}H${p(m)}M`
+  if (h > 0) return `${h}H${p(m)}M`
+  return `${m}M`
+}
+
 export function formatFull(iso: string): string {
   const d = new Date(iso)
   return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`

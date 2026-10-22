@@ -139,40 +139,90 @@ export const useRecordsStore = defineStore('records', () => {
           ? Number(patch.rate)
           : r.currency === r.baseCurrency
             ? 1
-            : Number(r.rate)
-      r.rate = Number.isFinite(nextRate) && nextRate > 0 ? nextRate : settings.rate(r.currency)
+            : Number(r.rate ?? 1)
+      r.rate =
+        Number.isFinite(nextRate) && nextRate > 0
+          ? nextRate
+          : settings.rate(r.currency ?? settings.baseCurrency)
       r.amount = Number(r.amount.toFixed(2))
       r.baseAmount = Number((r.amount * r.rate).toFixed(2))
     }
   }
 
   /**
-   * 0.1.75（數量模式）：把某個錢包的記錄**改寫成「只有數量」**。
+   * 0.1.77（需求 1）：把某個錢包的記錄**摘掉所有金錢資料**（切成數量模式時用）。
    *
-   * 幣別／匯率／主幣金額全部移除：`currency` 與 `baseCurrency` 都設成主幣別、
-   * `rate` 固定 1、`baseAmount = amount`（數量＝當初輸入的那個數字）。
-   * 之後統計頁只要把數量當純數字相加就對（不會再把 MOP 跟 HKD 混在一起算）。
+   * 使用者原話：「切換後幣別（MOP／HKD 等）與匯率會被移除，保留當初輸入的數量等等
+   * 其他東西…這個錢包金錢模式裡的數據完全移除（不是隱藏）」。
    *
-   * ⚠ 這是**唯一會大量改寫既有資料**的動作，呼叫端（WalletSection）必須先讓
-   *   使用者匯出備份（見 `askQuantityMode`）。`type` 刻意不動 —— 數量模式
-   *   不顯示收支，但保留 type 可以讓切回金錢模式時資料更完整。
+   * ⚠ 0.1.75 只是把 `currency`／`baseCurrency` 改寫成主幣別、`rate=1`——
+   *   那是**改寫**不是移除。現在改成真的 `delete` 這幾個欄位：
+   *   - 保留：`amount`（＝當初輸入的數量）、`type`、時間、備註、圖片…
+   *   - 移除：`currency`／`baseCurrency`／`rate`／`baseAmount`
+   *
+   * @returns 改寫了幾筆
    */
-  function stripCurrency(walletId: string): number {
-    const base = settings.baseCurrency
+  function stripMoneyData(walletId: string): number {
     let n = 0
     for (const r of all.value) {
       if (r.walletId !== walletId) continue
-      r.currency = base
-      r.baseCurrency = base
+      delete r.currency
+      delete r.baseCurrency
+      delete r.rate
+      delete r.baseAmount
+      r.updatedAt = new Date().toISOString()
+      n++
+    }
+    if (n) writeJSON(Keys.RECORDS_KEY, all.value)
+    return n
+  }
+
+  /**
+   * 0.1.77（需求 1）：從數量模式切回金錢模式時，把數量**重新換算**成該幣別的金額。
+   *
+   * 使用者原話：「需要重新計算和轉換（不是用原有的數據還原，因為原數據已刪除）
+   *   （即當一個新錢包處理），彈出主幣別的下拉選單…所有的數量轉成金額都以主幣別做單位」。
+   *
+   * 所以每筆都當成「以 `code` 記的一筆新資料」：`currency = baseCurrency = code`、
+   * `rate = 1`、`baseAmount = amount`（數字原封不動當金額用）。
+   *
+   * @param code 使用者選的主幣別
+   * @returns 換算了幾筆
+   */
+  function restoreMoneyData(walletId: string, code: string): number {
+    let n = 0
+    for (const r of all.value) {
+      if (r.walletId !== walletId) continue
+      r.currency = code
+      r.baseCurrency = code
       r.rate = 1
       r.baseAmount = r.amount
       r.updatedAt = new Date().toISOString()
       n++
     }
-    // 儲存交給上面的 deep watch（200ms 防抖），這裡只保證「當下就寫一次」，
-    // 避免使用者在防抖視窗內重新整理頁面而遺失改寫
     if (n) writeJSON(Keys.RECORDS_KEY, all.value)
     return n
+  }
+
+  /**
+   * 0.1.77（需求 1）：**把某個錢包的記錄整份清空**（切換模式時用）。
+   *
+   * 使用者原話：「只要遷移完成，所有舊東西包含記錄也要全部清空」——
+   * 也就是說切換模式＝**當一個新錢包處理**：舊模式留下來的記錄（連同它們的
+   * 幣別／匯率／圖片）一律刪掉，新模式從乾乾淨淨的狀態開始。
+   *
+   * ⚠ 圖片實體也一起清（走 `remove()` 的那條路徑 → `deleteImage`），
+   *   避免留下孤立的 blob 佔著空間。
+   * ⚠ 這是**破壞性操作**，呼叫端（WalletSection）必須先讓使用者匯出備份
+   *   （見 `askQuantityMode`）。
+   *
+   * @returns 清掉了幾筆
+   */
+  function clearWalletRecords(walletId: string): number {
+    const mine = all.value.filter((r) => r.walletId === walletId)
+    for (const r of mine) remove(r.id)
+    if (mine.length) writeJSON(Keys.RECORDS_KEY, all.value)
+    return mine.length
   }
 
   function remove(id: string) {
@@ -293,10 +343,15 @@ export const useRecordsStore = defineStore('records', () => {
   }
 
   const totalExpense = computed(() =>
-    records.value.filter((r) => r.type === 'expense' && !isExcluded(r)).reduce((s, r) => s + r.baseAmount, 0),
+    records.value
+      .filter((r) => r.type === 'expense' && !isExcluded(r))
+      // ⚠ 0.1.77：數量模式的記錄沒有 baseAmount → 用顯示金額（倍率 1，等於數量本身）
+      .reduce((s, r) => s + settings.displayOf(r), 0),
   )
   const totalIncome = computed(() =>
-    records.value.filter((r) => r.type === 'income' && !isExcluded(r)).reduce((s, r) => s + r.baseAmount, 0),
+    records.value
+      .filter((r) => r.type === 'income' && !isExcluded(r))
+      .reduce((s, r) => s + settings.displayOf(r), 0),
   )
 
   return {
@@ -308,7 +363,9 @@ export const useRecordsStore = defineStore('records', () => {
     countByWallet,
     add,
     update,
-    stripCurrency,
+    stripMoneyData,
+    restoreMoneyData,
+    clearWalletRecords,
     remove,
     restore,
     reset,

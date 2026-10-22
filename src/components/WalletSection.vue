@@ -16,7 +16,7 @@
 import { computed, ref } from 'vue'
 import { useRecordsStore } from '@/stores/records'
 import { useSettingsStore } from '@/stores/settings'
-import { confirmDialog, notify } from '@/lib/alerts'
+import { confirmDialog, notify, pickBaseCurrency, switchModeDialog } from '@/lib/alerts'
 import CategoryIcon from '@/components/CategoryIcon.vue'
 import {
   WALLET_COLORS,
@@ -54,59 +54,107 @@ refreshQtyFlags()
 const qtyOn = (id: string) => qtyFlags.value[id] === true
 
 /**
- * 切換數量模式前的確認流程（使用者原話）：
- *   「用戶如果有舊數據，在錢包的頁面，錢模式轉數量模式時，彈出提示會移除貨幣種類
- *     (如MOP,HKD )，只剩下數量，叫用戶先備份，彈出匯出備份的頁面，
- *     數量模式時轉錢模式時，全部默認設定做主幣別的幣種。」
+ * 切換數量模式（0.1.75 建立；0.1.77 依需求重寫）。
+ *
+ * 0.1.77 使用者原話（切**進**數量模式）：
+ *   「切換後幣別（MOP／HKD 等）與匯率會被移除，保留當初輸入的數量等等其他東西…
+ *     這個錢包金錢模式裡的數據完全移除（不是隱藏）」
+ * 0.1.77 使用者原話（切**回**金錢模式）：
+ *   「需要重新計算和轉換（不是用原有的數據還原，因為原數據已刪除）（即當一個新錢包處理），
+ *     彈出主幣別的下拉選單，給用戶選擇，所有的數量轉成金額都以主幣別做單位」
+ * 0.1.77 補充：「只要遷移完成，所有舊東西包含記錄也要全部清空」
+ *
+ * ⚠⚠ 上面兩種描述的結果不同（保留記錄並換算 vs 全部清空），
+ *   而「全部清空」是不可逆的 → 交給使用者自己在彈窗裡選（`switchModeDialog`）。
+ *
+ * ⚠ 分類是**兩套獨立並存、切換時互不搬移**；而且切換時舊模式那一整套
+ *   （分類／匯率／常用分類）會被清掉（見 settings 的 `applyModeSwitch`）。
  */
 async function askQuantityMode(w: Wallet) {
   const on = !qtyOn(w.id)
+  const n = countOf(w.id)
+
   if (on) {
-    const n = countOf(w.id)
+    // ── 金錢模式 → 數量模式 ──
     if (n > 0) {
-      const r = await confirmDialog({
+      const choice = await switchModeDialog({
         title: '切換成數量模式？',
-        message: `「${w.name}」目前有 ${n} 筆記錄。切換後幣別（MOP／HKD 等）與匯率會被移除，每筆只保留當初輸入的數量。建議先匯出備份。`,
-        confirmText: '我還是要切換',
-        denyText: '先匯出備份',
-        cancelText: '取消',
-        danger: true,
+        message:
+          `「${w.name}」目前有 ${n} 筆記錄。切換後幣別（MOP／HKD 等）與匯率會被移除，` +
+          '每筆只保留當初輸入的數量；金錢模式原本的分類與匯率設定也會一併清除。',
+        keepText: '保留記錄，只移除幣別',
+        clearText: '全部清空（當新錢包）',
       })
-      if (r === 'deny') {
-        // 只打開備份彈窗，**不切換**——等使用者匯出完自己再按一次
+      if (choice === 'cancel') return
+      if (choice === 'backup') {
         emit('backup')
         notify('匯出備份完成後，再按一次這個按鈕就能切換', 'info')
         return
       }
-      if (r !== 'confirm') return
+      applyQuantityMode(w, true, undefined, choice === 'clear')
+    } else {
+      applyQuantityMode(w, true, undefined, false)
     }
-    applyQuantityMode(w, true)
     return
   }
 
-  const r = await confirmDialog({
-    title: '切回金錢模式？',
-    message: `「${w.name}」會恢復顯示幣別與收支。數量模式期間已移除幣別資訊，所有記錄將一律以主幣別（${settings.baseCurrency}）計算。`,
-    confirmText: '切回金錢模式',
-    cancelText: '先不要',
-  })
-  if (r !== 'confirm') return
-  applyQuantityMode(w, false)
+  // ── 數量模式 → 金錢模式：先讓使用者選主幣別 ──
+  const code = await pickBaseCurrency(settings.allCurrencies, settings.baseCurrencyOf(w.id))
+  if (!code) return
+  if (n > 0) {
+    const choice = await switchModeDialog({
+      title: '切回金錢模式？',
+      message:
+        `「${w.name}」目前有 ${n} 筆記錄。切回後數量模式原本的分類會被清除；` +
+        `記錄可以選擇保留（以 ${code} 重新換算成金額）或全部清空（當一個新錢包）。`,
+      keepText: `保留記錄，以 ${code} 換算`,
+      clearText: '全部清空（當新錢包）',
+    })
+    if (choice === 'cancel') return
+    if (choice === 'backup') {
+      emit('backup')
+      notify('匯出備份完成後，再按一次這個按鈕就能切換', 'info')
+      return
+    }
+    applyQuantityMode(w, false, code, choice === 'clear')
+  } else {
+    applyQuantityMode(w, false, code, false)
+  }
 }
 
-function applyQuantityMode(w: Wallet, on: boolean) {
+/**
+ * 套用模式切換。
+ *
+ * @param on        true＝切成數量模式
+ * @param baseCode  切回金錢模式時使用者選的主幣別
+ * @param wipeAll   true＝記錄**全部清空**（當新錢包）；false＝保留記錄並轉換
+ */
+function applyQuantityMode(w: Wallet, on: boolean, baseCode?: string, wipeAll = false) {
   if (!settings.setQuantityModeFor(w.id, on)) {
     notify('找不到這個錢包', 'warn')
     return
   }
-  if (on) {
-    // 幣別／匯率從記錄上摘掉（只留數量）。切回金錢模式時全部以主幣別計，
-    // 正是 stripCurrency 寫進去的值，所以切回不需要再改寫一次。
-    const n = records.stripCurrency(w.id)
-    if (n > 0) notify(`已將 ${n} 筆記錄改成只有數量`, 'info')
+  let cleared = 0
+  let changed = 0
+  if (wipeAll) {
+    // 0.1.77 補充：「所有舊東西包含記錄也要全部清空」
+    cleared = records.clearWalletRecords(w.id)
+  } else if (on) {
+    // 幣別／匯率／主幣金額**真的從記錄上刪掉**（只留數量）
+    changed = records.stripMoneyData(w.id)
+  } else if (baseCode) {
+    // 當成一個新錢包重新換算：數字原封不動，以使用者選的主幣別為單位
+    changed = records.restoreMoneyData(w.id, baseCode)
   }
+  if (!on && baseCode) settings.setBaseCurrencyFor(w.id, baseCode)
   refreshQtyFlags()
-  notify(on ? `「${w.name}」已切換成數量模式` : `「${w.name}」已切回金錢模式`, 'ok')
+  const notes: string[] = []
+  if (cleared > 0) notes.push(`已清空 ${cleared} 筆記錄`)
+  else if (changed > 0) notes.push(`已轉換 ${changed} 筆記錄`)
+  notify(
+    `「${w.name}」已切換成${on ? '數量' : '金錢'}模式${notes.length ? '（' + notes.join('，') + '）' : ''}`,
+    'ok',
+  )
 }
 
 /* ── 編輯面板（新增與改名共用） ─────────────────────────── */

@@ -823,13 +823,14 @@ watch(
     }
     type.value = r.type
     amount.value = String(r.amount)
-    currencyCode.value = r.currency
+    // ⚠ 0.1.77：數量模式的記錄沒有 currency → 退回主幣別（該區塊在數量模式不渲染）
+    currencyCode.value = r.currency ?? settings.baseCurrency
     categoryId.value = r.categoryId
     occurredAt.value = toLocalInput(r.occurredAt)
     note.value = r.note ?? ''
     // 0.1.53：載入**這筆自己凍結的匯率**（舊資料可能是字串 "2"或缺欄位，
     //   一併正規化；真的沒有才回退到目前匯率表）
-    rate.value = Number(r.rate) > 0 ? Number(r.rate) : settings.rate(r.currency)
+    rate.value = Number(r.rate) > 0 ? Number(r.rate) : settings.rate(r.currency ?? settings.baseCurrency)
     tripId.value = r.tripId ?? ''
     expr.value = r.expr ?? ''
     loadedAmount.value = r.amount
@@ -1227,7 +1228,7 @@ async function save() {
             <template v-if="!settings.quantityMode">
               <div class="meta__row">
                 <span class="tiny muted">主幣金額</span>
-                <span class="tiny num">{{ fmtMoney(record.baseAmount, record.baseCurrency) }}</span>
+                <span class="tiny num">{{ fmtMoney(record.baseAmount ?? record.amount, record.baseCurrency ?? '') }}</span>
               </div>
               <template v-if="converted">
                 <div class="meta__row">

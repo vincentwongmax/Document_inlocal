@@ -458,8 +458,11 @@ const PICKED = 10
 /** 每一組（日或月）最多取幾筆 */
 const PER_GROUP = 2
 
-/** 這一筆的「大小」（收入支出都算，取絕對值） */
-const sizeOf = (r: TxRecord) => Math.abs(r.baseAmount)
+/**
+ * 這一筆的「大小」（收入支出都算，取絕對值）
+ * ⚠ 0.1.77：數量模式的記錄沒有 `baseAmount` → 用顯示金額（倍率 1，等於數量本身）
+ */
+const sizeOf = (r: TxRecord) => Math.abs(settings.displayOf(r))
 
 /** 依 `by` 分組 → 組內按金額排、組間按總額排 → 逐組取前 PER_GROUP 筆，直到滿 PICKED 筆 */
 function pickTop(rows: TxRecord[], by: 'day' | 'month'): TxRecord[] {

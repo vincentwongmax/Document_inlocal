@@ -129,6 +129,123 @@ export async function askUpdate(): Promise<boolean> {
 }
 
 /**
+ * 0.1.77：切換錢包模式（數量 ⇄ 金錢）時的確認彈窗。
+ *
+ * 使用者原話（需求 1）：
+ *   「切換後幣別（MOP／HKD 等）與匯率會被移除，保留當初輸入的數量等等其他東西…
+ *     這個錢包金錢模式裡的數據完全移除（不是隱藏），
+ *     當用戶想要從數量模式轉換到金錢模式的話，需要重新計算和轉換
+ *     （不是用原有的數據還原，因為原數據已刪除）（即當一個新錢包處理）」
+ *   補充：「只要遷移完成，所有舊東西包含記錄也要全部清空」
+ *
+ * ⚠⚠ 這兩句其實描述了**兩種不同的結果**（保留記錄並換算 / 全部清空當新錢包），
+ *   而「記錄全部清空」是**不可逆**的破壞性操作 —— 所以不替使用者決定，
+ *   直接在彈窗裡讓他二選一（再多給一個「先匯出備份」）。
+ *
+ * @returns 'keep'＝保留記錄並轉換｜'clear'＝全部清空（當新錢包）｜
+ *          'backup'＝先匯出備份（**不切換**）｜'cancel'＝取消
+ */
+export type ModeSwitchChoice = 'keep' | 'clear' | 'backup' | 'cancel'
+
+export async function switchModeDialog(o: {
+  title: string
+  message: string
+  /** 保留記錄那顆鈕的文字 */
+  keepText: string
+  /** 清空全部那顆鈕的文字 */
+  clearText: string
+  /** 記錄有幾筆（0＝不用問了，直接切） */
+  count?: number
+}): Promise<ModeSwitchChoice> {
+  /**
+   * ⚠ SweetAlert2 原生只有 confirm／deny／cancel 三顆 → confirm＝保留並轉換、
+   *   deny＝全部清空、cancel＝取消。
+   * ⚠ 「先匯出備份」是**第四個動作** → 用 `html` 裡的一顆文字按鈕 +
+   *   `Swal.close('backup')` 達成（關閉時帶一個自訂值，回來時 `res.value` 就是它）。
+   *   這顆**不會切換**（只是打開匯出彈窗），等使用者匯出完自己再按一次。
+   */
+  const res = await Swal.fire({
+    title: o.title,
+    html:
+      `<p style="margin:0 0 14px;font-size:13.5px;line-height:1.7;text-align:left">${o.message}</p>` +
+      '<button type="button" id="swal-backup-btn" ' +
+      'style="background:none;border:0;color:#8a857c;font-size:12.5px;font-weight:600;' +
+      'text-decoration:underline;cursor:pointer;padding:0;margin-bottom:12px">' +
+      '先匯出備份再說</button>',
+    showCancelButton: true,
+    showDenyButton: true,
+    confirmButtonText: o.keepText,
+    denyButtonText: o.clearText,
+    cancelButtonText: '取消',
+    reverseButtons: true,
+    focusConfirm: false,
+    focusDeny: false,
+    focusCancel: false,
+    didOpen: () => {
+      document
+        .getElementById('swal-backup-btn')
+        ?.addEventListener('click', () => void Swal.close({ value: 'backup' } as never))
+    },
+  })
+  if (res.value === 'backup') return 'backup'
+  if (res.isConfirmed) return 'keep'
+  if (res.isDenied) return 'clear'
+  return 'cancel'
+}
+
+/**
+ * 0.1.77：讓使用者在彈窗裡選一個**主幣別**（數量模式切回金錢模式時用）。
+ *
+ * 使用者原話：「當用戶想要從數量模式轉換到金錢模式的話…（即當一個新錢包處理），
+ *   彈出主幣別的下拉選單，給用戶選擇，所有的數量轉成金額都以主幣別做單位」。
+ *
+ * ⚠ 為什麼用 `html` 自己畫下拉而不是 `confirmDialog`：confirmDialog 的三顆按鈕
+ *   沒有「輸入」的位置，而這裡必須先讓他選幣別才能確定。
+ * ⚠ 回傳 `null` ＝取消（按 ESC／點背景／按取消鈕都算）。
+ */
+export async function pickBaseCurrency(
+  options: readonly { code: string; name: string }[],
+  current = '',
+): Promise<string | null> {
+  const opts = options
+    .map(
+      (c) =>
+        `<option value="${escapeHtml(c.code)}"${c.code === current ? ' selected' : ''}>` +
+        `${escapeHtml(c.name)}（${escapeHtml(c.code)}）</option>`,
+    )
+    .join('')
+  const res = await Swal.fire({
+    title: '選主幣別',
+    html:
+      '<p style="margin:0 0 12px;font-size:13px;line-height:1.6;color:#666">' +
+      '數量模式的資料會以你選的這個幣別重新換算（當成一個新錢包處理）。' +
+      '</p>' +
+      `<select id="swal-base-cur" class="swal2-input" ` +
+    `style="width:100%;height:2.75em;font-size:15px;padding:0 10px;border-radius:8px">${opts}</select>`,
+    showCancelButton: true,
+    confirmButtonText: '用這個幣別',
+    cancelButtonText: '取消',
+    reverseButtons: true,
+    preConfirm: () => {
+      const el = document.getElementById('swal-base-cur') as HTMLSelectElement | null
+      return el?.value || null
+    },
+  })
+  if (!res.isConfirmed) return null
+  const v = res.value
+  return typeof v === 'string' && v ? v : null
+}
+
+/** 小工具：把字串裡的 HTML 敏感字元換掉（幣別代碼是使用者自訂的，不能直接塞進屬性） */
+function escapeHtml(s: string): string {
+  return (s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/**
  * 0.1.52：設定頁「檢查更新」比對線上 version.json 後的詢問。
  *
  * 使用者原話：「彈出提示，版本號不一致，當前 X.Y.Z，將自動更新 A.B.C」。

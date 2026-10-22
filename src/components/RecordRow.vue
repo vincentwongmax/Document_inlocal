@@ -34,9 +34,14 @@ const props = withDefaults(
      * ⚠ 「同一天」的判斷在 **RecordsView** 做（它看得到整份清單），
      *   這裡只負責照指令組字串。
      */
-    absTime?: 'off' | 'time' | 'd' | 'md' | 'full'
+    absTime?: 'off' | 'time' | 'd' | 'md' | 'full',
+    /**
+     * 0.1.77：「與上一筆記錄的時間差」標籤文字（`435D16H26M`／`16H40M`／`-- --`）。
+     * 空字串＝不顯示（父層沒開這個選項時就是空字串）。
+     */
+    gapText?: string,
   }>(),
-  { showTime: false, highlight: '', timeRecent: false, absTime: 'off' },
+  { showTime: false, highlight: '', timeRecent: false, absTime: 'off', gapText: '' },
 )
 const emit = defineEmits<{ edit: [id: string]; remove: [id: string] }>()
 const settings = useSettingsStore()
@@ -218,6 +223,8 @@ watch(
     props.showTime,
     props.timeRecent,
     props.absTime,
+    // 0.1.77：時間差標籤會出現／消失 → 一樣會改變 .row__top 的寬度
+    props.gapText,
     props.highlight,
   ],
   () => void recheck(),
@@ -266,6 +273,16 @@ watch(
             <path d="M8 4.55v3.75l2.3 1.4" />
           </svg>
           <span>{{ timeText }}</span>
+        </span>
+        <!--
+          0.1.77：「與上一筆記錄的時間差」標籤。
+          使用者原話：「在每筆記都會顯示多一個標籤，這個標籤會與上一個記錄做一個時間差，
+            顯示給用戶看，詳細至日時分，標籤的風格和時間標籤的風格類似」。
+          ⚠ 放在**時間標籤的右邊**（跟「記」標籤同一側），風格比照 .ttag。
+          ⚠ 標籤出現／消失會改變 .row__top 的寬度 → 已加進下面 watch 的依賴清單。
+        -->
+        <span v-if="gapText" class="ttag tgap" title="與上一筆記錄的時間差">
+          <span>{{ gapText }}</span>
         </span>
         <!--
           0.1.58：待辦事項標籤「記」（使用者原話：「另外有筆記的記錄，在記錄的頁面的
@@ -497,6 +514,16 @@ watch(
 .ttag__ic {
   stroke: var(--text-3);
   stroke-width: 1.25;
+}
+/*
+ * 0.1.77：時間差標籤（`435D16H26M`）——風格比照時間標籤（.ttag），
+ * 但底色淡一階（資訊性標籤，不要跟時間標籤搶視覺）。
+ */
+.tgap {
+  background: var(--surface-2);
+  color: var(--text-3);
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 .ttag__face {
   fill: currentColor;

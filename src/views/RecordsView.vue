@@ -21,6 +21,7 @@ import { withAlpha } from '@/lib/color'
 import {
   addDays,
   dayKey,
+  formatGap,
   formatRange,
   monthKey,
   monthRange,
@@ -124,7 +125,9 @@ const moreLabel = computed(() => {
   const picked = MORE_TAGS.filter((t) => moreTags.value.includes(t.v))
   const base = picked.length ? picked.map((t) => t.short).join('+') : '更多'
   // 0.1.69：開了「顯示實際時間」也要讓按鈕看得出來（用「時」接在後面）
-  return showAbsTime.value ? `${base}+時` : base
+  // 0.1.77：時間差開關用「差」接在後面
+  const marks = [showAbsTime.value ? '時' : '', showGapTime.value ? '差' : ''].filter(Boolean)
+  return marks.length ? `${base}+${marks.join('+')}` : base
 })
 const moreTitle = computed(() =>
   moreActive.value
@@ -158,11 +161,64 @@ function saveAbsTime() {
     /* 隱私模式等 → 記不住就記不住，不影響使用 */
   }
 }
+/**
+ * 0.1.77：「顯示與上一筆記錄的時間差」開關（同一個下拉裡的「顯示方式」區）。
+ *
+ * 使用者原話：「在檢視的區域, 更多的下拉選單，增加一個選項，用戶選擇後，
+ *   按當前用戶顯示的數據，在每筆記都會顯示多一個標籤，這個標籤會與上一個記錄
+ *   做一個時間差，顯示給用戶看，詳細至日時分，標籤的風格和時間標籤的風格類似」。
+ *
+ * ⚠ 跟「顯示實際時間」一樣是**顯示偏好**（不篩選記錄）→ 放 `extras` 不放 `options`。
+ * ⚠ 持久化到 localStorage（跟 abs-time 共用同一個鍵，存成 JSON 陣列）。
+ */
+const GAP_TIME_KEY = 'mop-ledger.ui.gapTime.v1'
+const gapTimeOn = ref<string[]>(loadGapTime())
+function loadGapTime(): string[] {
+  try {
+    return localStorage.getItem(GAP_TIME_KEY) === '1' ? ['gap-time'] : []
+  } catch {
+    return []
+  }
+}
+function saveGapTime() {
+  try {
+    localStorage.setItem(GAP_TIME_KEY, showGapTime.value ? '1' : '0')
+  } catch {
+    /* 隱私模式等 → 記不住就記不住，不影響使用 */
+  }
+}
 /** 開關打開了嗎 */
 const showAbsTime = computed(() => absTimeOn.value.includes('abs-time'))
+/** 0.1.77：時間差標籤開關打開了嗎 */
+const showGapTime = computed(() => gapTimeOn.value.includes('gap-time'))
 watch(absTimeOn, () => saveAbsTime(), { deep: true })
+watch(gapTimeOn, () => saveGapTime(), { deep: true })
 /** 下拉裡「顯示方式」那一段的選項 */
-const moreExtras = [{ v: 'abs-time', label: '顯示實際時間' }]
+const moreExtras = [
+  { v: 'abs-time', label: '顯示實際時間' },
+  { v: 'gap-time', label: '顯示與上一筆記錄的時間差' },
+]
+/**
+ * 0.1.77：MoreFilterMenu 的 `extraOn` 只有一個 v-model，
+ * 但「顯示方式」現在有兩個開關 → 這裡合併成一份再拆回去。
+ * ⚠ 兩個來源各自存自己的 localStorage 鍵，合併只是給元件看的。
+ */
+const extraOn = computed<string[]>({
+  get: () => [...absTimeOn.value, ...gapTimeOn.value],
+  set: (v) => {
+ absTimeOn.value = v.includes('abs-time') ? ['abs-time'] : []
+    gapTimeOn.value = v.includes('gap-time') ? ['gap-time'] : []
+  },
+})
+/**
+ * ⚠⚠ computed 的 setter **不會**被 `<script setup>` 模板裡的
+ *   `@update:extra-on="extraOn = $event"` 叫到（`extraOn` 是 const，
+ *   模板賦值寫到 setup 物件上，不會回到 computed 的 setter）——
+ *   所以要用**明確的函式**接事件。
+ */
+function setExtraOn(v: string[]) {
+  extraOn.value = v
+}
 /**
  * 全部記錄是不是同一天？
  * 使用者原話：「如果記錄都是同一天，就不用顯示日期，只顯示時間，
@@ -433,6 +489,13 @@ interface CatGroup {
   list: TxRecord[]
   /** 子分類小計；大類自己身上的金額以「未細分」放在最後 */
   subs: SubTotal[]
+  /**
+   * 0.1.77：組內每一筆的「與上一筆記錄的時間差」標籤文字。
+   * ⚠ 依分類檢視時各組是分開的視覺區塊 → 只能在**組內**算相鄰的差。
+   * ⚠ 以「完整組內順序」計算（不是只算畫面上露出來的前幾筆），
+   *   這樣收合／展開時數字不會跳動。
+   */
+  gap: Map<string, string>
 }
 
 /**
@@ -444,6 +507,23 @@ interface CatGroup {
  * 畫面上就是「日本旅行 → 餐飲／交通…」的效果（使用者拍板：旅行標記方案）。
  * 0.1.36：標記結束後保留，所以結束過的旅行照樣有自己的組（名稱用 tripById 查）。
  */
+/**
+ * 0.1.77：算一串記錄「每筆與下一筆（較舊那筆）」的時間差標籤。
+ *
+ * ⚠ 順序必須跟畫面上看到的一致（`sorted` 是由新到舊），
+ *   所以第 i 筆是跟第 i+1 筆比；最後一筆沒有下一筆 → `-- --`。
+ */
+function gapMapOf(sorted: TxRecord[]): Map<string, string> {
+  const m = new Map<string, string>()
+  if (!showGapTime.value) return m
+  for (let i = 0; i < sorted.length; i++) {
+    const cur = sorted[i]
+    const next = sorted[i + 1]
+    m.set(cur.id, formatGap(timeOf(cur), next ? timeOf(next) : null))
+  }
+  return m
+}
+
 const catGroups = computed<CatGroup[]>(() => {
   const m = new Map<string, TxRecord[]>()
   for (const r of rows.value) {
@@ -501,6 +581,8 @@ const catGroups = computed<CatGroup[]>(() => {
         inc: sumOf((v) => v.inc),
         list: sorted,
         subs,
+        // 0.1.77：組內相鄰兩筆的時間差（依分類檢視時各組是分開的視覺區塊）
+        gap: gapMapOf(sorted),
       }
     })
     .sort((a, b) => b.exp + b.inc - (a.exp + a.inc))
@@ -1015,7 +1097,8 @@ function removeEditing(id: string) {
             <MoreFilterMenu
               v-model="moreTags"
               :options="moreOptions"
-              v-model:extra-on="absTimeOn"
+              :extra-on="extraOn"
+              @update:extra-on="setExtraOn"
               :extras="moreExtras"
               :label="moreLabel"
               :active="moreActive || showAbsTime"
@@ -1117,6 +1200,7 @@ function removeEditing(id: string) {
         :highlight="kw"
         :date-basis="recent ? 'created' : 'occurred'"
         :abs-time="absTimeMode"
+        :gap-time="showGapTime"
         @edit="editingId = $event"
         @remove="removeEditing($event)"
       />
@@ -1218,6 +1302,7 @@ function removeEditing(id: string) {
               :highlight="kw"
               :time-recent="recent"
               :abs-time="absTimeMode"
+              :gap-text="g.gap.get(r.id) ?? ''"
               @edit="editingId = $event"
               @remove="removeEditing($event)"
             />

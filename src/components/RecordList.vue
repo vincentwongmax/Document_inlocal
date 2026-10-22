@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { TxRecord } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { fmtMoney } from '@/lib/currency'
-import { dayKey, dayParts, monthKey } from '@/lib/date'
+import { dayKey, dayParts, formatGap, monthKey } from '@/lib/date'
 import RecordRow from './RecordRow.vue'
 
 const props = withDefaults(
@@ -48,6 +48,16 @@ const props = withDefaults(
     virtual?: boolean
     /** 0.1.69：時間標籤改顯示實際時間（'off' | 'time' | 'datetime'），往 RecordRow 傳 */
     absTime?: 'off' | 'time' | 'd' | 'md' | 'full'
+    /**
+     * 0.1.77：顯示「與上一筆記錄的時間差」標籤。
+     *
+     * 使用者原話：「在每筆記都會顯示多一個標籤，這個標籤會與上一個記錄做一個時間差，
+     *   顯示給用戶看，詳細至日時分，標籤的風格和時間標籤的風格類似」。
+     *
+     * ⚠ 「上一筆」是**整份清單（跨日分組）的順序**，不是「同一個日期分组內」的上一筆——
+     *   使用者的範例裡 `2028/01/01` 與 `2026/10/23` 明顯是不同日期，卻算出 `435D…`。
+     */
+    gapTime?: boolean
   }>(),
   {
     showTime: true,
@@ -59,6 +69,7 @@ const props = withDefaults(
     totalsFrom: undefined,
     virtual: false,
     absTime: 'off',
+    gapTime: false,
   },
 )
 const emit = defineEmits<{ edit: [id: string]; remove: [id: string] }>()
@@ -133,6 +144,36 @@ function monthHeading(key: string): { y: string; m: number } {
   const [y, m] = key.split('-')
   return { y, m: Number(m) }
 }
+
+/**
+ * 0.1.77：每一筆記錄「與上一筆（較舊的那筆）」的時間差標籤文字。
+ *
+ * ⚠⚠ 計算的順序必須是**使用者看到的順序**：先把所有日期分組依序攤平
+ *   （分組由新到舊、組內由新到舊），再用「這一筆 vs 下一筆」算差。
+ *   若只算「同一日期組內」，跨日的兩筆（例如 2028/01/01 與 2026/10/23）
+ *   就會算不出 `435D…`。
+ *
+ * ⚠ 最後一筆沒有「下一筆」可比 → `-- --`（formatGap 遇到 null 就是回這個）。
+ */
+const gapOf = computed(() => {
+  const m = new Map<string, string>()
+  if (!props.gapTime) return m
+  // 攤平：分組由新到舊 → 組內也由新到舊 → 整體就是由新到舊的連續序列
+  const flat: TxRecord[] = []
+  for (const g of groups.value) flat.push(...g.list)
+  for (let i = 0; i < flat.length; i++) {
+    const cur = flat[i]
+    const next = flat[i + 1]
+    const basis = props.dateBasis === 'created' ? cur.createdAt : cur.occurredAt
+    const nextBasis = next
+      ? props.dateBasis === 'created'
+        ? next.createdAt
+        : next.occurredAt
+      : null
+    m.set(cur.id, formatGap(basis, nextBasis))
+  }
+  return m
+})
 
 const total = computed(() => props.records.length)
 const collapsed = computed(
@@ -396,6 +437,7 @@ watch(() => visibleGroups.value.length, () => void measure())
                 :highlight="highlight"
                 :time-recent="dateBasis === 'created'"
                 :abs-time="absTime"
+                :gap-text="gapOf.get(r.id) ?? ''"
                 @edit="emit('edit', $event)"
                 @remove="emit('remove', $event)"
               />
