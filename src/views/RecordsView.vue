@@ -196,7 +196,8 @@ watch(gapTimeOn, () => saveGapTime(), { deep: true })
 /** 下拉裡「顯示方式」那一段的選項 */
 const moreExtras = [
   { v: 'abs-time', label: '顯示實際時間' },
-  { v: 'gap-time', label: '顯示與上一筆記錄的時間差' },
+  // 0.1.80（需求 2）：使用者原話「顯示興上一筆記錄的時間差的選項文字 改成--> 上一筆記錄時間差」
+  { v: 'gap-time', label: '上一筆記錄時間差' },
 ]
 /**
  * 0.1.77：MoreFilterMenu 的 `extraOn` 只有一個 v-model，

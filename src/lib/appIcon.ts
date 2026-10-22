@@ -3,15 +3,19 @@ import { ref } from 'vue'
 /**
  * 0.1.78（需求 3）：App 圖示（PWA icon）選擇。
  *
- * 使用者原話：
+ * 使用者原話（0.1.78）：
  *   「建立多兩種不同的 app ICON（共3款，新兩個，舊1个）…在設定頁中增加一個欄塊，
  *     可以給用戶選擇不同的 app icon（預設是舊 icon），
  *     這樣用戶可以在建立 pwa（iphone）時可以有不同的 app icon」
  *
- * 三款（圖示由 `scripts/gen-icons.mjs` 產生，見該檔的設計說明）：
+ * 使用者原話（0.1.80，需求 3 延續）：
+ *   「APP 的圖示加多一個新設計，我需要綠色做主色的(其他可以自由發揮」
+ *
+ * 四款（圖示由 `scripts/gen-icons.mjs` 產生，見該檔的設計說明）：
  *   - classic（舊／預設）：`public/icons/icon-*.png`（0.1.77 之前的墨底收據）
  *   - ink（墨夜）：`public/icons/ink/icon-*.png`
  *   - blaze（烈橘）：`public/icons/blaze/icon-*.png`
+ *   - mint（翠綠）：`public/icons/mint/icon-*.png`（鮮綠底＋粗造形奶油核對勾）
  *
  * 怎麼讓 iPhone 真的換到圖示：
  *   iOS 的「加入主畫面」是**當下**讀 `<link rel="apple-touch-icon">` 的網址去抓圖，
@@ -24,7 +28,7 @@ import { ref } from 'vue'
  * ⚠ 選擇是 **App 層級**的（不隨錢包）：存 localStorage，開機時由 App.vue 套用。
  */
 
-export type AppIconKey = 'classic' | 'ink' | 'blaze'
+export type AppIconKey = 'classic' | 'ink' | 'blaze' | 'mint'
 
 const STORE_KEY = 'mop-ledger.ui.appIcon.v1'
 
@@ -32,10 +36,11 @@ export const APP_ICON_OPTIONS: { key: AppIconKey; label: string; desc: string }[
   { key: 'classic', label: '經典', desc: '墨底收據（原本的圖示）' },
   { key: 'ink', label: '墨夜', desc: '近黑底＋奶油統計圓' },
   { key: 'blaze', label: '烈橘', desc: '鮮橘底＋粗造形上箭頭' },
+  { key: 'mint', label: '翠綠', desc: '鮮綠底＋粗造形核對勾' },
 ]
 
 function isKey(v: unknown): v is AppIconKey {
-  return v === 'classic' || v === 'ink' || v === 'blaze'
+  return v === 'classic' || v === 'ink' || v === 'blaze' || v === 'mint'
 }
 
 /** 目前選定的圖示（預設 classic＝舊 icon）；storage 讀不到時也用預設 */

@@ -149,52 +149,6 @@ export const useRecordsStore = defineStore('records', () => {
     }
   }
 
-  /**
-   * 0.1.78（需求 1）：**把某個錢包的記錄整份清空**（升版遷移用）。
-   *
-   * 背景：0.1.78 起「模式只能在新增錢包時選，不支援中途切換」。使用者拍板
-   * （0.1.78 釐清問題）：**現有已經處於數量模式的錢包，記錄全部清空**——
-   * 錢包與它的數量分類保留，但舊記錄（連同幣別／匯率／圖片）一律刪掉，
-   * 等於當一本新帳重來（見 `runQtyModeMigration`）。
-   *
-   * ⚠ 圖片實體也一起清（走 `remove()` 的那條路徑 → `deleteImage`），
-   *   避免留下孤立的 blob 佔著空間。
-   * ⚠ 這是**破壞性操作**——只經由一次性遷移呼叫，不再有 UI 入口。
-   *
-   * @returns 清掉了幾筆
-   */
-  function clearWalletRecords(walletId: string): number {
-    const mine = all.value.filter((r) => r.walletId === walletId)
-    for (const r of mine) remove(r.id)
-    if (mine.length) writeJSON(Keys.RECORDS_KEY, all.value)
-    return mine.length
-  }
-
-  /**
-   * 0.1.78（需求 1）：一次性遷移——把「數量模式錢包」的記錄全部清空。
-   *
-   * 使用者原話（0.1.78 釐清）：現有數量模式的錢包「清空這些錢包的記錄」。
-   * 為什麼要做這個遷移：0.1.77 還能「切回金錢模式」（數量 → 金錢會把數量
-   * 重新換算成金額），0.1.78 把切換整個移除後，數量模式的钱包從此定格在
-   * 數量模式；使用者選擇「清空記錄」讓這些錢包從乾淨的狀態重新開始。
-   *
-   * ⚠ 用 localStorage 旗標保證只跑一次（`mop-ledger.migrated.qty-wipe.v1`）：
-   *   重跑會把使用者之後記的數量也一併清掉。
-   * ⚠ 只清「記錄」——錢包本身、數量分類（qCategories）都保留。
-   *
-   * @returns 清掉了幾筆（0＝這次不用遷移或沒有東西可清）
-   */
-  function runQtyModeMigration(): number {
-    const flag = 'mop-ledger.migrated.qty-wipe.v1'
-    if (readJSON<boolean>(flag)) return 0
-    let wiped = 0
-    for (const w of settings.wallets) {
-      if (settings.quantityModeOf(w.id)) wiped += clearWalletRecords(w.id)
-    }
-    writeJSON(flag, true)
-    return wiped
-  }
-
   function remove(id: string) {
     const idx = all.value.findIndex((x) => x.id === id)
     if (idx < 0) return
@@ -333,7 +287,6 @@ export const useRecordsStore = defineStore('records', () => {
     countByWallet,
     add,
     update,
-    runQtyModeMigration,
     remove,
     restore,
     reset,

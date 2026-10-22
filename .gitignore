@@ -18,3 +18,5 @@ public/tesseract-core/
 
 .smoke/
 .deploy/
+# 模式轉換工具（獨立於專案，不進版控／不上 GitHub）
+transfer/

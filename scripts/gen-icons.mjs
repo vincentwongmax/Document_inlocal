@@ -12,8 +12,14 @@
  *   - blaze（烈橘）：鮮橘底 + 粗造形奶油上箭頭（成長／結餘向上）
  *     → `public/icons/blaze/icon-*.png`
  *
+ * 0.1.80（需求 3）：加**第四款**——使用者原話：
+ *   「APP 的圖示加多一個新設計，我需要綠色做主色的(其他可以自由發揮」。
+ *   - mint（翠綠）：鮮綠底 + 粗造形奶油核對勾（綠色＝收入、勾＝記好了）
+ *     → `public/icons/mint/icon-*.png`
+ *
  * 每款三張：192（apple-touch-icon 用）、512、512-maskable（滿版＋安全區內縮）。
  * ⚠ maskable 版**不畫圓角**（系統會自己套遮罩），一般版圓角照舊 0.22。
+ * ⚠⚠ rrect 圓角的 `dy` 要用 `h` 不能用 `w`（非正方形時底部兩角會被跳過）。
  */
 import { mkdir, writeFile } from 'node:fs/promises'
 import { deflateSync } from 'node:zlib'
@@ -85,6 +91,7 @@ const NIGHT = hex('#1b1e26') // ink：近黑藍墨
 const CREAM = hex('#f7f1e2') // ink／blaze 共用的奶油色
 const EMBER = hex('#ff7a1f') // ink 的橘色 accent 點
 const BLAZE = hex('#ee5a12') // blaze：鮮橘底
+const MINT = hex('#159c55') // mint：鮮綠底（0.1.80 需求 3，綠色做主色）
 
 /** 畫布＋基本筆觸（三款共用） */
 function canvas(size) {
@@ -231,10 +238,35 @@ function drawBlaze(size, { maskable }) {
   return encodePNG(size, size, buf)
 }
 
+/**
+ * mint（翠綠）：鮮綠底 + 粗造形奶油核對勾（0.1.80 需求 3）。
+ * 使用者原話：「APP 的圖示加多一個新設計，我需要綠色做主色的(其他可以自由發揮」。
+ * 綠色＝收入（App 的 --accent 就是墨綠），勾＝「記好了／結餘核對」——
+ * 跟另外三款（收據／硬幣統計／上箭頭）造型都不一樣，小尺寸也認得出來。
+ */
+function drawMint(size, { maskable }) {
+  const { buf, seg, base } = canvas(size)
+  base(MINT, maskable)
+
+  const s = size * (maskable ? 0.62 : 0.74)
+  const ox = (size - s) / 2
+  const oy = (size - s) / 2
+  const cx = ox + s * 0.5
+  const cy = oy + s * 0.52
+  const w = s * 0.095
+
+  // 核對勾：短臂向右下、長臂向右上（兩段粗線）
+  seg(cx - s * 0.30, cy + s * 0.02, cx - s * 0.05, cy + s * 0.27, w, CREAM)
+  seg(cx - s * 0.05, cy + s * 0.27, cx + s * 0.32, cy - s * 0.27, w, CREAM)
+
+  return encodePNG(size, size, buf)
+}
+
 const STYLES = [
   { name: 'classic', dir: OUT, draw: drawClassic },
   { name: 'ink', dir: resolve(OUT, 'ink'), draw: drawInk },
   { name: 'blaze', dir: resolve(OUT, 'blaze'), draw: drawBlaze },
+  { name: 'mint', dir: resolve(OUT, 'mint'), draw: drawMint },
 ]
 
 for (const st of STYLES) {
@@ -243,4 +275,4 @@ for (const st of STYLES) {
   await writeFile(resolve(st.dir, 'icon-512.png'), st.draw(512, { maskable: false }))
   await writeFile(resolve(st.dir, 'icon-512-maskable.png'), st.draw(512, { maskable: true }))
 }
-console.log('✓ 三款圖示已產生於 public/icons/（classic／ink／blaze）')
+console.log('✓ 四款圖示已產生於 public/icons/（classic／ink／blaze／mint）')
