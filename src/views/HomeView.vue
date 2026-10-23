@@ -171,7 +171,18 @@ async function resolveHiddenDefaults(): Promise<{
 
   const noteOut = hid.has(4) && d.note ? d.note : note.value
 
-  const occurredOut = hid.has(5) && d.dateOffset ? offsetISO(d.dateOffset) : fromLocalInput(occurredAt.value)
+  /**
+   * 0.1.81（需求 1）：區塊 5（日期時間）被隱藏時，時間一律「按下記錄那一刻」：
+   *   - 有設預設偏移（now／before|after:N:…／at:…）→ 照使用者的設定算（本來就是相對現在）
+   *   - **沒設** → 以前是退回 `occurredAt.value`（那是「進頁面那一刻」的值，
+   *     還有 keepDraft 會把它存起來下次還原）→ 頁面開久了或草稿帶回來，
+   *     記到的就是好幾個小時前的時間。現在改成當下。
+   */
+  const occurredOut = hid.has(5)
+    ? d.dateOffset
+      ? offsetISO(d.dateOffset)
+      : new Date().toISOString()
+    : fromLocalInput(occurredAt.value)
 
   let imagesOut = [...images.value]
   if (hid.has(6) && d.images.length) {

@@ -4,9 +4,10 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 逐版細節在 `CONVENTIONS.md` 與 `.workbuddy/memory/YYYY-MM-DD.md`；這裡只放**每次動手都會用到**的。
 
 ## 版本
-- 只加 Z（目前 **0.1.80**，已部署線上：main `787c3cf`／gh-pages `4a415c6`）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
+- 只加 Z（目前 **0.1.81**，測試中待部署）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
 - ⚠ `.smoke/` 在 .gitignore → 版本 commit 只含 src/、CHANGELOG、package.json、.workbuddy/memory
-- **0.1.80（已部署）**：① 數量模式「記帳頁排版」清單恢復「支出/收入」（0.1.75 濾掉、0.1.76 只修了 HomeView 忘了 SettingsView 的 `layoutItems`）；② 「顯示與上一筆記錄的時間差」改名「上一筆記錄時間差」；③ 第四款 app icon「翠綠」mint（鮮綠＋奶油核對勾，`public/icons/mint/`）
+- **0.1.81**：① 記帳頁隱藏日期區塊時記錄時間＝按下當下（不再退回進頁面那刻的殘留值）；② 記錄頁搜索框「精準搜索」開關（完全等於才顯示，localStorage `mop-ledger.ui.exactSearch.v1`，有輸入才出現）；③ 數量模式分類也按收支類型（categoriesByType 去特例、管理分類開放類型、主頁常用分類兩種模式都兩組）
+- **0.1.80（已部署線上 main `787c3cf`／gh-pages `4a415c6`）**：① 數量模式「記帳頁排版」清單恢復「支出/收入」；② 「上一筆記錄時間差」改名；③ 第四款 app icon「翠綠」mint（鮮綠＋奶油核對勾，`public/icons/mint/`）
 - **0.1.79（本地 commit，未部署）**：移除 0.1.78 的一次性遷移（`runQtyModeMigration`/`clearWalletRecords`/旗標全刪）——不會有用戶踩到舊數量錢包
 - **0.1.78（已部署）**：① 模式切換整套移除，只在「新增錢包」面板選；② 管理分類頁匯出/匯入 icon 鈕；③ 3 款 app icon（classic/ink/blaze）
 
@@ -21,7 +22,10 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - ⚠⚠ 設定頁加區塊/新下拉前，先 grep `querySelector('.page-head select, select')` 這類「頁面第一個 select」（區塊順序＝測試隱性依賴）
 - ⚠⚠ `<script setup>` 模板裡對 const computed 賦值**不觸發 setter** → 一律寫明確函式接事件
 - ⚠ 測試 seed 用相對現在的時間，別寫當天絕對時刻（記錄頁預設區間「今天」，未來時間會退回絕對值）
+- ⚠ 測試種 `homeLayout` 一定要帶 **`homeLayoutV: 2`**：沒記號會被當 0.1.45 舊編號跑遷移（`[1,2,3,4,6,7] → [1,2,4,5,7]`，想藏的 5 反而加回來）
 - ⚠ 測滾動/餵食用 `scrollBy` 小段滑，別 `scrollTo` 一次跳底
+- ⚠ preview server 跨 session 會被回收（port 4173 沒人聽）→ 重啟後剛起來的幾秒會回 502，睡一下再打；vite preview 只綁 localhost（本機解析成 ::1）→ 用 `localhost`，**不要用 127.0.0.1**
+- ⚠ UI 加按鈕前先想寬度：記錄頁搜索框只有 200px、字級 16px（iOS 防縮放）→ v95 有「placeholder 塞得進」斷言、v111 要求 placeholder 含「旅行」，常駐按鈕會踩雷（解法＝有輸入才出現）
 - ⚠ headless 下 `input[type=file].click()` 不發 `filechooser` → await 會**永遠卡死**，改監測 click 次數（覆寫 `HTMLInputElement.prototype.click` 計數）
 - ⚠ `git -c core.quotePath=false ls-files`（中文檔名會被跳逸輸出 → `[ -f "$p" ]` 判 false → 靜默漏檔）
 - MoreFilterMenu 點選項**不會自己關閉** → 測試第二次操作前先判斷 `.mf__pop` 是否已開
@@ -44,7 +48,7 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 - 匯出 JSON=format2（可還原）／Excel=.zip（不含設定）
 - **匯率凍結**：顯示＝該筆快照的 `rate`；`recRate()` 最前面短路 `r.currency===dc → 1`，0.1.77 起無 `currency` 回 1；「更新匯率」只寫 `rates`（舊記錄不動）
 - **不計入統計三態**：`undefined`＝跟隨分類／`true`／`false`；判別式 `r.excludeFromStats ?? settings.categoryExcluded(r.categoryId)`
-- **數量模式（每錢包各自，0.1.75 開場）**：`settings.quantityMode` computed（模板自動 unwrap，script 內**不可**加 `.value`）；`catStore()` 是分類唯一來源（數量模式→`qCategories`，不分收支、type 一律 'expense'）；純數字顯示 `fmtMoney(v, '')`；0.1.76 起有收支（銷貨/庫存一正一負），只有幣別/匯率全站隱藏；數量模式解析分類一律傳 'expense'
+- **數量模式（每錢包各自，0.1.75 開場）**：`settings.quantityMode` computed（模板自動 unwrap，script 內**不可**加 `.value`）；`catStore()` 是分類唯一來源（數量模式→`qCategories`）；純數字顯示 `fmtMoney(v, '')`；0.1.76 起有收支，只有幣別/匯率全站隱藏。**0.1.81 起數量分類也按收支類型篩**（`categoriesByType` 不再有數量模式特例；管理分類可選類型；主頁常用分類兩種模式都分支出／收入兩組）——既有數量分類原本全是 expense，按收入會顯示「尚無分類」
 - **0.1.78：模式只能在「新增錢包」時選，不支援中途切換**（切換整套已刪）。**0.1.79 起連一次性遷移也移除**（`runQtyModeMigration`/`clearWalletRecords`/旗標全刪）——不會有用戶踩到舊數量錢包，數量錢包的記錄不會被清。`TxRecord` 的 currency/rate/baseCurrency/baseAmount 仍是 optional（0.1.77 留下來的型別狀態）
 - **匯出/匯入分類（0.1.78）**：格式記號 `mop-ledger.categories.v1`；`settings.importCategories(list)` 回 `{added, skipped}`——同 id、或同名＋同收支型 → 略過；parentId 經 idMap 重新對映；保留檔案 id。匯出檔名 `分類-YYYY-MM-DD.json`，子分類自動帶入上層（`withAncestors`）
 - **App 圖示（0.1.78；0.1.80 加第四款）**：`lib/appIcon.ts`；localStorage `mop-ledger.ui.appIcon.v1`（App 層級）；四款 classic/ink/blaze/mint（mint＝鮮綠底＋奶油核對勾）；iOS 讀 `<link rel="apple-touch-icon">`（每款都重設）、Android 讀 manifest（非 classic 換 `manifest-{key}.webmanifest`，classic 還原 `ORIGINAL_MANIFEST_HREF`）；圖示由 `scripts/gen-icons.mjs` 純 Node 繪製（加新款＝加 draw 函式＋STYLES 一行＋manifest-{key}.webmanifest＋appIcon.ts 三處）

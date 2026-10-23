@@ -389,27 +389,25 @@ async function changeBase(code: string) {
 // **同一份順序**（per-type、DFS、1 起編號），所以 chips 上顯示的編號就是
 // 使用者在貼上框裡可以輸入的編號（見 ImportModal 的格式說明）。
 /**
- * 0.1.75：數量模式沒有收支之分 → 只有一組「數量分類」。
- * （store 的 `settings.categories` 在數量模式下已經會回傳 qCategories。）
+ * 0.1.75 原本：數量模式沒有收支之分 → 只有一組「數量分類」。
+ * 0.1.81（需求 3）：數量模式的分類**也有收支類型**了（記帳頁按支出／收入要顯示
+ * 對應的分類）→ 兩種模式都照「支出分類／收入分類」分組；不然數量模式裡
+ * 收入型的分類在這一區會整組看不到（使用者回報「收入分類的區域消失了」）。
  */
-const grouped = computed(() => {
-  if (settings.quantityMode) {
-    return [{ type: 'expense' as TxType, label: '數量分類', list: flatTreeByType(settings.categories, 'expense') }]
-  }
-  return [
-    { type: 'expense' as TxType, label: '支出分類', list: flatTreeByType(settings.categories, 'expense') },
-    { type: 'income' as TxType, label: '收入分類', list: flatTreeByType(settings.categories, 'income') },
-  ]
-})
+const grouped = computed(() => [
+  { type: 'expense' as TxType, label: '支出分類', list: flatTreeByType(settings.categories, 'expense') },
+  { type: 'income' as TxType, label: '收入分類', list: flatTreeByType(settings.categories, 'income') },
+])
 
-/** 管理分類彈窗的下拉清單：支出＋收入全部列出（數量模式只有一份清單） */
-const manageCats = computed(() => {
-  if (settings.quantityMode) return [...settings.categories]
-  return [
-    ...settings.categories.filter((c) => c.type === 'expense'),
-    ...settings.categories.filter((c) => c.type === 'income'),
-  ]
-})
+/**
+ * 管理分類彈窗的下拉清單：
+ * 0.1.81 起**兩種模式都按「支出先、收入後」分組**（數量模式的分類也有收支類型了，
+ * 見需求 3）——之前數量模式是什麼順序就什麼順序丟進去。
+ */
+const manageCats = computed(() => [
+  ...settings.categories.filter((c) => c.type === 'expense'),
+  ...settings.categories.filter((c) => c.type === 'income'),
+])
 
 /** 每個分類被幾筆記錄使用（刪除前提醒用） */
 const catUsage = computed(() => {
@@ -1605,7 +1603,6 @@ function pickAppIcon(k: AppIconKey) {
     <CategoryManageModal
       :open="showCatMgr"
       :categories="manageCats"
-      :no-type="settings.quantityMode"
       :usage="catUsage"
       :default-id="settings.defaultCategoryId"
       @close="showCatMgr = false"

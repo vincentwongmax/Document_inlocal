@@ -467,17 +467,19 @@ export const useSettingsStore = defineStore('settings', () => {
   }
   const categories = computed(() => catStore().filter((c) => !c.archived))
   const preferredCurrency = computed(() => state.value.preferredCurrency)
+  /**
+   * 0.1.81（需求 3）：**兩種模式都按收支類型篩**。
+   * 之前數量模式一律回傳整份清單（0.1.75 的設計：那時數量模式沒有收支之分），
+   * 但 0.1.76 起數量模式也有支出／收入了（銷貨／庫存是一正一負）→ 記帳頁按
+   * 「收入」卻還是顯示支出的分類（使用者回報的 bug）。
+   * ⚠ 數量模式的分類現在也可以在「管理分類」裡選收支類型（見 noType）。
+   */
   const categoriesByType = computed(() => (type: TxType) =>
-    // 數量模式的分類不分收支（qCategories 全是同一型）：不管傳入哪個 type 都回傳整份清單
-    state.value.quantityMode
-      ? catStore().filter((c) => !c.archived)
-      : catStore().filter((c) => !c.archived && c.type === type),
+    catStore().filter((c) => !c.archived && c.type === type),
   )
   /** 某個收支類型的頂層大類（子分類不算） */
   const topCategoriesByType = computed(() => (type: TxType) =>
-    state.value.quantityMode
-      ? catStore().filter((c) => !c.archived && !c.parentId)
-      : catStore().filter((c) => !c.archived && c.type === type && !c.parentId),
+    catStore().filter((c) => !c.archived && c.type === type && !c.parentId),
   )
 
   function category(id: string): Category | undefined {

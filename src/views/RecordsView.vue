@@ -343,6 +343,36 @@ watch(unit, (u) => {
 })
 
 /**
+ * 0.1.81（需求 2）：搜索框的「**精準搜索**」開關。
+ *
+ * 使用者原話：「在記錄要的搜索框中，增加精準搜索的按鈕，例如數據1-->A , 2-->AA,
+ *   3--> AB — 用戶搜索"A" 那就只顯示，只出現1-->A, 不要2-->AA , 3-->AB，
+ *   當沒有按下這個按鈕時，一切都和之前的一樣。」
+ *
+ * → 按下時每個關鍵字要**完全等於**某一欄（備註／分類名稱／旅行名稱）才留下；
+ *   沒按下時照舊 `includes`（部分符合）。多關鍵字一樣是 AND（全部命中）。
+ * ⚠ 跟「顯示實際時間」一樣是**顯示偏好** → 持久化到 localStorage，
+ *   重新整理後不用再按一次（想關掉再按一下就好）。
+ */
+const EXACT_KEY = 'mop-ledger.ui.exactSearch.v1'
+const exactSearch = ref(loadExact())
+function loadExact(): boolean {
+  try {
+    return localStorage.getItem(EXACT_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+function toggleExact() {
+  exactSearch.value = !exactSearch.value
+  try {
+    localStorage.setItem(EXACT_KEY, exactSearch.value ? '1' : '0')
+  } catch {
+    /* 隱私模式等 → 記不住就記不住，不影響使用 */
+  }
+}
+
+/**
  * 0.1.44：從記錄明細的摘要區塊（或統計頁）跳過來搜尋某個分類。
  * 用 `?q=` 帶分類名稱進來；同頁內再點一次也能觸發（query 變化就同步）。
  */
@@ -443,7 +473,10 @@ const rows = computed(() =>
       if (!terms.value.length) return true
       // 0.1.51：每一欄各自轉小寫的「可搜尋字串」，多詞之間是 AND（全部命中才留）
       const hay = [r.note ?? '', catNameOf(r.categoryId), tripNameOf(r)].map((x) => x.toLowerCase())
-      return terms.value.every((t) => hay.some((h) => h.includes(t)))
+      // 0.1.81（需求 2）：精準搜索開著時要比「完全等於」，關掉時照舊 includes
+      return terms.value.every((t) =>
+        hay.some((h) => (exactSearch.value ? h === t : h.includes(t))),
+      )
     })
     .sort((a, b) => (timeOf(a) < timeOf(b) ? 1 : -1)),
 )
@@ -930,6 +963,29 @@ function removeEditing(id: string) {
           <template #trailing>
             <!-- 0.1.44：分類選擇器，點分類把名稱填進搜索框 -->
             <CategorySearchPicker v-model="q" />
+            <!--
+              0.1.81（需求 2）：精準搜索——按下後關鍵字要**完全符合**才顯示
+              （搜 A 不會出現 AA／AB）；再按一次回到原本的部分符合。
+            -->
+            <button
+              v-if="q.trim()"
+              class="exbtn"
+              type="button"
+              :class="{ 'is-on': exactSearch }"
+              :aria-pressed="exactSearch"
+              :title="
+                exactSearch
+                  ? '精準搜索：完全符合才顯示（再按一次取消）'
+                  : '精準搜索：只顯示完全符合關鍵字的記錄'
+              "
+              aria-label="精準搜索"
+              @click="toggleExact"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="7.1" />
+                <circle cx="12" cy="12" r="2.5" />
+              </svg>
+            </button>
           </template>
         </ClearableInput>
       </div>
@@ -1770,6 +1826,42 @@ function removeEditing(id: string) {
 .search :deep(.cf__x svg) {
   width: 13px;
   height: 13px;
+}
+/* 0.1.81（需求 2）：精準搜索開關——放在搜索框裡（分類選擇器旁邊）。
+   ⚠ 只在**有輸入**時才出現：搜索框只有 200px 寬、字級又是 16px（iOS 防縮放），
+   常駐一顆鈕會把 placeholder「搜尋備註或旅行」擠到塞不下（v95 有這條斷言）。
+   有打字時 placeholder 本來就看不到了，空間讓給按鈕剛好。
+   ⚠ 開著時用強調色（跟「顯示實際時間」那類開關同一套語彙）。 */
+.exbtn {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-3);
+  transition:
+    background 0.12s,
+    color 0.12s,
+    transform 0.06s;
+}
+.exbtn svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+}
+.exbtn:hover {
+  background: var(--surface-3);
+}
+.exbtn:active {
+  transform: scale(0.94);
+}
+.exbtn.is-on {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .ctl {
   display: flex;
