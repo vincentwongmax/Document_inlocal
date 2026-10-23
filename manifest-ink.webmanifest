@@ -1,0 +1,20 @@
+{
+  "name": "記帳本",
+  "short_name": "記帳本",
+  "description": "極速記帳、離線收據辨識、清楚掌握收支趨勢",
+  "lang": "zh-Hant",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f6f5f2",
+  "theme_color": "#f6f5f2",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    { "src": "./icons/ink/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "./icons/ink/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "./icons/ink/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "./icons/ink/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
