@@ -4,7 +4,7 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 逐版細節在 `CONVENTIONS.md` 與 `.workbuddy/memory/YYYY-MM-DD.md`；這裡只放**每次動手都會用到**的。
 
 ## 版本
-- 只加 Z（目前 **0.1.81**，測試中待部署）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
+- 只加 Z（目前 **0.1.81**，已部署線上：main `f6f6981`／gh-pages `9de270d`）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
 - ⚠ `.smoke/` 在 .gitignore → 版本 commit 只含 src/、CHANGELOG、package.json、.workbuddy/memory
 - **0.1.81**：① 記帳頁隱藏日期區塊時記錄時間＝按下當下（不再退回進頁面那刻的殘留值）；② 記錄頁搜索框「精準搜索」開關（完全等於才顯示，localStorage `mop-ledger.ui.exactSearch.v1`，有輸入才出現）；③ 數量模式分類也按收支類型（categoriesByType 去特例、管理分類開放類型、主頁常用分類兩種模式都兩組）
 - **0.1.80（已部署線上 main `787c3cf`／gh-pages `4a415c6`）**：① 數量模式「記帳頁排版」清單恢復「支出/收入」；② 「上一筆記錄時間差」改名；③ 第四款 app icon「翠綠」mint（鮮綠＋奶油核對勾，`public/icons/mint/`）
@@ -14,7 +14,9 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 ## 開發／驗證
 - preview :4173（**改完必先 build**）；dev :5173（兩個 ls 分開）
 - 回歸 `bash .smoke/run-regress.sh`，**判準＝每支 exit code**；ALL＝v70~v152（76 支，v108 不存在；v84 既有紅燈不修）
-- ⚠ 升版後必先 build（APP_VERSION 編譯期注入）＋每支「版本是 X」斷言跟著改（v132~v147、v149~v152；v148 與 `-live` 系列除外）
+- ⚠ 升版後必先 build（APP_VERSION 編譯期注入）＋每支「版本是 X」斷言跟著改（v132~v147、v149~v153；v148 與 `-live` 系列除外）
+- ⚠⚠ **升版後一定要先 `npx vite build` 再跑回歸**——不然 dist 裡還是舊版本號，
+  所有「設定頁版本＝package.json」／「version.json」類斷言全掛（0.1.81 一次掛了 23 支）
 - ⚠ 升版「版本斷言清单」要一次看完 v132~v152 全部——0.1.78 那次只改守門員，v132~v145 共 14 支靠回歸才暴露（0.1.79 起事前全改，回歸一次過）
 - ⚠⚠ 本地回歸 dist **不能帶 VITE_BASE**（preview 伺服根目錄，帶了全 404 假紅）；部署前才 `MSYS_NO_PATHCONV=1 VITE_BASE=/Document_inlocal/` 重建，部署後重建回不帶 base
 - ⚠ 冷啟 `Navigation timeout 30s`＝環境假紅（單獨重跑）；v113/v135 偶發 timing flake 同理
