@@ -51,14 +51,22 @@ function commit() {
 
 /** 原生選擇器送進來的新值 */
 function onPicked(e: Event) {
-  const v = (e.target as HTMLInputElement).value
+  const t = e.target as HTMLInputElement
+  const v = t.value
   if (v) emit('update:modelValue', v)
   else text.value = toDisplayInput(props.modelValue)
+  // 0.1.82：iOS PWA 在原生日期選擇器關掉後，這顆透明的 datetime-local 仍保持 focus，
+  // 導致接下來按底部「儲存／刪除」等鈕要點兩下才生效（第一下被 iOS 拿去 blur 輸入框）。
+  // 取值當下就主動釋放 focus，後續的點擊一次就生效。DateField 同樣修一次。
+  t.blur()
 }
 
 /** 一鍵帶入「當前」的日期時間 */
 function setNow() {
   emit('update:modelValue', nowLocalInput())
+  // 防禦：若之前曾開過選擇器讓原生輸入框留著 focus，這裡一併釋放，
+  // 避免同樣的「底部鈕要點兩下」問題。
+  ;(document.activeElement as HTMLElement | null)?.blur?.()
 }
 </script>
 

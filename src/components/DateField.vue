@@ -46,9 +46,14 @@ function commit() {
 
 /** 原生選擇器送進來的新值 */
 function onPicked(e: Event) {
-  const v = (e.target as HTMLInputElement).value
+  const t = e.target as HTMLInputElement
+  const v = t.value
   if (v) emit('update:modelValue', v)
   else text.value = toDisplayDate(props.modelValue)
+  // 0.1.82：iOS PWA 在原生日期選擇器關掉後，這顆透明的 date 仍保持 focus，
+  // 導致接下來按底部「儲存／匯出」等鈕要點兩下才生效（第一下被 iOS 拿去 blur 輸入框）。
+  // 取值當下就主動釋放 focus，後續的點擊一次就生效。
+  t.blur()
 }
 </script>
 
