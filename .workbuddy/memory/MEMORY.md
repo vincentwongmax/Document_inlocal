@@ -4,8 +4,10 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 逐版細節在 `CONVENTIONS.md` 與 `.workbuddy/memory/YYYY-MM-DD.md`；這裡只放**每次動手都會用到**的。
 
 ## 版本
-- 只加 Z（目前 **0.1.81**，已部署線上：main `f6f6981`／gh-pages `9de270d`）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
+- 只加 Z（目前 **0.1.83**，已部署線上：main `（見下）`／gh-pages `（見下）`）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
 - ⚠ `.smoke/` 在 .gitignore → 版本 commit 只含 src/、CHANGELOG、package.json、.workbuddy/memory
+- **0.1.83**：設定頁 › **應用鎖**（`lib/appLock.ts`＋`AppLock.vue`＋`LockSettings.vue`）：PIN 4–8 位（PBKDF2-SHA256 12 萬次＋隨機鹽，只存雜湊）／Face ID（WebAuthn，**只在 iPhone/iPad PWA**，桌面只有 PIN）／Face ID 模式保留 PIN 備用／忘記 PIN 用一次性恢復碼（10 碼、只顯示一次、可重產）／切回前台 **>1 分鐘**才重鎖／變更 PIN、開關 Face ID、重產恢復碼、關閉鎖都要先驗目前 PIN。⚠ 畫面上鎖，非資料加密
+- **0.1.82（已部署線上 main `4b28723`／gh-pages `10fcd6f`）**：① 修 iOS PWA 日期欄 focus 吞點擊（選完日期後底部「儲存／刪除」要點兩下）——`DateTimeField`/`DateField` 的 `onPicked` 取完值就 `blur()` 那顆透明原生輸入框；共用元件，等於一次修好 RecordSheet/ReviewSheet/HomeView/TravelSheet/ExportModal/TripHistorySheet/RecordsView/StatsView；② 記錄頁「更多」的「上一筆記錄時間差」改名「時間差標籤」
 - **0.1.81**：① 記帳頁隱藏日期區塊時記錄時間＝按下當下（不再退回進頁面那刻的殘留值）；② 記錄頁搜索框「精準搜索」開關（完全等於才顯示，localStorage `mop-ledger.ui.exactSearch.v1`，有輸入才出現）；③ 數量模式分類也按收支類型（categoriesByType 去特例、管理分類開放類型、主頁常用分類兩種模式都兩組）
 - **0.1.80（已部署線上 main `787c3cf`／gh-pages `4a415c6`）**：① 數量模式「記帳頁排版」清單恢復「支出/收入」；② 「上一筆記錄時間差」改名；③ 第四款 app icon「翠綠」mint（鮮綠＋奶油核對勾，`public/icons/mint/`）
 - **0.1.79（本地 commit，未部署）**：移除 0.1.78 的一次性遷移（`runQtyModeMigration`/`clearWalletRecords`/旗標全刪）——不會有用戶踩到舊數量錢包
@@ -13,13 +15,18 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 
 ## 開發／驗證
 - preview :4173（**改完必先 build**）；dev :5173（兩個 ls 分開）
-- 回歸 `bash .smoke/run-regress.sh`，**判準＝每支 exit code**；ALL＝v70~v152（76 支，v108 不存在；v84 既有紅燈不修）
+- 回歸 `bash .smoke/run-regress.sh`，**判準＝每支 exit code**；ALL＝v70~v154（78 支，v108 不存在；v84 既有紅燈不修）
 - ⚠ 升版後必先 build（APP_VERSION 編譯期注入）＋每支「版本是 X」斷言跟著改（v132~v147、v149~v153；v148 與 `-live` 系列除外）
 - ⚠⚠ **升版後一定要先 `npx vite build` 再跑回歸**——不然 dist 裡還是舊版本號，
   所有「設定頁版本＝package.json」／「version.json」類斷言全掛（0.1.81 一次掛了 23 支）
 - ⚠ 升版「版本斷言清单」要一次看完 v132~v152 全部——0.1.78 那次只改守門員，v132~v145 共 14 支靠回歸才暴露（0.1.79 起事前全改，回歸一次過）
 - ⚠⚠ 本地回歸 dist **不能帶 VITE_BASE**（preview 伺服根目錄，帶了全 404 假紅）；部署前才 `MSYS_NO_PATHCONV=1 VITE_BASE=/Document_inlocal/` 重建，部署後重建回不帶 base
 - ⚠ 冷啟 `Navigation timeout 30s`＝環境假紅（單獨重跑）；v113/v135 偶發 timing flake 同理
+- ⚠⚠ iOS PWA「點底部鈕要點兩下」＝原生 date/datetime-local 選完仍保持 focus，第一下被 iOS 拿去 blur → 要在 `change` 取值當下就 `blur()`（DateTimeField/DateField 已修）。任何「透明原生輸入框疊在按鈕上」的寫法都要注意
+- ⚠ 舊 live 測試 **v120~v131-live 已 drift**（寫死舊線上版本 v0.1.53~56／舊排版 6–7 格 vs 現在 8 格／舊 CSS）→ 不是回歸，別追；升版只需顧 **v132-live 起**那幾支
+- ⚠⚠ **Face ID 只能走 WebAuthn**（`navigator.credentials`，iOS 跳出系統 Face ID）：需要 HTTPS＋**使用者手勢**（不能在載入時自動觸發）；判定「可用」＝iOS＋`display-mode: standalone`＋`isUserVerifyingPlatformAuthenticatorAvailable()`。credential 只在裝置上，`rp.id` 用 `location.hostname`
+- ⚠ 鎖屏是全屏 fixed、`z-index: 2000`（要蓋過 App 的 96；SweetAlert 是 1060 → 鎖屏上不要用 SweetAlert，恢復碼改成頁內輸入）
+- ⚠ 加設定頁新區塊很安全（測試都用「文字」找 section，不是索引）；但**新區塊不要放 `<select>`**（有測試抓「頁面第一個 select」）
 - ⚠⚠ 往既有元件加按鈕/徽章前，先 grep 舊測試脆弱選擇器（「第一顆 `.wcard__btn`」「精確比對 `.wcard__sub`」）——開關鈕放編輯鈕**後**、徽章放 `.wcard__row` 內但 `.wcard__sub` **外**
 - ⚠⚠ 設定頁加區塊/新下拉前，先 grep `querySelector('.page-head select, select')` 這類「頁面第一個 select」（區塊順序＝測試隱性依賴）
 - ⚠⚠ `<script setup>` 模板裡對 const computed 賦值**不觸發 setter** → 一律寫明確函式接事件

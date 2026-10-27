@@ -213,6 +213,108 @@ export async function pickCategoriesDialog(o: {
   return Array.isArray(v) ? (v as string[]) : null
 }
 
+/* ── 0.1.83：應用鎖（Face ID／PIN 碼）用到的三個彈窗 ───────── */
+
+/** 輸入 PIN 碼（4–8 位數字）；回傳 null＝取消 */
+export async function askPinDialog(o: {
+  title: string
+  message?: string
+  confirmText?: string
+}): Promise<string | null> {
+  const res = await Swal.fire({
+    title: o.title,
+    text: o.message,
+    input: 'password',
+    inputAttributes: {
+      inputmode: 'numeric',
+      maxlength: '8',
+      autocapitalize: 'off',
+      autocomplete: 'off',
+      'aria-label': 'PIN 碼',
+    },
+    showCancelButton: true,
+    confirmButtonText: o.confirmText ?? '確定',
+    cancelButtonText: '取消',
+    reverseButtons: true,
+    preConfirm: (v) => {
+      const s = String(v ?? '')
+      if (!/^\d{4,8}$/.test(s)) {
+        Swal.showValidationMessage('請輸入 4–8 位數字')
+        return false
+      }
+      return s
+    },
+  })
+  return res.isConfirmed ? String(res.value) : null
+}
+
+/** 輸入恢復碼；回傳 null＝取消 */
+export async function askRecoveryDialog(): Promise<string | null> {
+  const res = await Swal.fire({
+    title: '輸入恢復碼',
+    text: '就是設定應用鎖時要你抄下來的那組（例如 ABCDE-FGHJK）。',
+    input: 'text',
+    inputAttributes: {
+      autocapitalize: 'characters',
+      autocomplete: 'off',
+      spellcheck: 'false',
+      maxlength: '13',
+      'aria-label': '恢復碼',
+    },
+    showCancelButton: true,
+    confirmButtonText: '解鎖',
+    cancelButtonText: '取消',
+    reverseButtons: true,
+    preConfirm: (v) => {
+      const s = String(v ?? '').trim()
+      if (s.replace(/[^A-Za-z0-9]/g, '').length < 8) {
+        Swal.showValidationMessage('恢復碼格式不正確')
+        return false
+      }
+      return s
+    },
+  })
+  return res.isConfirmed ? String(res.value) : null
+}
+
+/**
+ * 顯示一次性恢復碼（使用者要抄下來）。
+ * 只在這一次顯示；之後在設定頁可以重新產生（會換成新的一組）。
+ */
+export async function showRecoveryCodeDialog(code: string): Promise<void> {
+  const safe = escapeHtml(code)
+  const res = await Swal.fire({
+    title: '恢復碼（只顯示一次）',
+    html:
+      `<p style="margin:0 0 12px;font-size:13px;line-height:1.7;color:#5b574e;text-align:left">` +
+      `忘記 PIN 碼時，在鎖屏按「忘記 PIN」輸入這組恢復碼就能解鎖。<b>請立刻抄下來</b>，` +
+      `之後不會再顯示（設定頁可以重新產生，但舊的會失效）。</p>` +
+      `<div style="display:flex;align-items:center;gap:8px;justify-content:center;margin:6px 0 4px">` +
+      `<code id="swal-rc" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;` +
+      `font-size:22px;font-weight:700;letter-spacing:2px;background:#f2efe8;border:1px solid #e0dbd0;` +
+      `border-radius:10px;padding:10px 14px;color:#2c2a25;user-select:all">${safe}</code>` +
+      `<button type="button" id="swal-rc-copy" style="background:#2c6e5b;color:#fff;border:0;` +
+      `border-radius:9px;padding:9px 11px;font-size:12.5px;font-weight:650;cursor:pointer">複製</button>` +
+      `</div>`,
+    confirmButtonText: '我已抄下',
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    didOpen: () => {
+      const btn = document.getElementById('swal-rc-copy')
+      btn?.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(code)
+          btn.textContent = '已複製'
+        } catch {
+          // 剪貼簿被拒（非 HTTPS／權限）→ 告訴使用者自己選取
+          btn.textContent = '請長按選取'
+        }
+      })
+    },
+  })
+  void res
+}
+
 /** 小工具：把字串裡的 HTML 敏感字元換掉（幣別代碼是使用者自訂的，不能直接塞進屬性） */
 function escapeHtml(s: string): string {
   return (s ?? '')

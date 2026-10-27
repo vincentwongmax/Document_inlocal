@@ -7,6 +7,8 @@ import { fmtMoney } from '@/lib/currency'
 import { askUpdate, notify } from '@/lib/alerts'
 import { needRefresh, offlineReady, updateSW } from '@/lib/pwa'
 import { applyAppIcon } from '@/lib/appIcon'
+import AppLock from '@/components/AppLock.vue'
+import { initAppLock, isLocked } from '@/lib/appLock'
 
 const route = useRoute()
 const records = useRecordsStore()
@@ -34,6 +36,13 @@ watch(offlineReady, (v) => {
 
 /* 0.1.78：啟動時套用使用者選的 app icon（apple-touch-icon／manifest／分頁 icon） */
 onMounted(applyAppIcon)
+
+/*
+ * 0.1.83：應用鎖。
+ * ⚠ 一定要在 setup 同步阶段呼叫（不是 onMounted）——這樣第一次畫面渲染就已經是
+ *   「鎖著」，不會先閃一下記帳內容再蓋上鎖屏。
+ */
+initAppLock()
 </script>
 
 <template>
@@ -99,6 +108,9 @@ onMounted(applyAppIcon)
         <span>{{ n.label }}</span>
       </RouterLink>
     </nav>
+
+    <!-- 0.1.83：應用鎖——鎖著時用不透明全屏蓋住整個 App -->
+    <AppLock v-if="isLocked" />
   </div>
 </template>
 

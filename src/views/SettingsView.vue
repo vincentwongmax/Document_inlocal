@@ -6,6 +6,7 @@ import { useRecordsStore } from '@/stores/records'
 import { notify, confirmDialog, askRemoteUpdate } from '@/lib/alerts'
 import CategoryManageModal from '@/components/CategoryManageModal.vue'
 import QuickAmountSheet from '@/components/QuickAmountSheet.vue'
+import LockSettings from '@/components/LockSettings.vue'
 import HomeDefaultSheet from '@/components/HomeDefaultSheet.vue'
 import TravelSheet from '@/components/TravelSheet.vue'
 import TripHistorySheet from '@/components/TripHistorySheet.vue'
@@ -1539,6 +1540,25 @@ function pickAppIcon(k: AppIconKey) {
           已經加入過主畫面的不會自動變——移除後重新加入就會是新的。
         </p>
       </div>
+    </section>
+
+    <!-- 0.1.83：應用鎖（Face ID／PIN 碼） -->
+    <section id="sec-applock" class="card sec">
+      <header class="sec__hd">
+        <span class="sec__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <rect x="4.6" y="10.2" width="14.8" height="9.6" rx="2.4" />
+            <path d="M8.2 10.2V7.9a3.8 3.8 0 0 1 7.6 0v2.3" />
+            <circle cx="12" cy="15" r="1.2" />
+          </svg>
+        </span>
+        <div class="sec__meta">
+          <h2 class="sec__title">應用鎖</h2>
+          <p class="sec__desc">打開 App 先解鎖：Face ID（iPhone PWA）或 PIN 碼</p>
+        </div>
+      </header>
+
+      <LockSettings />
     </section>
 
     <!-- 離線與版本 -->
