@@ -4,7 +4,7 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 逐版細節在 `CONVENTIONS.md` 與 `.workbuddy/memory/YYYY-MM-DD.md`；這裡只放**每次動手都會用到**的。
 
 ## 版本
-- 只加 Z（目前 **0.1.83**，已部署線上：main `（見下）`／gh-pages `（見下）`）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
+- 只加 Z（目前 **0.1.83**，已部署線上：main `052769c`／gh-pages `d029c39`）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
 - ⚠ `.smoke/` 在 .gitignore → 版本 commit 只含 src/、CHANGELOG、package.json、.workbuddy/memory
 - **0.1.83**：設定頁 › **應用鎖**（`lib/appLock.ts`＋`AppLock.vue`＋`LockSettings.vue`）：PIN 4–8 位（PBKDF2-SHA256 12 萬次＋隨機鹽，只存雜湊）／Face ID（WebAuthn，**只在 iPhone/iPad PWA**，桌面只有 PIN）／Face ID 模式保留 PIN 備用／忘記 PIN 用一次性恢復碼（10 碼、只顯示一次、可重產）／切回前台 **>1 分鐘**才重鎖／變更 PIN、開關 Face ID、重產恢復碼、關閉鎖都要先驗目前 PIN。⚠ 畫面上鎖，非資料加密
 - **0.1.82（已部署線上 main `4b28723`／gh-pages `10fcd6f`）**：① 修 iOS PWA 日期欄 focus 吞點擊（選完日期後底部「儲存／刪除」要點兩下）——`DateTimeField`/`DateField` 的 `onPicked` 取完值就 `blur()` 那顆透明原生輸入框；共用元件，等於一次修好 RecordSheet/ReviewSheet/HomeView/TravelSheet/ExportModal/TripHistorySheet/RecordsView/StatsView；② 記錄頁「更多」的「上一筆記錄時間差」改名「時間差標籤」
