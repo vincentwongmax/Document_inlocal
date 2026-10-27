@@ -240,9 +240,24 @@ export function markUnlocked(): void {
   state.unlocked = true
 }
 
+/** 使用者「自己在 App 裡按上鎖」的時間（0＝不是手動上鎖） */
+let manualLockAt = 0
+
 /** 立刻上鎖 */
 export function lockNow(): void {
   state.unlocked = false
+  manualLockAt = Date.now()
+}
+
+/**
+ * 鎖屏出現時，要不要**自動**跳系統 Face ID。
+ *
+ * 0.1.84：使用者要求「打開 App 就直接 Face ID 辨識，中間不要任何步驟」。
+ * 但**剛按完「立即上鎖」的那一下不能自動跳**——否則一鎖就馬上被 Face ID 解開，
+ * 「立即上鎖」等於沒作用。5 秒後就恢復正常（例如切出去再回來重新上鎖）。
+ */
+export function autoFaceIdAllowed(): boolean {
+  return Date.now() - manualLockAt > 5_000
 }
 
 /** 關閉應用鎖（清除設定，記帳資料不動） */

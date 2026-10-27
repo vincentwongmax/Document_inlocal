@@ -6,15 +6,20 @@
  * 所以鎖著的時候看不到、也點不到後面的任何內容。
  *
  * 三種畫面：
- *   - faceid：Face ID 模式（下面保留「改用 PIN 碼」與「忘記 PIN」）
+ *   - faceid：Face ID 模式（**畫面一出現就自動跳系統 Face ID**，下面那顆按鈕只是重試用；
+ *     另保留「改用 PIN 碼」與「忘記 PIN」）
  *   - pin：數字鍵盤（PIN 長度已知 → 打到第 N 位就自動送出）
  *   - recovery：輸入恢復碼
  */
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
+  autoFaceIdAllowed,
+  detectPlatformAuth,
+  isIOSDevice,
   lockMode,
   markUnlocked,
   pinLength,
+  platformAuthAvailable,
   verifyFaceId,
   verifyPin,
   verifyRecovery,
@@ -67,12 +72,18 @@ function backspace() {
 
 /*
  * Face ID 驗證。
- * ⚠ WebAuthn 需要「使用者手勢」才會跳系統驗證，所以不在載入時自動觸發——
- *   一律由使用者按下面那顆按鈕。
+ *
+ * 0.1.84：使用者要求「打開 App 就 Face ID，中間不要任何步驟」→ 改成**鎖屏一出現就自動呼叫**
+ * （見下面 onMounted）。技術依據：
+ *   - iOS 17.4 起 Apple 已**取消** WebAuthn 需要使用者手勢的限制（改成速率限制）
+ *   - iOS 16～17.3 每次「頁面載入」仍允許**一次**不用手勢的 credentials.get()
+ *     → 所以自動嘗試只做一次，失敗就交給下面那顆按鈕（手勢觸發，一定合法）
+ *   - ⚠ SPA 內這個「免費額度」不會重置（只有整頁重新載入才會）→ 切勿重複自動嘗試
+ *
  * ⚠ 有些環境（沒有驗證器）`credentials.get` 會一直不回來 → 加一個安全網，
  *   90 秒後把按鈕恢復成可按（真正的成功結果照樣會解鎖）。
  */
-async function tryFaceId() {
+async function tryFaceId(fromAuto = false) {
   if (busy.value) return
   busy.value = true
   err.value = ''
@@ -86,8 +97,46 @@ async function tryFaceId() {
     markUnlocked()
     return
   }
-  err.value = r.error ?? 'Face ID 沒有完成'
+  // 自動嘗試失敗（舊版 iOS 不允許無手勢呼叫、或使用者按了取消）不要吵人：
+  // 安靜地把畫面留給下面那顆按鈕，點一下就會重新跳系統 Face ID。
+  if (!fromAuto) err.value = r.error ?? 'Face ID 沒有完成'
 }
+
+/** 按鈕點擊（明確傳 false；不能直接綁 tryFaceId，否則 MouseEvent 會被當成 true） */
+function onFaceIdClick() {
+  void tryFaceId(false)
+}
+
+let autoTimer = 0
+
+onMounted(() => {
+  // 只有 Face ID 模式才自動跳系統面板（PIN 模式沒有東西可自動）
+  if (stage.value !== 'faceid') return
+  // 剛按完「立即上鎖」→ 不要一鎖就自動解開
+  if (!autoFaceIdAllowed()) return
+
+  const run = async () => {
+    if (document.visibilityState !== 'visible') return
+    /*
+     * iOS 一定拿得到平台驗證器（Face ID 憑證就是在這裡註冊的），所以**不 await**，
+     * 讓 credentials.get() 前面不要多一個非同步步驟（Safari 對這點很挑）。
+     * 其他平台（桌機／Android）先確認有沒有平台驗證器，沒有就別自動跳——
+     * 否則會留下一個永遠轉圈的「驗證中…」。
+     */
+    if (!isIOSDevice() && !platformAuthAvailable.value) {
+      if (!(await detectPlatformAuth())) return
+    }
+    // 讓鎖屏先畫出來，再跳系統面板（使用者看得到「已鎖定」再看到 Face ID）
+    autoTimer = window.setTimeout(() => void tryFaceId(true), 160)
+  }
+
+  if (document.visibilityState === 'visible') void run()
+  else document.addEventListener('visibilitychange', run, { once: true })
+})
+
+onBeforeUnmount(() => {
+  window.clearTimeout(autoTimer)
+})
 
 async function submitRecovery() {
   if (busy.value || !recovery.value.trim()) return
@@ -130,8 +179,8 @@ function toRecovery() {
 
       <!-- Face ID -->
       <template v-if="stage === 'faceid'">
-        <p class="lock__hint">已鎖定</p>
-        <button class="lock__face" type="button" :disabled="busy" @click="tryFaceId">
+        <p class="lock__hint">{{ busy ? '正在用 Face ID 辨識…' : '已鎖定' }}</p>
+        <button class="lock__face" type="button" :disabled="busy" @click="onFaceIdClick">
           <svg class="lock__faceicon" viewBox="0 0 24 24" aria-hidden="true">
             <path
               d="M3 8V5.5A2.5 2.5 0 0 1 5.5 3H8M16 3h2.5A2.5 2.5 0 0 1 21 5.5V8M21 16v2.5A2.5 2.5 0 0 1 18.5 21H16M8 21H5.5A2.5 2.5 0 0 1 3 18.5V16"
