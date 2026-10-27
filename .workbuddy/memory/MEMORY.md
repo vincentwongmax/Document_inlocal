@@ -4,8 +4,10 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 逐版細節在 `CONVENTIONS.md` 與 `.workbuddy/memory/YYYY-MM-DD.md`；這裡只放**每次動手都會用到**的。
 
 ## 版本
-- 只加 Z（目前 **0.1.83**，已部署線上：main `052769c`／gh-pages `d029c39`）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
+- 只加 Z（目前 **0.1.84**，已部署線上：main `7b3fe00`／gh-pages `4d5879f`）；改 package.json ＋ CHANGELOG（插最前面 `---` 後）
 - ⚠ `.smoke/` 在 .gitignore → 版本 commit 只含 src/、CHANGELOG、package.json、.workbuddy/memory
+- **0.1.84（已部署線上）**：Face ID 模式**打開 App 就自動跳 Face ID，不用再按按鈕**——`AppLock.vue` `onMounted` 自動呼叫 `credentials.get()`（`setTimeout 160ms` 讓鎖屏先畫出來）；自動失敗**不出紅字**；按鈕留作重試（`onFaceIdClick`，⚠ 不可直接綁 `tryFaceId`，MouseEvent 會被當 `fromAuto=true`）；`appLock.ts` 加 `autoFaceIdAllowed()`——按完「立即上鎖」**5 秒內不自動跳**（否則一鎖就被解開）。非 iOS 先 `await detectPlatformAuth()` 才決定要不要跳（沒有平台驗證器就別跳，不然卡「驗證中…」）。守門員 **v155（14 斷言，CDP 虛擬平台驗證器）**＋v154 加 6 條（共 45）
+  - ⚠⚠ **iOS 的「使用通行密鑰登入」系統面板無法用網頁移除**（web.dev：iCloud Keychain 的憑證一律是同步通行密鑰，RP 無法建 non-discoverable／裝置綁定）→ 本 App 只能拿掉自己那顆按鈕，剩下「系統面板 → Face ID → 進入 App」
 - **0.1.83**：設定頁 › **應用鎖**（`lib/appLock.ts`＋`AppLock.vue`＋`LockSettings.vue`）：PIN 4–8 位（PBKDF2-SHA256 12 萬次＋隨機鹽，只存雜湊）／Face ID（WebAuthn，**只在 iPhone/iPad PWA**，桌面只有 PIN）／Face ID 模式保留 PIN 備用／忘記 PIN 用一次性恢復碼（10 碼、只顯示一次、可重產）／切回前台 **>1 分鐘**才重鎖／變更 PIN、開關 Face ID、重產恢復碼、關閉鎖都要先驗目前 PIN。⚠ 畫面上鎖，非資料加密
 - **0.1.82（已部署線上 main `4b28723`／gh-pages `10fcd6f`）**：① 修 iOS PWA 日期欄 focus 吞點擊（選完日期後底部「儲存／刪除」要點兩下）——`DateTimeField`/`DateField` 的 `onPicked` 取完值就 `blur()` 那顆透明原生輸入框；共用元件，等於一次修好 RecordSheet/ReviewSheet/HomeView/TravelSheet/ExportModal/TripHistorySheet/RecordsView/StatsView；② 記錄頁「更多」的「上一筆記錄時間差」改名「時間差標籤」
 - **0.1.81**：① 記帳頁隱藏日期區塊時記錄時間＝按下當下（不再退回進頁面那刻的殘留值）；② 記錄頁搜索框「精準搜索」開關（完全等於才顯示，localStorage `mop-ledger.ui.exactSearch.v1`，有輸入才出現）；③ 數量模式分類也按收支類型（categoriesByType 去特例、管理分類開放類型、主頁常用分類兩種模式都兩組）
@@ -15,14 +17,16 @@ Vue 3 + TS + Pinia + vue-router(hash) + Vite + PWA 記帳。Repo `C:\Users\User\
 
 ## 開發／驗證
 - preview :4173（**改完必先 build**）；dev :5173（兩個 ls 分開）
-- 回歸 `bash .smoke/run-regress.sh`，**判準＝每支 exit code**；ALL＝v70~v154（78 支，v108 不存在；v84 既有紅燈不修）
-- ⚠ 升版後必先 build（APP_VERSION 編譯期注入）＋每支「版本是 X」斷言跟著改（v132~v147、v149~v153；v148 與 `-live` 系列除外）
+- 回歸 `bash .smoke/run-regress.sh`，**判準＝每支 exit code**；ALL＝v70~v155（79 支，v108 不存在；v84 既有紅燈不修）
+- ⚠ 升版後必先 build（APP_VERSION 編譯期注入）＋每支「版本是 X」斷言跟著改（v132~v155；`-live` 系列另外（v132-live~v137-live））
 - ⚠⚠ **升版後一定要先 `npx vite build` 再跑回歸**——不然 dist 裡還是舊版本號，
   所有「設定頁版本＝package.json」／「version.json」類斷言全掛（0.1.81 一次掛了 23 支）
 - ⚠ 升版「版本斷言清单」要一次看完 v132~v152 全部——0.1.78 那次只改守門員，v132~v145 共 14 支靠回歸才暴露（0.1.79 起事前全改，回歸一次過）
 - ⚠⚠ 本地回歸 dist **不能帶 VITE_BASE**（preview 伺服根目錄，帶了全 404 假紅）；部署前才 `MSYS_NO_PATHCONV=1 VITE_BASE=/Document_inlocal/` 重建，部署後重建回不帶 base
 - ⚠ 冷啟 `Navigation timeout 30s`＝環境假紅（單獨重跑）；v113/v135 偶發 timing flake 同理
 - ⚠⚠ iOS PWA「點底部鈕要點兩下」＝原生 date/datetime-local 選完仍保持 focus，第一下被 iOS 拿去 blur → 要在 `change` 取值當下就 `blur()`（DateTimeField/DateField 已修）。任何「透明原生輸入框疊在按鈕上」的寫法都要注意
+- ⚠⚠ **WebAuthn 自動觸發**：iOS **17.4 起取消**「必須使用者手勢」（改速率限制）→ 可在 `onMounted` 直接 `credentials.get()`；**iOS 16~17.3 每次頁面載入只有一次**免手勢額度，且 **SPA 內不重置**（只有整頁重新載入才恢復）→ 自動嘗試**只能一次**。自動觸發前若要 `await` 別的 async，務必先排除「沒有平台驗證器」的情況（`isUserVerifyingPlatformAuthenticatorAvailable()`），否則 headless／桌機會卡在「驗證中…」90 秒
+- ⚠ **測試「需要平台驗證器」的功能**：用 CDP `WebAuthn.enable` ＋ `WebAuthn.addVirtualAuthenticator`（`transport:'internal'`, `isUserVerified:true`, `automaticPresenceSimulation:true`）＝假裝有 Face ID；見 `.smoke/v155.mjs`。可以真的驗「零點擊自動解鎖」
 - ⚠ 舊 live 測試 **v120~v131-live 已 drift**（寫死舊線上版本 v0.1.53~56／舊排版 6–7 格 vs 現在 8 格／舊 CSS）→ 不是回歸，別追；升版只需顧 **v132-live 起**那幾支
 - ⚠⚠ **Face ID 只能走 WebAuthn**（`navigator.credentials`，iOS 跳出系統 Face ID）：需要 HTTPS＋**使用者手勢**（不能在載入時自動觸發）；判定「可用」＝iOS＋`display-mode: standalone`＋`isUserVerifyingPlatformAuthenticatorAvailable()`。credential 只在裝置上，`rp.id` 用 `location.hostname`
 - ⚠ 鎖屏是全屏 fixed、`z-index: 2000`（要蓋過 App 的 96；SweetAlert 是 1060 → 鎖屏上不要用 SweetAlert，恢復碼改成頁內輸入）
